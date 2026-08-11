@@ -12,9 +12,12 @@
   "app": {
     "windows": [
       {
-        "title": "nexfile_desktop_app",
-        "width": 800,
-        "height": 600
+        "title": "LocalMind",
+        "width": 1440,
+        "height": 1024,
+        "minWidth": 640,
+        "minHeight": 560,
+        "resizable": true
       }
     ],
     "security": {

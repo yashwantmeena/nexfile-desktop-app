@@ -1,50 +1,38 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
-import { Button } from "@/components/ui/button";
+import { useEffect, useState } from "react";
+import { DashboardPage } from "@/components/dashboard/dashboard-page";
+import { AppSidebar } from "@/components/layout/app-sidebar";
+import { TopBar } from "@/components/layout/top-bar";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import type { NavItem } from "@/types/localmind";
 
 function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+  const [activeNav, setActiveNav] = useState<NavItem>("Home");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
+  useEffect(() => {
+    if (!notice) return;
+    const timeout = window.setTimeout(() => setNotice(null), 2800);
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
+    <TooltipProvider delayDuration={250}>
+      <div className="app-shell">
+        <AppSidebar
+          activeItem={activeNav}
+          open={sidebarOpen}
+          onActiveItemChange={setActiveNav}
+          onOpenChange={setSidebarOpen}
+          onNotice={setNotice}
         />
-        <Button type="submit">Greet</Button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
+        <section className="workspace">
+          <TopBar onMenuOpen={() => setSidebarOpen(true)} onNotice={setNotice} />
+          <DashboardPage activeView={activeNav} onNotice={setNotice} />
+        </section>
+        {notice && <div className="toast" role="status">{notice}</div>}
+      </div>
+    </TooltipProvider>
   );
 }
 
