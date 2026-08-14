@@ -1,0 +1,9 @@
+import { ChevronDown, ChevronLeft, ChevronRight, Copy, ExternalLink, Folder, FolderPlus, Maximize2, MoreHorizontal, RefreshCw, Star, X } from "lucide-react";
+import type { DashboardFile } from "../types/file";
+import { mountainImage } from "../data/dashboard-data";
+
+interface FileInspectorProps { file:DashboardFile; favorite:boolean; onFavorite:()=>void; }
+
+export function FileInspector({ file,favorite,onFavorite }:FileInspectorProps) {
+  return <aside className="inspector"><div className="inspector-tools"><button><Maximize2/></button><button><RefreshCw/></button><button><ExternalLink/></button></div><div className="preview-image" style={{backgroundImage:`url(${file.image??mountainImage})`}}><button className="preview-left"><ChevronLeft/></button><button className="preview-right"><ChevronRight/></button><button className="preview-more"><MoreHorizontal/></button></div><div className="preview-title"><div><h2>{file.name}</h2><p>JPEG Image – 2.4 MB</p></div><button className={favorite?"favorite":""} onClick={onFavorite}><Star/></button></div><div className="inspector-tabs"><button className="active">Details</button><button>Tags</button></div><dl className="details-list"><div className="path-row"><dt>Path</dt><dd>{file.path}/{file.name}<button><Copy/></button></dd></div><div><dt>Modified</dt><dd>Today, 10:24 AM</dd></div><div><dt>Dimensions</dt><dd>5472 × 3648</dd></div><div><dt>Size</dt><dd>2.4 MB</dd></div></dl><button className="show-more">Show more <ChevronDown/></button><section className="tag-section"><h3>Tags</h3><div>{["nature","mountains","lake","travel"].map(tag=><span key={tag}>{tag} <X/></span>)}<button><FolderPlus/> Add tag</button></div></section><section className="actions-section"><h3>Actions</h3><button><ExternalLink/>Open</button><button><Folder/>Show in Folder</button><button><FolderPlus/>Add to Collection<ChevronRight/></button><button><MoreHorizontal/>More actions<ChevronRight/></button></section></aside>;
+}
