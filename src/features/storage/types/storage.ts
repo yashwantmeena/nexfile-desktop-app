@@ -6,13 +6,13 @@ export interface StorageDrive {
   partitionName: string;
   fileSystem: string;
   total: string;
+  totalGb: number;
   used?: string;
   usedPercent?: number;
   appUsed?: string;
   appUsedPercent?: number;
   available?: string;
   appLimitValue?: number;
-  appLimitUnit: "GB" | "TB";
   priority: number;
   status: DriveStatus;
 }
