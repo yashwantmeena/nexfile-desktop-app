@@ -1,1 +1,1 @@
-export type NavItem = "Home" | "Files" | "Recent Access" | "AI Search" | "Storage" | "Settings";
+export type AppNavigationItem = "Search" | "Recent" | "Favorites" | "Collections" | "Storage" | "Settings" | "Trash";

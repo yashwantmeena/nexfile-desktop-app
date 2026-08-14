@@ -1,37 +1,16 @@
-import { useEffect, useState } from "react";
-import { AppRouter } from "@/app/router";
-import { Header } from "@/components/Header/Header";
-import { Sidebar } from "@/components/Sidebar/Sidebar";
-import { NOTICE_DURATION_MS } from "@/lib/constants";
-import type { NavItem } from "@/types/navigation";
+import { useState } from "react";
+import { DashboardRoute } from "@/app/routes/DashboardRoute";
+import { StorageRoute } from "@/app/routes/StorageRoute";
+import type { AppNavigationItem } from "@/types/navigation";
 
 function App() {
-  const [activeNav, setActiveNav] = useState<NavItem>("Home");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [activeNavigation, setActiveNavigation] = useState<AppNavigationItem>("Search");
 
-  useEffect(() => {
-    if (!notice) return;
-    const timeout = window.setTimeout(() => setNotice(null), NOTICE_DURATION_MS);
-    return () => window.clearTimeout(timeout);
-  }, [notice]);
+  if (activeNavigation === "Storage") {
+    return <StorageRoute activeNavigation={activeNavigation} onNavigationChange={setActiveNavigation} />;
+  }
 
-  return (
-    <div className="app-shell">
-        <Sidebar
-          activeItem={activeNav}
-          open={sidebarOpen}
-          onActiveItemChange={setActiveNav}
-          onOpenChange={setSidebarOpen}
-          onNotice={setNotice}
-        />
-        <section className="workspace">
-          <Header onMenuOpen={() => setSidebarOpen(true)} onNotice={setNotice} />
-          <AppRouter activeView={activeNav} onNotice={setNotice} />
-        </section>
-        {notice && <div className="toast" role="status">{notice}</div>}
-    </div>
-  );
+  return <DashboardRoute activeNavigation={activeNavigation} onNavigationChange={setActiveNavigation} />;
 }
 
 export default App;
