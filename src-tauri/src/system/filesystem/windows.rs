@@ -20,13 +20,13 @@ use crate::models::storage::DriveInfo;
 /// Returns every mounted drive currently connected to this Windows machine.
 pub fn get_drives() -> Vec<DriveInfo> {
     let disks = Disks::new_with_refreshed_list();
+    let system_drive = system_drive();
     let mut drives = disks
         .list()
         .iter()
         .map(|disk| {
             let mount_point = disk.mount_point().to_string_lossy().into_owned();
             let drive_letter = mount_point.trim_end_matches(['\\', '/']).to_owned();
-            let drive_id = drive_letter.trim_end_matches(':').to_lowercase();
             let volume_label = volume_label(&mount_point);
             let reported_name = disk.name().to_string_lossy();
             let drive_name = physical_disk_number(&format!(r"\\.\{drive_letter}"))
@@ -34,25 +34,39 @@ pub fn get_drives() -> Vec<DriveInfo> {
                 .or_else(|| volume_label.clone())
                 .or_else(|| (!reported_name.trim().is_empty()).then(|| reported_name.into_owned()))
                 .unwrap_or_else(|| "Local Disk".to_owned());
+            let is_system = system_drive
+                .as_deref()
+                .is_some_and(|system_drive| drive_letter.eq_ignore_ascii_case(system_drive));
             let partition_name = match volume_label.as_deref() {
                 Some(label) => format!("{label} ({drive_letter})"),
                 None => drive_letter,
             };
-            let total_capacity = disk.total_space();
+            let total_bytes = disk.total_space();
 
             DriveInfo {
-                drive_id,
+                drive_id: String::new(),
                 drive_name,
                 partition_name,
                 file_system: disk.file_system().to_string_lossy().into_owned(),
-                total_capacity,
-                system_used: total_capacity.saturating_sub(disk.available_space()),
+                total_bytes,
+                system_used_bytes: total_bytes.saturating_sub(disk.available_space()),
+                is_system,
+                mount_point: disk.mount_point().to_path_buf(),
             }
         })
         .collect::<Vec<_>>();
 
     drives.sort_by(|left, right| left.drive_id.cmp(&right.drive_id));
     drives
+}
+
+fn system_drive() -> Option<String> {
+    let system_root = std::env::var("SystemRoot")
+        .or_else(|_| std::env::var("windir"))
+        .ok()?;
+    let drive = system_root.get(..2)?;
+
+    drive.ends_with(':').then(|| drive.to_owned())
 }
 
 struct OwnedHandle(HANDLE);

@@ -7,3 +7,6 @@
 /* Keep storage-limit values and capacity references readable in the standard GB unit. */
 .drive-table-head,.drive-row{grid-template-columns:minmax(190px,1.55fr) minmax(90px,.75fr) minmax(125px,1fr) minmax(130px,1.05fr) minmax(105px,.85fr) minmax(155px,1.2fr) 72px 82px}
 .limit-input{width:150px}
+.scan-drives-button:disabled{color:#8a96a8;background:#f2f4f7;cursor:wait}
+.storage-load-error{margin:10px 0 0;padding:9px 12px;border:1px solid #f0c8cd;border-radius:8px;color:#a3313e;background:#fff6f7;font-size:12px}
+.unavailable-label{color:#8b96a7;font-size:11px}

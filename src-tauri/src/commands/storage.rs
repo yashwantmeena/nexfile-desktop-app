@@ -1,9 +1,10 @@
 use tauri::State;
 
 use crate::app::state::AppState;
-use crate::models::storage::DriveInfo;
+use crate::error::AppResult;
+use crate::models::storage::StorageData;
 
 #[tauri::command]
-pub fn get_available_drives(state: State<'_, AppState>) -> Vec<DriveInfo> {
-    state.storage.get_available_drives()
+pub fn get_storage_data(state: State<'_, AppState>) -> AppResult<StorageData> {
+    state.storage.get_storage_data()
 }

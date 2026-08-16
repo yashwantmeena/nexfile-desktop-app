@@ -1,17 +1,28 @@
-export type DriveStatus = "mounted" | "unmounted";
-
 export interface StorageDrive {
   driveId: string;
   driveName: string;
   partitionName: string;
   fileSystem: string;
-  totalCapacity: number;
-  systemUsed?: number;
+  totalBytes: number;
+  systemUsedBytes?: number;
   systemUsedPercent?: number;
-  appUsed?: number;
+  appUsedBytes?: number;
   appUsedPercent?: number;
-  available?: number;
-  appLimitValue?: number;
+  availableBytes?: number;
+  appLimitBytes?: number;
+  fileCount: number;
   priority: number;
-  status: DriveStatus;
+  isMounted: boolean;
+  isConnected: boolean;
+  isSystem: boolean;
+}
+
+export interface StorageData {
+  totalBytes: number;
+  availableBytes: number;
+  drivesDetected: number;
+  fileIndexed: number;
+  appLimitBytes: number;
+  appUsedBytes: number;
+  drives: StorageDrive[];
 }
