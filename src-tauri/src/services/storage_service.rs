@@ -2,7 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use crate::error::{AppError, AppResult};
-use crate::models::storage::{DriveInfo, DriveMetadata, StorageData, StorageDrive};
+use crate::mappers::storage::{disconnected_drive, merge_connected_drive, storage_data};
+use crate::models::storage::{DriveInfo, DriveMetadata, StorageData};
 use crate::repositories::storage::RedbStorageRepository;
 use crate::system::filesystem::{get_drives, read_file, write_file};
 
@@ -40,8 +41,6 @@ impl StorageService {
             let saved = metadata
                 .as_ref()
                 .and_then(|metadata| saved_drives.get(&metadata.drive_id));
-            // A drive is mounted only when it is connected, identifiable by its
-            // on-drive metadata, and enabled in the saved configuration.
             let is_mounted = metadata.is_some() && saved.is_some_and(|drive| drive.is_mounted);
 
             if let Some(saved) = saved {
@@ -80,41 +79,22 @@ impl StorageService {
         }
 
         let saved_drives = self.repository.list()?;
-        let Some(drive) = get_drives().into_iter().find(|drive| {
-            device_id.is_some_and(|device_id| drive.device_id == device_id)
-                || (!partition_name.is_empty()
-                    && (drive.partition_name == partition_name
-                        || read_drive_metadata(drive, &self.system_metadata_root)
-                            .is_some_and(|metadata| metadata.partition_name == partition_name)))
-        }) else {
-            return Err(AppError::storage_unavailable(
-                "The selected drive is not currently connected.",
-            ));
-        };
+        let drive = get_drives()
+            .into_iter()
+            .find(|drive| {
+                is_requested_drive(drive, device_id, partition_name, &self.system_metadata_root)
+            })
+            .ok_or_else(|| {
+                AppError::storage_unavailable("The selected drive is not currently connected.")
+            })?;
+
         let metadata = read_drive_metadata(&drive, &self.system_metadata_root);
 
-        let saved = saved_drives
-            .iter()
-            .find(|saved| device_id.is_some_and(|device_id| saved.device_id == device_id))
-            .or_else(|| {
-                metadata.as_ref().and_then(|metadata| {
-                    saved_drives
-                        .iter()
-                        .find(|saved| saved.drive_id == metadata.drive_id)
-                })
-            })
-            .or_else(|| {
-                metadata.as_ref().and_then(|metadata| {
-                    saved_drives
-                        .iter()
-                        .find(|saved| saved.partition_name == metadata.partition_name)
-                })
-            })
-            .or_else(|| {
-                saved_drives
-                    .iter()
-                    .find(|saved| saved.partition_name == drive.partition_name)
-            });
+        let saved = metadata.as_ref().and_then(|metadata| {
+            saved_drives
+                .iter()
+                .find(|saved| saved.drive_id == metadata.drive_id)
+        });
         let next_priority = saved_drives
             .iter()
             .filter(|saved| saved.is_mounted)
@@ -165,6 +145,28 @@ impl StorageService {
     }
 }
 
+fn is_requested_drive(
+    drive: &DriveInfo,
+    device_id: Option<&str>,
+    partition_name: &str,
+    system_metadata_root: &Path,
+) -> bool {
+    if device_id.is_some_and(|device_id| drive.device_id == device_id) {
+        return true;
+    }
+
+    if partition_name.is_empty() {
+        return false;
+    }
+
+    if drive.partition_name == partition_name {
+        return true;
+    }
+
+    read_drive_metadata(drive, system_metadata_root)
+        .is_some_and(|metadata| metadata.partition_name == partition_name)
+}
+
 fn metadata_for_mount(
     drive: &DriveInfo,
     saved: Option<&DriveMetadata>,
@@ -175,8 +177,7 @@ fn metadata_for_mount(
         saved
             .zip(file_metadata.as_ref())
             .is_some_and(|(saved, metadata)| {
-                (saved.device_id.is_empty() || saved.device_id == metadata.device_id)
-                    && saved.drive_id == metadata.drive_id
+                saved.drive_id == metadata.drive_id
                     && saved.file_count == metadata.file_count
                     && saved.app_used_bytes == metadata.app_used_bytes
             });
@@ -195,7 +196,6 @@ fn metadata_for_mount(
         _ => DriveMetadata {
             // A drive with no metadata is new to NexFile.
             drive_id: uuid::Uuid::new_v4().to_string(),
-            device_id: drive.device_id.clone(),
             drive_name: drive.drive_name.clone(),
             partition_name: drive.partition_name.clone(),
             app_limit_bytes: None,
@@ -212,7 +212,6 @@ fn metadata_for_mount(
     if metadata.partition_name.trim().is_empty() {
         metadata.partition_name = drive.partition_name.clone();
     }
-    metadata.device_id = drive.device_id.clone();
     metadata.priority = if metadata_matches_saved {
         saved
             .filter(|saved| saved.priority > 0)
@@ -222,29 +221,6 @@ fn metadata_for_mount(
     };
     metadata.is_mounted = true;
     metadata
-}
-
-fn storage_data(drives: Vec<StorageDrive>) -> StorageData {
-    let connected_drives = drives.iter().filter(|drive| drive.is_connected);
-
-    StorageData {
-        total_bytes: connected_drives
-            .clone()
-            .map(|drive| drive.total_bytes)
-            .sum(),
-        available_bytes: connected_drives
-            .clone()
-            .filter_map(|drive| drive.available_bytes)
-            .sum(),
-        drives_detected: connected_drives.count(),
-        file_indexed: drives.iter().map(|drive| drive.file_count).sum(),
-        app_limit_bytes: drives
-            .iter()
-            .filter_map(|drive| drive.app_limit_bytes)
-            .sum(),
-        app_used_bytes: drives.iter().filter_map(|drive| drive.app_used_bytes).sum(),
-        drives,
-    }
 }
 
 fn metadata_path(drive: &DriveInfo, system_metadata_root: &Path) -> PathBuf {
@@ -263,90 +239,10 @@ fn read_metadata(path: &Path) -> Option<DriveMetadata> {
 }
 
 fn read_drive_metadata(drive: &DriveInfo, system_metadata_root: &Path) -> Option<DriveMetadata> {
-    let mut metadata = read_metadata(&metadata_path(drive, system_metadata_root))?;
-    if !metadata.device_id.is_empty() && metadata.device_id != drive.device_id {
-        return None;
-    }
-    metadata.device_id = drive.device_id.clone();
-    Some(metadata)
+    read_metadata(&metadata_path(drive, system_metadata_root))
 }
 
 fn write_metadata(path: &Path, metadata: &DriveMetadata) -> AppResult<()> {
     let encoded = serde_json::to_vec_pretty(metadata).map_err(AppError::serialization)?;
     write_file(path, encoded).map_err(Into::into)
-}
-
-fn merge_connected_drive(
-    drive: DriveInfo,
-    metadata: Option<&DriveMetadata>,
-    saved: Option<&DriveMetadata>,
-    is_mounted: bool,
-) -> StorageDrive {
-    let app_used_bytes = metadata.map(|metadata| metadata.app_used_bytes);
-    let app_limit_bytes = metadata.and_then(|metadata| metadata.app_limit_bytes);
-
-    StorageDrive {
-        drive_id: metadata
-            .map(|metadata| metadata.drive_id.clone())
-            .unwrap_or_default(),
-        device_id: None,
-        drive_name: metadata
-            .filter(|metadata| !metadata.drive_name.trim().is_empty())
-            .map(|metadata| metadata.drive_name.clone())
-            .unwrap_or(drive.drive_name),
-        partition_name: metadata
-            .filter(|metadata| !metadata.partition_name.trim().is_empty())
-            .map(|metadata| metadata.partition_name.clone())
-            .unwrap_or(drive.partition_name),
-        file_system: drive.file_system,
-        total_bytes: drive.total_bytes,
-        system_used_bytes: Some(drive.system_used_bytes),
-        system_used_percent: Some(percentage(drive.system_used_bytes, drive.total_bytes)),
-        app_used_bytes,
-        app_used_percent: app_used_bytes
-            .zip(app_limit_bytes)
-            .map(|(used, limit)| percentage(used, limit)),
-        available_bytes: Some(drive.total_bytes.saturating_sub(drive.system_used_bytes)),
-        app_limit_bytes,
-        file_count: metadata.map_or(0, |metadata| metadata.file_count),
-        priority: saved.map_or(0, |drive| drive.priority),
-        is_mounted,
-        is_connected: true,
-        is_system: drive.is_system,
-    }
-}
-
-fn disconnected_drive(drive: DriveMetadata) -> StorageDrive {
-    let app_used_percent = drive
-        .app_limit_bytes
-        .map(|limit| percentage(drive.app_used_bytes, limit));
-
-    StorageDrive {
-        drive_id: drive.drive_id,
-        device_id: None,
-        drive_name: drive.drive_name,
-        partition_name: drive.partition_name,
-        file_system: String::new(),
-        total_bytes: 0,
-        system_used_bytes: None,
-        system_used_percent: None,
-        app_used_bytes: Some(drive.app_used_bytes),
-        app_used_percent,
-        available_bytes: None,
-        app_limit_bytes: drive.app_limit_bytes,
-        file_count: drive.file_count,
-        priority: drive.priority,
-        is_mounted: false,
-        is_connected: false,
-        is_system: false,
-    }
-}
-
-fn percentage(value: u64, total: u64) -> u8 {
-    if total == 0 {
-        return 0;
-    }
-
-    let percent = (u128::from(value) * 100 / u128::from(total)).min(100);
-    u8::try_from(percent).unwrap_or(100)
 }

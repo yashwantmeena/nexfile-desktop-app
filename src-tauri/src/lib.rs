@@ -1,10 +1,12 @@
 mod app;
 mod commands;
 mod error;
+mod mappers;
 mod models;
 mod repositories;
 mod services;
 mod system;
+pub mod utils;
 
 pub use error::AppError;
 pub use models::storage::{DriveInfo, DriveMetadata, StorageData, StorageDrive};

@@ -6,8 +6,6 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct DriveMetadata {
     pub drive_id: String,
-    #[serde(default)]
-    pub device_id: String,
     pub drive_name: String,
     pub partition_name: String,
     pub app_limit_bytes: Option<u64>,

@@ -4,6 +4,7 @@ use nexfile_desktop_app_lib::{DriveInfo, DriveMetadata, StorageData, StorageDriv
 fn metadata_defaults_to_unmounted() {
     let drive = serde_json::from_value::<DriveMetadata>(serde_json::json!({
         "driveId": "test-drive",
+        "deviceId": "legacy-device-id",
         "driveName": "Test SSD",
         "partitionName": "Test (T:)",
         "appLimitBytes": 1_000,
@@ -127,7 +128,6 @@ fn serializes_the_storage_summary_contract() {
 fn serializes_and_deserializes_a_saved_drive() {
     let drive = DriveMetadata {
         drive_id: "c".to_owned(),
-        device_id: "device-c".to_owned(),
         drive_name: "Test SSD".to_owned(),
         partition_name: "System (C:)".to_owned(),
         app_limit_bytes: Some(100),
@@ -139,7 +139,7 @@ fn serializes_and_deserializes_a_saved_drive() {
 
     let value = serde_json::to_value(&drive).expect("drive should serialize");
     assert_eq!(value["driveId"], "c");
-    assert_eq!(value["deviceId"], "device-c");
+    assert!(value.get("deviceId").is_none());
     assert_eq!(value["appLimitBytes"], 100);
     assert_eq!(value["fileCount"], 25);
     assert_eq!(value["appUsedBytes"], 40);

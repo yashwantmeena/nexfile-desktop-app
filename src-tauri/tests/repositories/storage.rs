@@ -17,7 +17,6 @@ fn saves_and_lists_drives() {
     let path = test_database_path();
     let drive = DriveMetadata {
         drive_id: "c".to_owned(),
-        device_id: "device-c".to_owned(),
         drive_name: "Test SSD".to_owned(),
         partition_name: "System (C:)".to_owned(),
         app_limit_bytes: Some(100),

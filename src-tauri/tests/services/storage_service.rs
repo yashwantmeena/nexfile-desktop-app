@@ -36,7 +36,6 @@ fn merges_database_os_and_drive_metadata() {
 
     let metadata = DriveMetadata {
         drive_id: "system-drive".to_owned(),
-        device_id: String::new(),
         drive_name: "Test SSD".to_owned(),
         partition_name: "System (C:)".to_owned(),
         app_limit_bytes: Some(1_000),
@@ -57,7 +56,6 @@ fn merges_database_os_and_drive_metadata() {
         repository
             .save(&DriveMetadata {
                 drive_id: metadata.drive_id.clone(),
-                device_id: metadata.device_id.clone(),
                 drive_name: metadata.drive_name.clone(),
                 partition_name: metadata.partition_name.clone(),
                 app_limit_bytes: metadata.app_limit_bytes,
@@ -70,7 +68,6 @@ fn merges_database_os_and_drive_metadata() {
         repository
             .save(&DriveMetadata {
                 drive_id: "missing-drive".to_owned(),
-                device_id: "missing-device".to_owned(),
                 drive_name: "Disconnected SSD".to_owned(),
                 partition_name: "Archive".to_owned(),
                 app_limit_bytes: Some(2_000),
@@ -161,13 +158,14 @@ fn mounts_a_connected_drive_and_creates_its_metadata() {
     assert_eq!(mounted.priority, 1);
 
     let metadata_path = root.join("nexfile").join("drive_metadata.json");
-    let metadata = serde_json::from_slice::<DriveMetadata>(
-        &std::fs::read(metadata_path).expect("metadata should be written"),
-    )
-    .expect("metadata should deserialize");
+    let encoded = std::fs::read(metadata_path).expect("metadata should be written");
+    let value = serde_json::from_slice::<serde_json::Value>(&encoded)
+        .expect("metadata JSON should deserialize");
+    assert!(value.get("deviceId").is_none());
+    let metadata =
+        serde_json::from_slice::<DriveMetadata>(&encoded).expect("metadata should deserialize");
     assert!(metadata.is_mounted);
     assert_eq!(metadata.drive_id, mounted.drive_id);
-    assert!(!metadata.device_id.is_empty());
     uuid::Uuid::parse_str(&metadata.drive_id).expect("new drive ID should be a UUID");
 
     std::fs::remove_dir_all(root).expect("test directory should be removable");
@@ -179,7 +177,6 @@ fn mounts_matching_saved_and_file_metadata_without_changing_usage() {
     let database_path = root.join("test.redb");
     let metadata = DriveMetadata {
         drive_id: "matching-drive".to_owned(),
-        device_id: String::new(),
         drive_name: "Saved SSD".to_owned(),
         partition_name: "Saved partition".to_owned(),
         app_limit_bytes: Some(1_000),
@@ -222,7 +219,7 @@ fn mounts_matching_saved_and_file_metadata_without_changing_usage() {
 }
 
 #[test]
-fn replaces_a_mismatched_saved_id_with_the_file_metadata_id() {
+fn saves_file_metadata_without_replacing_a_different_drive_id() {
     let root = test_root("mount-mismatched-id");
     let database_path = root.join("test.redb");
     std::fs::create_dir_all(&root).expect("test directory should be created");
@@ -242,7 +239,6 @@ fn replaces_a_mismatched_saved_id_with_the_file_metadata_id() {
     };
     let file_metadata = DriveMetadata {
         drive_id: uuid::Uuid::new_v4().to_string(),
-        device_id: String::new(),
         drive_name: "Metadata SSD".to_owned(),
         partition_name: "Metadata partition".to_owned(),
         app_limit_bytes: Some(2_000),
@@ -259,7 +255,6 @@ fn replaces_a_mismatched_saved_id_with_the_file_metadata_id() {
         repository
             .save(&DriveMetadata {
                 drive_id: "old-drive-id".to_owned(),
-                device_id: String::new(),
                 drive_name: "Old SSD".to_owned(),
                 partition_name: file_metadata.partition_name.clone(),
                 app_limit_bytes: Some(100),
@@ -286,8 +281,11 @@ fn replaces_a_mismatched_saved_id_with_the_file_metadata_id() {
 
     let repository = RedbStorageRepository::open(&database_path).expect("repository should reopen");
     let saved = repository.list().expect("saved drives should load");
-    assert_eq!(saved.len(), 1);
-    assert_eq!(saved[0].drive_id, file_metadata.drive_id);
+    assert_eq!(saved.len(), 2);
+    assert!(saved
+        .iter()
+        .any(|saved| saved.drive_id == file_metadata.drive_id));
+    assert!(saved.iter().any(|saved| saved.drive_id == "old-drive-id"));
     drop(repository);
 
     std::fs::remove_dir_all(root).expect("test directory should be removable");
@@ -299,7 +297,6 @@ fn saves_existing_file_metadata_when_the_database_has_no_entry() {
     let database_path = root.join("test.redb");
     let metadata = DriveMetadata {
         drive_id: uuid::Uuid::new_v4().to_string(),
-        device_id: String::new(),
         drive_name: "Portable SSD".to_owned(),
         partition_name: "Portable partition".to_owned(),
         app_limit_bytes: Some(3_000),
@@ -345,7 +342,6 @@ fn unmounts_a_saved_drive_by_changing_only_its_mounted_flag() {
     let database_path = root.join("test.redb");
     let metadata = DriveMetadata {
         drive_id: uuid::Uuid::new_v4().to_string(),
-        device_id: String::new(),
         drive_name: "Mounted SSD".to_owned(),
         partition_name: "Mounted partition".to_owned(),
         app_limit_bytes: Some(4_000),
@@ -391,7 +387,6 @@ fn removes_a_saved_drive_from_the_database_only() {
     let database_path = root.join("test.redb");
     let metadata = DriveMetadata {
         drive_id: uuid::Uuid::new_v4().to_string(),
-        device_id: String::new(),
         drive_name: "Removable SSD".to_owned(),
         partition_name: "Removable partition".to_owned(),
         app_limit_bytes: Some(5_000),
