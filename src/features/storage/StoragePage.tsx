@@ -79,21 +79,49 @@ export function StoragePage({ activeNavigation, onNavigationChange }: StoragePag
     setStorageData((current) => ({ ...current, drives: update(current.drives) }));
   };
 
-  const mountDrive = (id: string) => {
-    const nextPriority = mountedDrives.length + 1;
-    updateDrives((drives) => drives.map((drive) => (
-      drive.driveId === id && drive.isConnected
-        ? { ...drive, isMounted: true, priority: nextPriority }
-        : drive
-    )));
-    setHasUnsavedChanges(true);
+  const mountDrive = async (deviceId: string | null, partitionName: string) => {
+    setIsScanning(true);
+    setLoadError(undefined);
+    try {
+      const data = await invoke<StorageData>("mount_drive", {
+        deviceId: deviceId || null,
+        partitionName,
+      });
+      setStorageData(data);
+      setHasUnsavedChanges(false);
+    } catch (error) {
+      setLoadError(getErrorMessage(error));
+    } finally {
+      setIsScanning(false);
+    }
   };
 
-  const unmountDrive = (id: string) => {
-    updateDrives((drives) => drives.map((drive) => (
-      drive.driveId === id ? { ...drive, isMounted: false, priority: 0 } : drive
-    )));
-    setHasUnsavedChanges(true);
+  const unmountDrive = async (driveId: string) => {
+    setIsScanning(true);
+    setLoadError(undefined);
+    try {
+      const data = await invoke<StorageData>("unmount_drive", { driveId });
+      setStorageData(data);
+      setHasUnsavedChanges(false);
+    } catch (error) {
+      setLoadError(getErrorMessage(error));
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  const removeDrive = async (driveId: string) => {
+    setIsScanning(true);
+    setLoadError(undefined);
+    try {
+      const data = await invoke<StorageData>("remove_drive", { driveId });
+      setStorageData(data);
+      setHasUnsavedChanges(false);
+    } catch (error) {
+      setLoadError(getErrorMessage(error));
+    } finally {
+      setIsScanning(false);
+    }
   };
 
   const movePriority = (id: string, direction: "up" | "down") => {
@@ -130,6 +158,7 @@ export function StoragePage({ activeNavigation, onNavigationChange }: StoragePag
             description="Use the arrows to set storage priority. Higher drives are used first."
             drives={mountedDrives}
             onUnmount={unmountDrive}
+            onRemove={removeDrive}
             onMovePriority={movePriority}
           />
           <DriveTable
@@ -138,13 +167,11 @@ export function StoragePage({ activeNavigation, onNavigationChange }: StoragePag
             drives={unmountedDrives}
             onMount={mountDrive}
           />
-          {unavailableDrives.length > 0 && (
-            <DriveTable
-              title="Unavailable Drives"
-              description="Saved drives that are not currently connected."
-              drives={unavailableDrives}
-            />
-          )}
+          <DriveTable
+            title="Unavailable Drives"
+            description="Saved drives that are not currently connected."
+            drives={unavailableDrives}
+          />
         </div>
       </main>
     </div>

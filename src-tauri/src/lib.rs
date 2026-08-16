@@ -18,7 +18,10 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| app::lifecycle::initialize(app).map_err(Into::into))
         .invoke_handler(tauri::generate_handler![
-            commands::storage::get_storage_data
+            commands::storage::get_storage_data,
+            commands::storage::mount_drive,
+            commands::storage::unmount_drive,
+            commands::storage::remove_drive
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

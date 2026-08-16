@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct DriveMetadata {
     pub drive_id: String,
+    #[serde(default)]
+    pub device_id: String,
     pub drive_name: String,
     pub partition_name: String,
     pub app_limit_bytes: Option<u64>,
@@ -20,7 +22,7 @@ pub struct DriveMetadata {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DriveInfo {
-    pub drive_id: String,
+    pub device_id: String,
     pub drive_name: String,
     pub partition_name: String,
     pub file_system: String,
@@ -35,6 +37,7 @@ pub struct DriveInfo {
 #[serde(rename_all = "camelCase")]
 pub struct StorageDrive {
     pub drive_id: String,
+    pub device_id: Option<String>,
     pub drive_name: String,
     pub partition_name: String,
     pub file_system: String,

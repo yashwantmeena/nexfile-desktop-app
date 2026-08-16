@@ -1,5 +1,6 @@
 export interface StorageDrive {
   driveId: string;
+  deviceId: string | null;
   driveName: string;
   partitionName: string;
   fileSystem: string;

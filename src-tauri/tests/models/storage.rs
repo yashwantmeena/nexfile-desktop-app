@@ -20,6 +20,7 @@ fn metadata_defaults_to_unmounted() {
 fn serializes_the_storage_drive_ui_contract() {
     let drive = StorageDrive {
         drive_id: "c".to_owned(),
+        device_id: None,
         drive_name: "Test SSD".to_owned(),
         partition_name: "System (C:)".to_owned(),
         file_system: "NTFS".to_owned(),
@@ -41,6 +42,7 @@ fn serializes_the_storage_drive_ui_contract() {
         serde_json::to_value(drive).expect("storage drive should serialize"),
         serde_json::json!({
             "driveId": "c",
+            "deviceId": null,
             "driveName": "Test SSD",
             "partitionName": "System (C:)",
             "fileSystem": "NTFS",
@@ -64,6 +66,7 @@ fn serializes_the_storage_drive_ui_contract() {
 fn serializes_the_storage_summary_contract() {
     let connected = StorageDrive {
         drive_id: "c".to_owned(),
+        device_id: None,
         drive_name: "Connected".to_owned(),
         partition_name: "System (C:)".to_owned(),
         file_system: "NTFS".to_owned(),
@@ -82,6 +85,7 @@ fn serializes_the_storage_summary_contract() {
     };
     let unavailable = StorageDrive {
         drive_id: "d".to_owned(),
+        device_id: None,
         drive_name: "Unavailable".to_owned(),
         partition_name: "Archive".to_owned(),
         file_system: String::new(),
@@ -123,6 +127,7 @@ fn serializes_the_storage_summary_contract() {
 fn serializes_and_deserializes_a_saved_drive() {
     let drive = DriveMetadata {
         drive_id: "c".to_owned(),
+        device_id: "device-c".to_owned(),
         drive_name: "Test SSD".to_owned(),
         partition_name: "System (C:)".to_owned(),
         app_limit_bytes: Some(100),
@@ -134,6 +139,7 @@ fn serializes_and_deserializes_a_saved_drive() {
 
     let value = serde_json::to_value(&drive).expect("drive should serialize");
     assert_eq!(value["driveId"], "c");
+    assert_eq!(value["deviceId"], "device-c");
     assert_eq!(value["appLimitBytes"], 100);
     assert_eq!(value["fileCount"], 25);
     assert_eq!(value["appUsedBytes"], 40);
@@ -149,7 +155,7 @@ fn serializes_and_deserializes_a_saved_drive() {
 #[test]
 fn serializes_the_frontend_drive_contract() {
     let drive = DriveInfo {
-        drive_id: "c".to_owned(),
+        device_id: "device-c".to_owned(),
         drive_name: "Test SSD".to_owned(),
         partition_name: "System (C:)".to_owned(),
         file_system: "NTFS".to_owned(),
@@ -162,7 +168,7 @@ fn serializes_the_frontend_drive_contract() {
     assert_eq!(
         serde_json::to_value(drive).expect("drive should serialize"),
         serde_json::json!({
-            "driveId": "c",
+            "deviceId": "device-c",
             "driveName": "Test SSD",
             "partitionName": "System (C:)",
             "fileSystem": "NTFS",

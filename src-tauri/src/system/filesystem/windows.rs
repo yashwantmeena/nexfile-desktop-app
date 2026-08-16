@@ -27,6 +27,8 @@ pub fn get_drives() -> Vec<DriveInfo> {
         .map(|disk| {
             let mount_point = disk.mount_point().to_string_lossy().into_owned();
             let drive_letter = mount_point.trim_end_matches(['\\', '/']).to_owned();
+            let device_id =
+                volume_id(&mount_point).unwrap_or_else(|| drive_letter.to_ascii_lowercase());
             let volume_label = volume_label(&mount_point);
             let reported_name = disk.name().to_string_lossy();
             let drive_name = physical_disk_number(&format!(r"\\.\{drive_letter}"))
@@ -44,7 +46,7 @@ pub fn get_drives() -> Vec<DriveInfo> {
             let total_bytes = disk.total_space();
 
             DriveInfo {
-                drive_id: String::new(),
+                device_id,
                 drive_name,
                 partition_name,
                 file_system: disk.file_system().to_string_lossy().into_owned(),
@@ -56,7 +58,7 @@ pub fn get_drives() -> Vec<DriveInfo> {
         })
         .collect::<Vec<_>>();
 
-    drives.sort_by(|left, right| left.drive_id.cmp(&right.drive_id));
+    drives.sort_by(|left, right| left.device_id.cmp(&right.device_id));
     drives
 }
 
@@ -130,6 +132,27 @@ fn volume_label(mount_point: &str) -> Option<String> {
     }
     .ok()
     .and_then(|_| string_from_wide(&volume_label))
+}
+
+fn volume_id(mount_point: &str) -> Option<String> {
+    let mount_point = wide(mount_point);
+    let mut serial_number = 0u32;
+
+    // SAFETY: the mount point is null terminated and the serial-number output
+    // remains valid for the duration of the call.
+    unsafe {
+        GetVolumeInformationW(
+            PCWSTR(mount_point.as_ptr()),
+            None,
+            Some(&mut serial_number),
+            None,
+            None,
+            None,
+        )
+    }
+    .ok()?;
+
+    Some(format!("volume-{serial_number:08x}"))
 }
 
 fn physical_disk_number(volume_path: &str) -> Option<u32> {

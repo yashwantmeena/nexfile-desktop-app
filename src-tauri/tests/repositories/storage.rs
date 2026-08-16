@@ -17,6 +17,7 @@ fn saves_and_lists_drives() {
     let path = test_database_path();
     let drive = DriveMetadata {
         drive_id: "c".to_owned(),
+        device_id: "device-c".to_owned(),
         drive_name: "Test SSD".to_owned(),
         partition_name: "System (C:)".to_owned(),
         app_limit_bytes: Some(100),
@@ -30,6 +31,11 @@ fn saves_and_lists_drives() {
         let repository = RedbStorageRepository::open(&path).expect("repository should open");
         repository.save(&drive).expect("drive should save");
         assert_eq!(repository.list().expect("drives should load"), vec![drive]);
+        assert!(repository.delete("c").expect("drive should delete"));
+        assert!(repository.list().expect("drives should load").is_empty());
+        assert!(!repository
+            .delete("c")
+            .expect("missing delete should succeed"));
     }
 
     std::fs::remove_file(path).expect("test database should be removable");
