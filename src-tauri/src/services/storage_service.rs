@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{AppError, AppResult};
 use crate::mappers::storage::{disconnected_drive, merge_connected_drive, storage_data};
-use crate::models::storage::{DriveInfo, DriveMetadata, StorageData};
+use crate::models::storage::{DriveConfigurationUpdate, DriveInfo, DriveMetadata, StorageData};
 use crate::repositories::storage::RedbStorageRepository;
 use crate::system::filesystem::{get_drives, read_file, write_file};
 
@@ -131,6 +131,91 @@ impl StorageService {
         self.get_storage_data()
     }
 
+    pub fn update_drive_configuration(
+        &self,
+        updates: &[DriveConfigurationUpdate],
+    ) -> AppResult<StorageData> {
+        if updates.is_empty() {
+            return Err(AppError::validation(
+                "At least one mounted drive is required.",
+            ));
+        }
+
+        let mut unique_drive_ids = HashSet::new();
+        for update in updates {
+            let drive_id = update.drive_id.trim();
+            if drive_id.is_empty() {
+                return Err(AppError::validation("A drive ID is required."));
+            }
+            if !unique_drive_ids.insert(drive_id) {
+                return Err(AppError::validation(
+                    "Each drive can appear only once in the priority order.",
+                ));
+            }
+        }
+
+        let mut saved_drives = self.repository.list()?;
+        let mut updated_drives = Vec::with_capacity(updates.len());
+
+        for (index, update) in updates.iter().enumerate() {
+            let drive_id = update.drive_id.trim();
+            let drive = saved_drives
+                .iter_mut()
+                .find(|drive| drive.drive_id == drive_id)
+                .ok_or_else(|| AppError::validation("The selected drive is not saved."))?;
+
+            if !drive.is_mounted {
+                return Err(AppError::validation(
+                    "Only mounted drives can have a storage priority.",
+                ));
+            }
+
+            drive.priority = u32::try_from(index + 1)
+                .map_err(|_| AppError::validation("Too many drives were provided."))?;
+            drive.app_limit_bytes = update.app_limit_bytes;
+            updated_drives.push(drive.clone());
+        }
+
+        let updated_by_id = updated_drives
+            .iter()
+            .map(|drive| (drive.drive_id.as_str(), drive))
+            .collect::<HashMap<_, _>>();
+        let mut metadata_updates = Vec::new();
+
+        for connected_drive in get_drives() {
+            let Some(mut metadata) =
+                read_drive_metadata(&connected_drive, &self.system_metadata_root)
+            else {
+                continue;
+            };
+            let Some(updated) = updated_by_id.get(metadata.drive_id.as_str()) else {
+                continue;
+            };
+            if updated
+                .app_limit_bytes
+                .is_some_and(|limit| limit > connected_drive.total_bytes)
+            {
+                return Err(AppError::validation(
+                    "A drive storage limit cannot exceed its total capacity.",
+                ));
+            }
+
+            metadata.priority = updated.priority;
+            metadata.app_limit_bytes = updated.app_limit_bytes;
+            metadata_updates.push((
+                metadata_path(&connected_drive, &self.system_metadata_root),
+                metadata,
+            ));
+        }
+
+        for (path, metadata) in metadata_updates {
+            write_metadata(&path, &metadata)?;
+        }
+
+        self.repository.save_many(&updated_drives)?;
+        self.get_storage_data()
+    }
+
     pub fn remove_drive(&self, drive_id: &str) -> AppResult<StorageData> {
         let drive_id = drive_id.trim();
         if drive_id.is_empty() {
@@ -198,7 +283,7 @@ fn metadata_for_mount(
             drive_id: uuid::Uuid::new_v4().to_string(),
             drive_name: drive.drive_name.clone(),
             partition_name: drive.partition_name.clone(),
-            app_limit_bytes: None,
+            app_limit_bytes: Some(drive.total_bytes),
             file_count: 0,
             app_used_bytes: 0,
             priority: next_priority,
@@ -211,6 +296,9 @@ fn metadata_for_mount(
     }
     if metadata.partition_name.trim().is_empty() {
         metadata.partition_name = drive.partition_name.clone();
+    }
+    if metadata.app_limit_bytes.is_none() {
+        metadata.app_limit_bytes = Some(drive.total_bytes);
     }
     metadata.priority = if metadata_matches_saved {
         saved

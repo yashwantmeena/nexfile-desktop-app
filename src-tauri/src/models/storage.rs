@@ -2,6 +2,13 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DriveConfigurationUpdate {
+    pub drive_id: String,
+    pub app_limit_bytes: Option<u64>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DriveMetadata {

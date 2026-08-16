@@ -5,7 +5,7 @@ import type { AppNavigationItem } from "@/types/navigation";
 import { DriveTable } from "./components/DriveTable";
 import { StorageHeader } from "./components/StorageHeader";
 import { StorageOverview } from "./components/StorageOverview";
-import type { StorageData, StorageDrive } from "./types/storage";
+import type { DriveConfigurationUpdate, StorageData, StorageDrive } from "./types/storage";
 import "./storage.css";
 
 interface StoragePageProps {
@@ -74,9 +74,19 @@ export function StoragePage({ activeNavigation, onNavigationChange }: StoragePag
     () => storageData.drives.filter((drive) => !drive.isConnected),
     [storageData.drives],
   );
+  const hasInvalidLimits = mountedDrives.some((drive) => (
+    drive.appLimitBytes !== undefined && drive.appLimitBytes > drive.totalBytes
+  ));
 
   const updateDrives = (update: (drives: StorageDrive[]) => StorageDrive[]) => {
-    setStorageData((current) => ({ ...current, drives: update(current.drives) }));
+    setStorageData((current) => {
+      const drives = update(current.drives);
+      return {
+        ...current,
+        appLimitBytes: drives.reduce((total, drive) => total + (drive.appLimitBytes ?? 0), 0),
+        drives,
+      };
+    });
   };
 
   const mountDrive = async (deviceId: string | null, partitionName: string) => {
@@ -124,6 +134,26 @@ export function StoragePage({ activeNavigation, onNavigationChange }: StoragePag
     }
   };
 
+  const saveChanges = async () => {
+    setIsScanning(true);
+    setLoadError(undefined);
+    try {
+      const drives: DriveConfigurationUpdate[] = mountedDrives.map((drive) => ({
+        driveId: drive.driveId,
+        appLimitBytes: drive.appLimitBytes ?? null,
+      }));
+      const data = await invoke<StorageData>("update_drive_configuration", {
+        drives,
+      });
+      setStorageData(data);
+      setHasUnsavedChanges(false);
+    } catch (error) {
+      setLoadError(getErrorMessage(error));
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
   const movePriority = (id: string, direction: "up" | "down") => {
     const currentIndex = mountedDrives.findIndex((drive) => drive.driveId === id);
     const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
@@ -140,6 +170,15 @@ export function StoragePage({ activeNavigation, onNavigationChange }: StoragePag
     setHasUnsavedChanges(true);
   };
 
+  const changeLimit = (id: string, appLimitBytes: number | undefined) => {
+    updateDrives((drives) => drives.map((drive) => (
+      drive.driveId === id
+        ? { ...drive, appLimitBytes }
+        : drive
+    )));
+    setHasUnsavedChanges(true);
+  };
+
   return (
     <div className="nexfile-app">
       <AppSidebar activeItem={activeNavigation} onActiveItemChange={onNavigationChange} />
@@ -147,8 +186,9 @@ export function StoragePage({ activeNavigation, onNavigationChange }: StoragePag
         <div className="storage-page">
           <StorageHeader
             hasUnsavedChanges={hasUnsavedChanges}
+            hasValidationError={hasInvalidLimits}
             isScanning={isScanning}
-            onSave={() => setHasUnsavedChanges(false)}
+            onSave={() => void saveChanges()}
             onScan={() => void loadStorageData()}
           />
           {loadError && <p className="storage-load-error" role="alert">{loadError}</p>}
@@ -160,6 +200,7 @@ export function StoragePage({ activeNavigation, onNavigationChange }: StoragePag
             onUnmount={unmountDrive}
             onRemove={removeDrive}
             onMovePriority={movePriority}
+            onLimitChange={changeLimit}
           />
           <DriveTable
             title="Unmounted Drives"
@@ -171,6 +212,7 @@ export function StoragePage({ activeNavigation, onNavigationChange }: StoragePag
             title="Unavailable Drives"
             description="Saved drives that are not currently connected."
             drives={unavailableDrives}
+            onRemove={removeDrive}
           />
         </div>
       </main>

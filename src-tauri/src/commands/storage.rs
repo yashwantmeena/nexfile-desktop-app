@@ -2,7 +2,7 @@ use tauri::State;
 
 use crate::app::state::AppState;
 use crate::error::AppResult;
-use crate::models::storage::StorageData;
+use crate::models::storage::{DriveConfigurationUpdate, StorageData};
 
 #[tauri::command]
 pub fn get_storage_data(state: State<'_, AppState>) -> AppResult<StorageData> {
@@ -23,6 +23,14 @@ pub fn mount_drive(
 #[tauri::command]
 pub fn unmount_drive(drive_id: String, state: State<'_, AppState>) -> AppResult<StorageData> {
     state.storage.unmount_drive(&drive_id)
+}
+
+#[tauri::command]
+pub fn update_drive_configuration(
+    drives: Vec<DriveConfigurationUpdate>,
+    state: State<'_, AppState>,
+) -> AppResult<StorageData> {
+    state.storage.update_drive_configuration(&drives)
 }
 
 #[tauri::command]

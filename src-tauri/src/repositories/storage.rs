@@ -25,6 +25,28 @@ impl RedbStorageRepository {
         self.replace(None, drive)
     }
 
+    pub fn save_many(&self, drives: &[DriveMetadata]) -> AppResult<()> {
+        let encoded_drives = drives
+            .iter()
+            .map(|drive| {
+                serde_json::to_vec(drive)
+                    .map(|encoded| (drive.drive_id.as_str(), encoded))
+                    .map_err(AppError::serialization)
+            })
+            .collect::<AppResult<Vec<_>>>()?;
+
+        let write = self.database.begin_write().map_err(AppError::database)?;
+        {
+            let mut table = write.open_table(DRIVES_TABLE).map_err(AppError::database)?;
+            for (drive_id, encoded) in encoded_drives {
+                table
+                    .insert(drive_id, encoded.as_slice())
+                    .map_err(AppError::database)?;
+            }
+        }
+        write.commit().map_err(AppError::database)
+    }
+
     pub fn replace(&self, previous_drive_id: Option<&str>, drive: &DriveMetadata) -> AppResult<()> {
         let encoded = serde_json::to_vec(drive).map_err(AppError::serialization)?;
         let write = self.database.begin_write().map_err(AppError::database)?;

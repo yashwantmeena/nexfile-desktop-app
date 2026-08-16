@@ -27,3 +27,8 @@ export interface StorageData {
   appUsedBytes: number;
   drives: StorageDrive[];
 }
+
+export interface DriveConfigurationUpdate {
+  driveId: string;
+  appLimitBytes: number | null;
+}

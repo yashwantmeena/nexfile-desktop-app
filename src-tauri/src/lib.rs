@@ -9,7 +9,9 @@ mod system;
 pub mod utils;
 
 pub use error::AppError;
-pub use models::storage::{DriveInfo, DriveMetadata, StorageData, StorageDrive};
+pub use models::storage::{
+    DriveConfigurationUpdate, DriveInfo, DriveMetadata, StorageData, StorageDrive,
+};
 pub use repositories::storage::RedbStorageRepository;
 pub use services::storage_service::StorageService;
 pub use system::filesystem::read_file;
@@ -23,6 +25,7 @@ pub fn run() {
             commands::storage::get_storage_data,
             commands::storage::mount_drive,
             commands::storage::unmount_drive,
+            commands::storage::update_drive_configuration,
             commands::storage::remove_drive
         ])
         .run(tauri::generate_context!())

@@ -1,6 +1,8 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use nexfile_desktop_app_lib::{DriveMetadata, RedbStorageRepository, StorageService};
+use nexfile_desktop_app_lib::{
+    DriveConfigurationUpdate, DriveMetadata, RedbStorageRepository, StorageService,
+};
 
 fn test_root(name: &str) -> std::path::PathBuf {
     let unique = SystemTime::now()
@@ -156,6 +158,7 @@ fn mounts_a_connected_drive_and_creates_its_metadata() {
         .expect("system drive should remain connected");
     assert!(mounted.is_mounted);
     assert_eq!(mounted.priority, 1);
+    assert_eq!(mounted.app_limit_bytes, Some(mounted.total_bytes));
 
     let metadata_path = root.join("nexfile").join("drive_metadata.json");
     let encoded = std::fs::read(metadata_path).expect("metadata should be written");
@@ -166,6 +169,7 @@ fn mounts_a_connected_drive_and_creates_its_metadata() {
         serde_json::from_slice::<DriveMetadata>(&encoded).expect("metadata should deserialize");
     assert!(metadata.is_mounted);
     assert_eq!(metadata.drive_id, mounted.drive_id);
+    assert_eq!(metadata.app_limit_bytes, Some(mounted.total_bytes));
     uuid::Uuid::parse_str(&metadata.drive_id).expect("new drive ID should be a UUID");
 
     std::fs::remove_dir_all(root).expect("test directory should be removable");
@@ -179,7 +183,7 @@ fn mounts_matching_saved_and_file_metadata_without_changing_usage() {
         drive_id: "matching-drive".to_owned(),
         drive_name: "Saved SSD".to_owned(),
         partition_name: "Saved partition".to_owned(),
-        app_limit_bytes: Some(1_000),
+        app_limit_bytes: None,
         file_count: 25,
         app_used_bytes: 400,
         priority: 7,
@@ -213,6 +217,7 @@ fn mounts_matching_saved_and_file_metadata_without_changing_usage() {
     assert!(mounted.is_mounted);
     assert_eq!(mounted.file_count, metadata.file_count);
     assert_eq!(mounted.app_used_bytes, Some(metadata.app_used_bytes));
+    assert_eq!(mounted.app_limit_bytes, Some(mounted.total_bytes));
     assert_eq!(mounted.priority, metadata.priority);
 
     std::fs::remove_dir_all(root).expect("test directory should be removable");
@@ -375,6 +380,88 @@ fn unmounts_a_saved_drive_by_changing_only_its_mounted_flag() {
     assert_eq!(
         repository.list().expect("saved drives should load"),
         vec![expected]
+    );
+    drop(repository);
+
+    std::fs::remove_dir_all(root).expect("test directory should be removable");
+}
+
+#[test]
+fn updates_mounted_drive_configuration_in_requested_order() {
+    let root = test_root("update-priorities");
+    let database_path = root.join("test.redb");
+    std::fs::create_dir_all(&root).expect("test directory should be created");
+
+    let first = DriveMetadata {
+        drive_id: "first-drive".to_owned(),
+        drive_name: "First SSD".to_owned(),
+        partition_name: "First partition".to_owned(),
+        app_limit_bytes: None,
+        file_count: 0,
+        app_used_bytes: 0,
+        priority: 1,
+        is_mounted: true,
+    };
+    let second = DriveMetadata {
+        drive_id: "second-drive".to_owned(),
+        drive_name: "Second SSD".to_owned(),
+        partition_name: "Second partition".to_owned(),
+        app_limit_bytes: None,
+        file_count: 0,
+        app_used_bytes: 0,
+        priority: 2,
+        is_mounted: true,
+    };
+
+    {
+        let repository =
+            RedbStorageRepository::open(&database_path).expect("repository should open");
+        repository.save(&first).expect("first drive should save");
+        repository.save(&second).expect("second drive should save");
+
+        StorageService::new(repository, root.clone())
+            .update_drive_configuration(&[
+                DriveConfigurationUpdate {
+                    drive_id: second.drive_id.clone(),
+                    app_limit_bytes: Some(2_000),
+                },
+                DriveConfigurationUpdate {
+                    drive_id: first.drive_id.clone(),
+                    app_limit_bytes: Some(1_000),
+                },
+            ])
+            .expect("configuration should update");
+    }
+
+    let repository = RedbStorageRepository::open(&database_path).expect("repository should reopen");
+    let saved = repository.list().expect("saved drives should load");
+    assert_eq!(
+        saved
+            .iter()
+            .find(|drive| drive.drive_id == first.drive_id)
+            .map(|drive| drive.priority),
+        Some(2)
+    );
+    assert_eq!(
+        saved
+            .iter()
+            .find(|drive| drive.drive_id == second.drive_id)
+            .map(|drive| drive.priority),
+        Some(1)
+    );
+    assert_eq!(
+        saved
+            .iter()
+            .find(|drive| drive.drive_id == first.drive_id)
+            .and_then(|drive| drive.app_limit_bytes),
+        Some(1_000)
+    );
+    assert_eq!(
+        saved
+            .iter()
+            .find(|drive| drive.drive_id == second.drive_id)
+            .and_then(|drive| drive.app_limit_bytes),
+        Some(2_000)
     );
     drop(repository);
 
