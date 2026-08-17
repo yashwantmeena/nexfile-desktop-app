@@ -1,3 +1,4 @@
+pub mod ai_models;
 mod app;
 mod commands;
 mod error;
@@ -8,6 +9,11 @@ mod services;
 mod system;
 pub mod utils;
 
+pub use ai_models::clip::{ClipConfig, ClipError, ClipModel, ClipModelPaths, Embedding};
+pub use ai_models::florence2::{
+    Florence2Config, Florence2Error, Florence2Model, Florence2ModelPaths, Florence2Output,
+    Florence2Task,
+};
 pub use error::AppError;
 pub use models::storage::{
     DriveConfigurationUpdate, DriveInfo, DriveMetadata, StorageData, StorageDrive,
