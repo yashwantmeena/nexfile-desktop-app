@@ -43,7 +43,8 @@ pub fn get_drives() -> Vec<DriveInfo> {
                 Some(label) => format!("{label} ({drive_letter})"),
                 None => drive_letter,
             };
-            let total_bytes = disk.total_space();
+            let total_bytes = storage_bytes(disk.total_space());
+            let available_bytes = storage_bytes(disk.available_space());
 
             DriveInfo {
                 device_id,
@@ -51,7 +52,7 @@ pub fn get_drives() -> Vec<DriveInfo> {
                 partition_name,
                 file_system: disk.file_system().to_string_lossy().into_owned(),
                 total_bytes,
-                system_used_bytes: total_bytes.saturating_sub(disk.available_space()),
+                system_used_bytes: total_bytes.saturating_sub(available_bytes),
                 is_system,
                 mount_point: disk.mount_point().to_path_buf(),
             }
@@ -60,6 +61,10 @@ pub fn get_drives() -> Vec<DriveInfo> {
 
     drives.sort_by(|left, right| left.device_id.cmp(&right.device_id));
     drives
+}
+
+fn storage_bytes(value: u64) -> i64 {
+    i64::try_from(value).unwrap_or(i64::MAX)
 }
 
 fn system_drive() -> Option<String> {

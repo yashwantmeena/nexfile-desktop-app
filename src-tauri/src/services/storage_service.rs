@@ -4,29 +4,30 @@ use std::path::{Path, PathBuf};
 use crate::error::{AppError, AppResult};
 use crate::mappers::storage::{disconnected_drive, merge_connected_drive, storage_data};
 use crate::models::storage::{DriveConfigurationUpdate, DriveInfo, DriveMetadata, StorageData};
-use crate::repositories::storage::RedbStorageRepository;
+use crate::repositories::storage::SqliteStorageRepository;
 use crate::system::filesystem::{get_drives, read_file, write_file};
 
 const METADATA_DIRECTORY: &str = "nexfile";
 const METADATA_FILE: &str = "drive_metadata.json";
 
 pub struct StorageService {
-    repository: RedbStorageRepository,
+    repository: SqliteStorageRepository,
     system_metadata_root: PathBuf,
 }
 
 impl StorageService {
-    pub fn new(repository: RedbStorageRepository, system_metadata_root: PathBuf) -> Self {
+    pub fn new(repository: SqliteStorageRepository, system_metadata_root: PathBuf) -> Self {
         Self {
             repository,
             system_metadata_root,
         }
     }
 
-    pub fn get_storage_data(&self) -> AppResult<StorageData> {
+    pub async fn get_storage_data(&self) -> AppResult<StorageData> {
         let saved_drives = self
             .repository
-            .list()?
+            .list()
+            .await?
             .into_iter()
             .map(|drive| (drive.drive_id.clone(), drive))
             .collect::<HashMap<_, _>>();
@@ -65,7 +66,7 @@ impl StorageService {
         Ok(storage_data(drives))
     }
 
-    pub fn mount_drive(
+    pub async fn mount_drive(
         &self,
         device_id: Option<&str>,
         partition_name: &str,
@@ -78,7 +79,7 @@ impl StorageService {
             ));
         }
 
-        let saved_drives = self.repository.list()?;
+        let saved_drives = self.repository.list().await?;
         let drive = get_drives()
             .into_iter()
             .find(|drive| {
@@ -102,18 +103,21 @@ impl StorageService {
             .max()
             .unwrap_or(0)
             .saturating_add(1);
-        let previous_drive_id = saved.map(|saved| saved.drive_id.clone());
+        let was_saved = saved.is_some();
         let metadata = metadata_for_mount(&drive, saved, metadata, next_priority);
         let metadata_file_path = metadata_path(&drive, &self.system_metadata_root);
 
+        let metadata = if was_saved {
+            self.repository.update(&metadata).await?
+        } else {
+            self.repository.insert(&metadata).await?
+        };
         write_metadata(&metadata_file_path, &metadata)?;
-        self.repository
-            .replace(previous_drive_id.as_deref(), &metadata)?;
 
-        self.get_storage_data()
+        self.get_storage_data().await
     }
 
-    pub fn unmount_drive(&self, drive_id: &str) -> AppResult<StorageData> {
+    pub async fn unmount_drive(&self, drive_id: &str) -> AppResult<StorageData> {
         let drive_id = drive_id.trim();
         if drive_id.is_empty() {
             return Err(AppError::validation("A drive ID is required."));
@@ -121,17 +125,16 @@ impl StorageService {
 
         let mut drive = self
             .repository
-            .list()?
-            .into_iter()
-            .find(|drive| drive.drive_id == drive_id)
+            .get(drive_id)
+            .await?
             .ok_or_else(|| AppError::validation("The selected drive is not saved."))?;
 
         drive.is_mounted = false;
-        self.repository.save(&drive)?;
-        self.get_storage_data()
+        self.repository.update(&drive).await?;
+        self.get_storage_data().await
     }
 
-    pub fn update_drive_configuration(
+    pub async fn update_drive_configuration(
         &self,
         updates: &[DriveConfigurationUpdate],
     ) -> AppResult<StorageData> {
@@ -152,9 +155,14 @@ impl StorageService {
                     "Each drive can appear only once in the priority order.",
                 ));
             }
+            if update.app_limit_bytes.is_some_and(|limit| limit < 0) {
+                return Err(AppError::validation(
+                    "A drive storage limit cannot be negative.",
+                ));
+            }
         }
 
-        let mut saved_drives = self.repository.list()?;
+        let mut saved_drives = self.repository.list().await?;
         let mut updated_drives = Vec::with_capacity(updates.len());
 
         for (index, update) in updates.iter().enumerate() {
@@ -170,7 +178,7 @@ impl StorageService {
                 ));
             }
 
-            drive.priority = u32::try_from(index + 1)
+            drive.priority = i64::try_from(index + 1)
                 .map_err(|_| AppError::validation("Too many drives were provided."))?;
             drive.app_limit_bytes = update.app_limit_bytes;
             updated_drives.push(drive.clone());
@@ -208,25 +216,37 @@ impl StorageService {
             ));
         }
 
-        for (path, metadata) in metadata_updates {
-            write_metadata(&path, &metadata)?;
+        let mut persisted_by_id = HashMap::new();
+        for drive in &updated_drives {
+            let persisted = self.repository.update(drive).await?;
+            persisted_by_id.insert(persisted.drive_id.clone(), persisted);
         }
 
-        self.repository.save_many(&updated_drives)?;
-        self.get_storage_data()
+        for (path, mut metadata) in metadata_updates {
+            if let Some(persisted) = persisted_by_id.get(&metadata.drive_id) {
+                metadata.created_at_ms = persisted.created_at_ms;
+                metadata.updated_at_ms = persisted.updated_at_ms;
+            }
+            write_metadata(&path, &metadata)?;
+        }
+        self.get_storage_data().await
     }
 
-    pub fn remove_drive(&self, drive_id: &str) -> AppResult<StorageData> {
+    pub async fn remove_drive(&self, drive_id: &str) -> AppResult<StorageData> {
         let drive_id = drive_id.trim();
         if drive_id.is_empty() {
             return Err(AppError::validation("A drive ID is required."));
         }
 
-        if !self.repository.delete(drive_id)? {
+        if !self.repository.delete(drive_id).await? {
             return Err(AppError::validation("The selected drive is not saved."));
         }
 
-        self.get_storage_data()
+        self.get_storage_data().await
+    }
+
+    pub async fn close(&self) {
+        self.repository.close().await;
     }
 }
 
@@ -256,7 +276,7 @@ fn metadata_for_mount(
     drive: &DriveInfo,
     saved: Option<&DriveMetadata>,
     file_metadata: Option<DriveMetadata>,
-    next_priority: u32,
+    next_priority: i64,
 ) -> DriveMetadata {
     let metadata_matches_saved =
         saved

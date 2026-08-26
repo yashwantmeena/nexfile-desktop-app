@@ -9,24 +9,27 @@ mod services;
 mod system;
 pub mod utils;
 
+use tauri::Manager;
+
 pub use ai_models::clip::{ClipConfig, ClipError, ClipModel, ClipModelPaths, Embedding};
 pub use ai_models::florence2::{
     Florence2Config, Florence2Error, Florence2Model, Florence2ModelPaths, Florence2Output,
     Florence2Task,
 };
 pub use error::AppError;
+pub use models::background_process::{BackgroundProcess, BackgroundProcessStatus};
 pub use models::storage::{
     DriveConfigurationUpdate, DriveInfo, DriveMetadata, StorageData, StorageDrive,
 };
-pub use repositories::background_processing::RedbBackgroundProcessingRepository;
-pub use repositories::database::RedbDatabase;
-pub use repositories::storage::RedbStorageRepository;
+pub use repositories::background_processing::SqliteBackgroundProcessingRepository;
+pub use repositories::database::SqliteDatabase;
+pub use repositories::storage::SqliteStorageRepository;
 pub use services::storage_service::StorageService;
 pub use system::filesystem::read_file;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| app::lifecycle::initialize(app).map_err(Into::into))
         .invoke_handler(tauri::generate_handler![
@@ -36,6 +39,13 @@ pub fn run() {
             commands::storage::update_drive_configuration,
             commands::storage::remove_drive
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|app_handle, event| {
+        if matches!(event, tauri::RunEvent::Exit) {
+            let state = app_handle.state::<app::state::AppState>();
+            tauri::async_runtime::block_on(state.storage.close());
+        }
+    });
 }

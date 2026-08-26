@@ -1,24 +1,46 @@
 use std::path::Path;
-use std::sync::Arc;
+use std::time::Duration;
 
-use redb::Database;
+use sqlx::migrate::Migrator;
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
+use sqlx::SqlitePool;
 
 use crate::error::{AppError, AppResult};
 
+static MIGRATOR: Migrator = sqlx::migrate!("./migrations");
+
 #[derive(Clone)]
-pub struct RedbDatabase {
-    inner: Arc<Database>,
+pub struct SqliteDatabase {
+    pool: SqlitePool,
 }
 
-impl RedbDatabase {
-    pub fn open(path: impl AsRef<Path>) -> AppResult<Self> {
-        let database = Database::create(path).map_err(AppError::database)?;
-        Ok(Self {
-            inner: Arc::new(database),
-        })
+impl SqliteDatabase {
+    pub async fn open(path: impl AsRef<Path>) -> AppResult<Self> {
+        let options = SqliteConnectOptions::new()
+            .filename(path)
+            .create_if_missing(true)
+            .foreign_keys(true)
+            .journal_mode(SqliteJournalMode::Wal)
+            .synchronous(SqliteSynchronous::Full)
+            .busy_timeout(Duration::from_secs(5));
+        let pool = SqlitePoolOptions::new()
+            .min_connections(1)
+            .max_connections(5)
+            .acquire_timeout(Duration::from_secs(5))
+            .connect_with(options)
+            .await
+            .map_err(AppError::database)?;
+
+        MIGRATOR.run(&pool).await.map_err(AppError::database)?;
+
+        Ok(Self { pool })
     }
 
-    pub(crate) fn inner(&self) -> &Database {
-        self.inner.as_ref()
+    pub(crate) fn pool(&self) -> &SqlitePool {
+        &self.pool
+    }
+
+    pub(crate) async fn close(&self) {
+        self.pool.close().await;
     }
 }

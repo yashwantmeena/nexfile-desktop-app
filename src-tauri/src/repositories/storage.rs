@@ -1,136 +1,104 @@
 use std::path::Path;
 
-use redb::{ReadableDatabase, ReadableTable, TableDefinition};
-
 use crate::error::{AppError, AppResult};
 use crate::models::storage::DriveMetadata;
-use crate::utils::time::current_time_millis;
 
-use super::database::RedbDatabase;
+use super::database::SqliteDatabase;
 
-const DRIVES_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("drives");
-
-pub struct RedbStorageRepository {
-    database: RedbDatabase,
+pub struct SqliteStorageRepository {
+    database: SqliteDatabase,
 }
 
-impl RedbStorageRepository {
-    pub fn open(path: impl AsRef<Path>) -> AppResult<Self> {
-        Self::new(RedbDatabase::open(path)?)
+impl SqliteStorageRepository {
+    pub async fn open(path: impl AsRef<Path>) -> AppResult<Self> {
+        Ok(Self::new(SqliteDatabase::open(path).await?))
     }
 
-    pub fn new(database: RedbDatabase) -> AppResult<Self> {
-        let write = database.inner().begin_write().map_err(AppError::database)?;
-        write.open_table(DRIVES_TABLE).map_err(AppError::database)?;
-        write.commit().map_err(AppError::database)?;
-
-        Ok(Self { database })
+    pub fn new(database: SqliteDatabase) -> Self {
+        Self { database }
     }
 
-    pub fn save(&self, drive: &DriveMetadata) -> AppResult<()> {
-        self.replace(None, drive)
+    pub async fn insert(&self, drive: &DriveMetadata) -> AppResult<DriveMetadata> {
+        sqlx::query_as::<_, DriveMetadata>(
+            "INSERT INTO drives (
+                drive_id,
+                drive_name,
+                partition_name,
+                app_limit_bytes,
+                file_count,
+                app_used_bytes,
+                priority,
+                is_mounted
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+            RETURNING *",
+        )
+        .bind(&drive.drive_id)
+        .bind(&drive.drive_name)
+        .bind(&drive.partition_name)
+        .bind(drive.app_limit_bytes)
+        .bind(drive.file_count)
+        .bind(drive.app_used_bytes)
+        .bind(drive.priority)
+        .bind(drive.is_mounted)
+        .fetch_one(self.database.pool())
+        .await
+        .map_err(AppError::database)
     }
 
-    pub fn save_many(&self, drives: &[DriveMetadata]) -> AppResult<()> {
-        let write = self
-            .database
-            .inner()
-            .begin_write()
+    pub async fn update(&self, drive: &DriveMetadata) -> AppResult<DriveMetadata> {
+        sqlx::query_as::<_, DriveMetadata>(
+            "UPDATE drives SET
+                drive_name = ?1,
+                partition_name = ?2,
+                app_limit_bytes = ?3,
+                file_count = ?4,
+                app_used_bytes = ?5,
+                priority = ?6,
+                is_mounted = ?7,
+                updated_at_ms = CAST(
+                    (julianday('now') - 2440587.5) * 86400000 AS INTEGER
+                )
+            WHERE drive_id = ?8
+            RETURNING *",
+        )
+        .bind(&drive.drive_name)
+        .bind(&drive.partition_name)
+        .bind(drive.app_limit_bytes)
+        .bind(drive.file_count)
+        .bind(drive.app_used_bytes)
+        .bind(drive.priority)
+        .bind(drive.is_mounted)
+        .bind(&drive.drive_id)
+        .fetch_one(self.database.pool())
+        .await
+        .map_err(AppError::database)
+    }
+
+    pub async fn get(&self, drive_id: &str) -> AppResult<Option<DriveMetadata>> {
+        sqlx::query_as::<_, DriveMetadata>("SELECT * FROM drives WHERE drive_id = ?1")
+            .bind(drive_id)
+            .fetch_optional(self.database.pool())
+            .await
+            .map_err(AppError::database)
+    }
+
+    pub async fn list(&self) -> AppResult<Vec<DriveMetadata>> {
+        sqlx::query_as::<_, DriveMetadata>("SELECT * FROM drives ORDER BY drive_id")
+            .fetch_all(self.database.pool())
+            .await
+            .map_err(AppError::database)
+    }
+
+    pub async fn delete(&self, drive_id: &str) -> AppResult<bool> {
+        let result = sqlx::query("DELETE FROM drives WHERE drive_id = ?1")
+            .bind(drive_id)
+            .execute(self.database.pool())
+            .await
             .map_err(AppError::database)?;
-        {
-            let mut table = write.open_table(DRIVES_TABLE).map_err(AppError::database)?;
-            for drive in drives {
-                let existing = read_drive(&table, drive.drive_id.as_str())?;
-                let timestamped = timestamped_drive(drive, existing.as_ref())?;
-                let encoded = serde_json::to_vec(&timestamped).map_err(AppError::serialization)?;
-                table
-                    .insert(drive.drive_id.as_str(), encoded.as_slice())
-                    .map_err(AppError::database)?;
-            }
-        }
-        write.commit().map_err(AppError::database)
+        Ok(result.rows_affected() > 0)
     }
 
-    pub fn replace(&self, previous_drive_id: Option<&str>, drive: &DriveMetadata) -> AppResult<()> {
-        let write = self
-            .database
-            .inner()
-            .begin_write()
-            .map_err(AppError::database)?;
-        {
-            let mut table = write.open_table(DRIVES_TABLE).map_err(AppError::database)?;
-            let existing =
-                read_drive(&table, previous_drive_id.unwrap_or(drive.drive_id.as_str()))?;
-            let timestamped = timestamped_drive(drive, existing.as_ref())?;
-            let encoded = serde_json::to_vec(&timestamped).map_err(AppError::serialization)?;
-            if let Some(previous_drive_id) =
-                previous_drive_id.filter(|previous| *previous != drive.drive_id)
-            {
-                table
-                    .remove(previous_drive_id)
-                    .map_err(AppError::database)?;
-            }
-            table
-                .insert(drive.drive_id.as_str(), encoded.as_slice())
-                .map_err(AppError::database)?;
-        }
-        write.commit().map_err(AppError::database)
+    pub async fn close(&self) {
+        self.database.close().await;
     }
-
-    pub fn list(&self) -> AppResult<Vec<DriveMetadata>> {
-        let read = self
-            .database
-            .inner()
-            .begin_read()
-            .map_err(AppError::database)?;
-        let table = read.open_table(DRIVES_TABLE).map_err(AppError::database)?;
-        let mut drives = Vec::new();
-
-        for entry in table.iter().map_err(AppError::database)? {
-            let (_, value) = entry.map_err(AppError::database)?;
-            drives.push(serde_json::from_slice(value.value()).map_err(AppError::serialization)?);
-        }
-
-        Ok(drives)
-    }
-
-    pub fn delete(&self, drive_id: &str) -> AppResult<bool> {
-        let write = self
-            .database
-            .inner()
-            .begin_write()
-            .map_err(AppError::database)?;
-        let removed = {
-            let mut table = write.open_table(DRIVES_TABLE).map_err(AppError::database)?;
-            let removed = table.remove(drive_id).map_err(AppError::database)?;
-            removed.is_some()
-        };
-        write.commit().map_err(AppError::database)?;
-        Ok(removed)
-    }
-}
-
-fn read_drive(
-    table: &impl ReadableTable<&'static str, &'static [u8]>,
-    drive_id: &str,
-) -> AppResult<Option<DriveMetadata>> {
-    table
-        .get(drive_id)
-        .map_err(AppError::database)?
-        .map(|value| serde_json::from_slice(value.value()).map_err(AppError::serialization))
-        .transpose()
-}
-
-fn timestamped_drive(
-    drive: &DriveMetadata,
-    existing: Option<&DriveMetadata>,
-) -> AppResult<DriveMetadata> {
-    let now = current_time_millis()?;
-    let mut timestamped = drive.clone();
-    timestamped.created_at_ms = existing
-        .map(|drive| drive.created_at_ms)
-        .or_else(|| (drive.created_at_ms > 0).then_some(drive.created_at_ms))
-        .unwrap_or(now);
-    timestamped.updated_at_ms = now;
-    Ok(timestamped)
 }

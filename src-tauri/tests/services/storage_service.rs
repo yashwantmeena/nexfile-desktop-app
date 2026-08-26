@@ -1,7 +1,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use nexfile_desktop_app_lib::{
-    DriveConfigurationUpdate, DriveMetadata, RedbStorageRepository, StorageService,
+    DriveConfigurationUpdate, DriveMetadata, SqliteStorageRepository, StorageService,
 };
 
 fn test_root(name: &str) -> std::path::PathBuf {
@@ -22,8 +22,8 @@ fn write_drive_metadata(root: &std::path::Path, metadata: &DriveMetadata) {
     .expect("metadata should be written");
 }
 
-#[test]
-fn merges_database_os_and_drive_metadata() {
+#[tokio::test]
+async fn merges_database_os_and_drive_metadata() {
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system time should be valid")
@@ -33,7 +33,7 @@ fn merges_database_os_and_drive_metadata() {
         std::process::id()
     ));
     let metadata_directory = root.join("nexfile");
-    let database_path = root.join("test.redb");
+    let database_path = root.join("test.sqlite3");
     std::fs::create_dir_all(&metadata_directory).expect("metadata directory should be created");
 
     let metadata = DriveMetadata {
@@ -55,10 +55,11 @@ fn merges_database_os_and_drive_metadata() {
     .expect("metadata should be written");
 
     let data = {
-        let repository =
-            RedbStorageRepository::open(&database_path).expect("repository should open");
+        let repository = SqliteStorageRepository::open(&database_path)
+            .await
+            .expect("repository should open");
         repository
-            .save(&DriveMetadata {
+            .insert(&DriveMetadata {
                 drive_id: metadata.drive_id.clone(),
                 drive_name: metadata.drive_name.clone(),
                 partition_name: metadata.partition_name.clone(),
@@ -70,9 +71,10 @@ fn merges_database_os_and_drive_metadata() {
                 created_at_ms: 0,
                 updated_at_ms: 0,
             })
+            .await
             .expect("drive should save");
         repository
-            .save(&DriveMetadata {
+            .insert(&DriveMetadata {
                 drive_id: "missing-drive".to_owned(),
                 drive_name: "Disconnected SSD".to_owned(),
                 partition_name: "Archive".to_owned(),
@@ -84,11 +86,16 @@ fn merges_database_os_and_drive_metadata() {
                 created_at_ms: 0,
                 updated_at_ms: 0,
             })
+            .await
             .expect("missing drive should save");
 
-        StorageService::new(repository, root.clone())
+        let service = StorageService::new(repository, root.clone());
+        let data = service
             .get_storage_data()
-            .expect("drives should load")
+            .await
+            .expect("drives should load");
+        service.close().await;
+        data
     };
 
     let drives = &data.drives;
@@ -122,8 +129,8 @@ fn merges_database_os_and_drive_metadata() {
     std::fs::remove_dir_all(root).expect("test directory should be removable");
 }
 
-#[test]
-fn mounts_a_connected_drive_and_creates_its_metadata() {
+#[tokio::test]
+async fn mounts_a_connected_drive_and_creates_its_metadata() {
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system time should be valid")
@@ -132,15 +139,17 @@ fn mounts_a_connected_drive_and_creates_its_metadata() {
         "nexfile-mount-drive-{}-{unique}",
         std::process::id()
     ));
-    let database_path = root.join("test.redb");
+    let database_path = root.join("test.sqlite3");
     std::fs::create_dir_all(&root).expect("test directory should be created");
 
     let data = {
-        let repository =
-            RedbStorageRepository::open(&database_path).expect("repository should open");
+        let repository = SqliteStorageRepository::open(&database_path)
+            .await
+            .expect("repository should open");
         let service = StorageService::new(repository, root.clone());
         let initial = service
             .get_storage_data()
+            .await
             .expect("connected drives should load");
         let system_drive = initial
             .drives
@@ -152,9 +161,12 @@ fn mounts_a_connected_drive_and_creates_its_metadata() {
         assert!(system_drive.device_id.is_none());
         assert!(!system_drive.is_mounted);
         let partition_name = system_drive.partition_name.clone();
-        service
+        let data = service
             .mount_drive(None, &partition_name)
-            .expect("system drive should mount without an ID")
+            .await
+            .expect("system drive should mount without an ID");
+        service.close().await;
+        data
     };
 
     let mounted = data
@@ -181,10 +193,10 @@ fn mounts_a_connected_drive_and_creates_its_metadata() {
     std::fs::remove_dir_all(root).expect("test directory should be removable");
 }
 
-#[test]
-fn mounts_matching_saved_and_file_metadata_without_changing_usage() {
+#[tokio::test]
+async fn mounts_matching_saved_and_file_metadata_without_changing_usage() {
     let root = test_root("mount-matching");
-    let database_path = root.join("test.redb");
+    let database_path = root.join("test.sqlite3");
     let metadata = DriveMetadata {
         drive_id: "matching-drive".to_owned(),
         drive_name: "Saved SSD".to_owned(),
@@ -200,21 +212,29 @@ fn mounts_matching_saved_and_file_metadata_without_changing_usage() {
     write_drive_metadata(&root, &metadata);
 
     let data = {
-        let repository =
-            RedbStorageRepository::open(&database_path).expect("repository should open");
-        repository.save(&metadata).expect("drive should save");
+        let repository = SqliteStorageRepository::open(&database_path)
+            .await
+            .expect("repository should open");
+        repository
+            .insert(&metadata)
+            .await
+            .expect("drive should save");
         let service = StorageService::new(repository, root.clone());
         let partition_name = service
             .get_storage_data()
+            .await
             .expect("connected drives should load")
             .drives
             .into_iter()
             .find(|drive| drive.is_system)
             .expect("system drive should be connected")
             .partition_name;
-        service
+        let data = service
             .mount_drive(None, &partition_name)
-            .expect("matching drive should mount")
+            .await
+            .expect("matching drive should mount");
+        service.close().await;
+        data
     };
 
     let mounted = data
@@ -231,24 +251,28 @@ fn mounts_matching_saved_and_file_metadata_without_changing_usage() {
     std::fs::remove_dir_all(root).expect("test directory should be removable");
 }
 
-#[test]
-fn saves_file_metadata_without_replacing_a_different_drive_id() {
+#[tokio::test]
+async fn saves_file_metadata_without_replacing_a_different_drive_id() {
     let root = test_root("mount-mismatched-id");
-    let database_path = root.join("test.redb");
+    let database_path = root.join("test.sqlite3");
     std::fs::create_dir_all(&root).expect("test directory should be created");
 
     let detected_partition_name = {
-        let repository =
-            RedbStorageRepository::open(&database_path).expect("repository should open");
+        let repository = SqliteStorageRepository::open(&database_path)
+            .await
+            .expect("repository should open");
         let service = StorageService::new(repository, root.clone());
-        service
+        let partition_name = service
             .get_storage_data()
+            .await
             .expect("connected drives should load")
             .drives
             .into_iter()
             .find(|drive| drive.is_system)
             .expect("system drive should be connected")
-            .partition_name
+            .partition_name;
+        service.close().await;
+        partition_name
     };
     let file_metadata = DriveMetadata {
         drive_id: uuid::Uuid::new_v4().to_string(),
@@ -265,10 +289,11 @@ fn saves_file_metadata_without_replacing_a_different_drive_id() {
     write_drive_metadata(&root, &file_metadata);
 
     let data = {
-        let repository =
-            RedbStorageRepository::open(&database_path).expect("repository should reopen");
+        let repository = SqliteStorageRepository::open(&database_path)
+            .await
+            .expect("repository should reopen");
         repository
-            .save(&DriveMetadata {
+            .insert(&DriveMetadata {
                 drive_id: "old-drive-id".to_owned(),
                 drive_name: "Old SSD".to_owned(),
                 partition_name: file_metadata.partition_name.clone(),
@@ -280,10 +305,15 @@ fn saves_file_metadata_without_replacing_a_different_drive_id() {
                 created_at_ms: 0,
                 updated_at_ms: 0,
             })
+            .await
             .expect("mismatched drive should save");
-        StorageService::new(repository, root.clone())
+        let service = StorageService::new(repository, root.clone());
+        let data = service
             .mount_drive(None, &detected_partition_name)
-            .expect("metadata drive should mount")
+            .await
+            .expect("metadata drive should mount");
+        service.close().await;
+        data
     };
 
     let mounted = data
@@ -296,22 +326,24 @@ fn saves_file_metadata_without_replacing_a_different_drive_id() {
     assert_eq!(mounted.app_used_bytes, Some(file_metadata.app_used_bytes));
     assert_eq!(mounted.app_limit_bytes, file_metadata.app_limit_bytes);
 
-    let repository = RedbStorageRepository::open(&database_path).expect("repository should reopen");
-    let saved = repository.list().expect("saved drives should load");
+    let repository = SqliteStorageRepository::open(&database_path)
+        .await
+        .expect("repository should reopen");
+    let saved = repository.list().await.expect("saved drives should load");
     assert_eq!(saved.len(), 2);
     assert!(saved
         .iter()
         .any(|saved| saved.drive_id == file_metadata.drive_id));
     assert!(saved.iter().any(|saved| saved.drive_id == "old-drive-id"));
-    drop(repository);
+    repository.close().await;
 
     std::fs::remove_dir_all(root).expect("test directory should be removable");
 }
 
-#[test]
-fn saves_existing_file_metadata_when_the_database_has_no_entry() {
+#[tokio::test]
+async fn saves_existing_file_metadata_when_the_database_has_no_entry() {
     let root = test_root("mount-file-only");
-    let database_path = root.join("test.redb");
+    let database_path = root.join("test.sqlite3");
     let metadata = DriveMetadata {
         drive_id: uuid::Uuid::new_v4().to_string(),
         drive_name: "Portable SSD".to_owned(),
@@ -327,20 +359,25 @@ fn saves_existing_file_metadata_when_the_database_has_no_entry() {
     write_drive_metadata(&root, &metadata);
 
     let data = {
-        let repository =
-            RedbStorageRepository::open(&database_path).expect("repository should open");
+        let repository = SqliteStorageRepository::open(&database_path)
+            .await
+            .expect("repository should open");
         let service = StorageService::new(repository, root.clone());
         let partition_name = service
             .get_storage_data()
+            .await
             .expect("connected drives should load")
             .drives
             .into_iter()
             .find(|drive| drive.is_system)
             .expect("system drive should be connected")
             .partition_name;
-        service
+        let data = service
             .mount_drive(None, &partition_name)
-            .expect("file metadata should mount")
+            .await
+            .expect("file metadata should mount");
+        service.close().await;
+        data
     };
 
     let mounted = data
@@ -355,10 +392,10 @@ fn saves_existing_file_metadata_when_the_database_has_no_entry() {
     std::fs::remove_dir_all(root).expect("test directory should be removable");
 }
 
-#[test]
-fn unmounts_a_saved_drive_by_changing_only_its_mounted_flag() {
+#[tokio::test]
+async fn unmounts_a_saved_drive_by_changing_only_its_mounted_flag() {
     let root = test_root("unmount-drive");
-    let database_path = root.join("test.redb");
+    let database_path = root.join("test.sqlite3");
     let metadata = DriveMetadata {
         drive_id: uuid::Uuid::new_v4().to_string(),
         drive_name: "Mounted SSD".to_owned(),
@@ -368,18 +405,26 @@ fn unmounts_a_saved_drive_by_changing_only_its_mounted_flag() {
         app_used_bytes: 700,
         priority: 3,
         is_mounted: true,
-        created_at_ms: 0,
-        updated_at_ms: 0,
+        created_at_ms: 1,
+        updated_at_ms: 1,
     };
     write_drive_metadata(&root, &metadata);
 
     let data = {
-        let repository =
-            RedbStorageRepository::open(&database_path).expect("repository should open");
-        repository.save(&metadata).expect("drive should save");
-        StorageService::new(repository, root.clone())
+        let repository = SqliteStorageRepository::open(&database_path)
+            .await
+            .expect("repository should open");
+        repository
+            .insert(&metadata)
+            .await
+            .expect("drive should save");
+        let service = StorageService::new(repository, root.clone());
+        let data = service
             .unmount_drive(&metadata.drive_id)
-            .expect("saved drive should unmount")
+            .await
+            .expect("saved drive should unmount");
+        service.close().await;
+        data
     };
 
     let unmounted = data
@@ -390,11 +435,14 @@ fn unmounts_a_saved_drive_by_changing_only_its_mounted_flag() {
     assert!(unmounted.is_connected);
     assert!(!unmounted.is_mounted);
 
-    let repository = RedbStorageRepository::open(&database_path).expect("repository should reopen");
+    let repository = SqliteStorageRepository::open(&database_path)
+        .await
+        .expect("repository should reopen");
     let mut expected = metadata;
     expected.is_mounted = false;
     let saved = repository
         .list()
+        .await
         .expect("saved drives should load")
         .pop()
         .expect("unmounted drive should remain saved");
@@ -403,15 +451,15 @@ fn unmounts_a_saved_drive_by_changing_only_its_mounted_flag() {
     expected.created_at_ms = saved.created_at_ms;
     expected.updated_at_ms = saved.updated_at_ms;
     assert_eq!(saved, expected);
-    drop(repository);
+    repository.close().await;
 
     std::fs::remove_dir_all(root).expect("test directory should be removable");
 }
 
-#[test]
-fn updates_mounted_drive_configuration_in_requested_order() {
+#[tokio::test]
+async fn updates_mounted_drive_configuration_in_requested_order() {
     let root = test_root("update-priorities");
-    let database_path = root.join("test.redb");
+    let database_path = root.join("test.sqlite3");
     std::fs::create_dir_all(&root).expect("test directory should be created");
 
     let first = DriveMetadata {
@@ -440,12 +488,20 @@ fn updates_mounted_drive_configuration_in_requested_order() {
     };
 
     {
-        let repository =
-            RedbStorageRepository::open(&database_path).expect("repository should open");
-        repository.save(&first).expect("first drive should save");
-        repository.save(&second).expect("second drive should save");
+        let repository = SqliteStorageRepository::open(&database_path)
+            .await
+            .expect("repository should open");
+        repository
+            .insert(&first)
+            .await
+            .expect("first drive should save");
+        repository
+            .insert(&second)
+            .await
+            .expect("second drive should save");
 
-        StorageService::new(repository, root.clone())
+        let service = StorageService::new(repository, root.clone());
+        service
             .update_drive_configuration(&[
                 DriveConfigurationUpdate {
                     drive_id: second.drive_id.clone(),
@@ -456,11 +512,15 @@ fn updates_mounted_drive_configuration_in_requested_order() {
                     app_limit_bytes: Some(1_000),
                 },
             ])
+            .await
             .expect("configuration should update");
+        service.close().await;
     }
 
-    let repository = RedbStorageRepository::open(&database_path).expect("repository should reopen");
-    let saved = repository.list().expect("saved drives should load");
+    let repository = SqliteStorageRepository::open(&database_path)
+        .await
+        .expect("repository should reopen");
+    let saved = repository.list().await.expect("saved drives should load");
     assert_eq!(
         saved
             .iter()
@@ -489,15 +549,15 @@ fn updates_mounted_drive_configuration_in_requested_order() {
             .and_then(|drive| drive.app_limit_bytes),
         Some(2_000)
     );
-    drop(repository);
+    repository.close().await;
 
     std::fs::remove_dir_all(root).expect("test directory should be removable");
 }
 
-#[test]
-fn removes_a_saved_drive_from_the_database_only() {
+#[tokio::test]
+async fn removes_a_saved_drive_from_the_database_only() {
     let root = test_root("remove-drive");
-    let database_path = root.join("test.redb");
+    let database_path = root.join("test.sqlite3");
     let metadata = DriveMetadata {
         drive_id: uuid::Uuid::new_v4().to_string(),
         drive_name: "Removable SSD".to_owned(),
@@ -513,12 +573,20 @@ fn removes_a_saved_drive_from_the_database_only() {
     write_drive_metadata(&root, &metadata);
 
     let data = {
-        let repository =
-            RedbStorageRepository::open(&database_path).expect("repository should open");
-        repository.save(&metadata).expect("drive should save");
-        StorageService::new(repository, root.clone())
+        let repository = SqliteStorageRepository::open(&database_path)
+            .await
+            .expect("repository should open");
+        repository
+            .insert(&metadata)
+            .await
+            .expect("drive should save");
+        let service = StorageService::new(repository, root.clone());
+        let data = service
             .remove_drive(&metadata.drive_id)
-            .expect("saved drive should be removed")
+            .await
+            .expect("saved drive should be removed");
+        service.close().await;
+        data
     };
 
     let detected = data
@@ -529,12 +597,15 @@ fn removes_a_saved_drive_from_the_database_only() {
     assert!(detected.is_connected);
     assert!(!detected.is_mounted);
 
-    let repository = RedbStorageRepository::open(&database_path).expect("repository should reopen");
+    let repository = SqliteStorageRepository::open(&database_path)
+        .await
+        .expect("repository should reopen");
     assert!(repository
         .list()
+        .await
         .expect("saved drives should load")
         .is_empty());
-    drop(repository);
+    repository.close().await;
     assert!(root.join("nexfile").join("drive_metadata.json").exists());
 
     std::fs::remove_dir_all(root).expect("test directory should be removable");

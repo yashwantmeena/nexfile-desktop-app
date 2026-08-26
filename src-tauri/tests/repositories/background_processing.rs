@@ -1,9 +1,10 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use nexfile_desktop_app_lib::{
-    DriveMetadata, RedbBackgroundProcessingRepository, RedbDatabase, RedbStorageRepository,
+    DriveMetadata, SqliteBackgroundProcessingRepository, SqliteDatabase, SqliteStorageRepository,
 };
-use redb::{Database, ReadableDatabase, TableHandle};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+use sqlx::Row;
 
 fn test_root() -> std::path::PathBuf {
     let unique = SystemTime::now()
@@ -16,21 +17,21 @@ fn test_root() -> std::path::PathBuf {
     ))
 }
 
-#[test]
-fn creates_background_processing_and_drives_tables_in_one_database() {
+#[tokio::test]
+async fn creates_background_processing_and_drives_tables_in_one_database() {
     let root = test_root();
-    let database_path = root.join("nexfile.redb");
+    let database_path = root.join("nexfile.sqlite3");
     std::fs::create_dir_all(&root).expect("test directory should be created");
 
     {
-        let database = RedbDatabase::open(&database_path).expect("database should open");
-        let storage =
-            RedbStorageRepository::new(database.clone()).expect("storage table should open");
-        let _background = RedbBackgroundProcessingRepository::new(database)
-            .expect("background processing table should open");
+        let database = SqliteDatabase::open(&database_path)
+            .await
+            .expect("database should open");
+        let storage = SqliteStorageRepository::new(database.clone());
+        let _background = SqliteBackgroundProcessingRepository::new(database);
 
         storage
-            .save(&DriveMetadata {
+            .insert(&DriveMetadata {
                 drive_id: "drive-1".to_owned(),
                 drive_name: "Test drive".to_owned(),
                 partition_name: "Test".to_owned(),
@@ -42,20 +43,74 @@ fn creates_background_processing_and_drives_tables_in_one_database() {
                 created_at_ms: 0,
                 updated_at_ms: 0,
             })
+            .await
             .expect("drive should save");
+        storage.close().await;
     }
 
-    let database = Database::open(&database_path).expect("raw database should reopen");
-    let read = database.begin_read().expect("read transaction should open");
-    let mut table_names = read
-        .list_tables()
-        .expect("tables should list")
-        .map(|table| table.name().to_owned())
-        .collect::<Vec<_>>();
+    let pool = SqlitePoolOptions::new()
+        .connect_with(SqliteConnectOptions::new().filename(&database_path))
+        .await
+        .expect("verification database should open");
+    let mut table_names = sqlx::query_scalar::<_, String>(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name != '_sqlx_migrations'",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("table names should load");
     table_names.sort();
-    assert_eq!(table_names, vec!["background_processing", "drives"]);
-    drop(read);
-    drop(database);
+    assert_eq!(table_names, vec!["background_processes", "drives"]);
+
+    let applied_migrations =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM _sqlx_migrations WHERE success = 1")
+            .fetch_one(&pool)
+            .await
+            .expect("migration history should load");
+    assert_eq!(applied_migrations, 2);
+
+    let columns = sqlx::query("PRAGMA table_info(background_processes)")
+        .fetch_all(&pool)
+        .await
+        .expect("column names should load")
+        .into_iter()
+        .map(|row| row.get::<String, _>("name"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        columns,
+        vec![
+            "process_id",
+            "process_type",
+            "status",
+            "priority",
+            "total_items",
+            "processed_items",
+            "failed_items",
+            "remark",
+            "created_at_ms",
+            "updated_at_ms",
+            "started_at_ms",
+            "finished_at_ms",
+        ]
+    );
+
+    let (created_at_ms, updated_at_ms) = sqlx::query_as::<_, (i64, i64)>(
+        "INSERT INTO background_processes (
+            process_id,
+            process_type,
+            status
+        ) VALUES (?1, ?2, ?3)
+        RETURNING created_at_ms, updated_at_ms",
+    )
+    .bind("process-1")
+    .bind("file_indexing")
+    .bind("custom_status")
+    .fetch_one(&pool)
+    .await
+    .expect("custom process status should save");
+    assert!(created_at_ms > 0);
+    assert_eq!(updated_at_ms, created_at_ms);
+
+    pool.close().await;
 
     std::fs::remove_dir_all(root).expect("test directory should be removable");
 }

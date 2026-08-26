@@ -5,12 +5,12 @@ use crate::error::AppResult;
 use crate::models::storage::{DriveConfigurationUpdate, StorageData};
 
 #[tauri::command]
-pub fn get_storage_data(state: State<'_, AppState>) -> AppResult<StorageData> {
-    state.storage.get_storage_data()
+pub async fn get_storage_data(state: State<'_, AppState>) -> AppResult<StorageData> {
+    state.storage.get_storage_data().await
 }
 
 #[tauri::command]
-pub fn mount_drive(
+pub async fn mount_drive(
     device_id: Option<String>,
     partition_name: String,
     state: State<'_, AppState>,
@@ -18,22 +18,23 @@ pub fn mount_drive(
     state
         .storage
         .mount_drive(device_id.as_deref(), &partition_name)
+        .await
 }
 
 #[tauri::command]
-pub fn unmount_drive(drive_id: String, state: State<'_, AppState>) -> AppResult<StorageData> {
-    state.storage.unmount_drive(&drive_id)
+pub async fn unmount_drive(drive_id: String, state: State<'_, AppState>) -> AppResult<StorageData> {
+    state.storage.unmount_drive(&drive_id).await
 }
 
 #[tauri::command]
-pub fn update_drive_configuration(
+pub async fn update_drive_configuration(
     drives: Vec<DriveConfigurationUpdate>,
     state: State<'_, AppState>,
 ) -> AppResult<StorageData> {
-    state.storage.update_drive_configuration(&drives)
+    state.storage.update_drive_configuration(&drives).await
 }
 
 #[tauri::command]
-pub fn remove_drive(drive_id: String, state: State<'_, AppState>) -> AppResult<StorageData> {
-    state.storage.remove_drive(&drive_id)
+pub async fn remove_drive(drive_id: String, state: State<'_, AppState>) -> AppResult<StorageData> {
+    state.storage.remove_drive(&drive_id).await
 }

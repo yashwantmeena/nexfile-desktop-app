@@ -13,7 +13,7 @@ impl AppConfig {
     pub fn resolve<R: tauri::Runtime>(app: &tauri::App<R>) -> AppResult<Self> {
         let app_data_dir = app.path().app_data_dir().map_err(AppError::internal)?;
 
-        let database_path = app_data_dir.join("nexfile.redb");
+        let database_path = app_data_dir.join("nexfile.sqlite3");
 
         Ok(Self {
             app_data_dir,
