@@ -45,6 +45,8 @@ fn merges_database_os_and_drive_metadata() {
         app_used_bytes: 400,
         priority: 0,
         is_mounted: false,
+        created_at_ms: 0,
+        updated_at_ms: 0,
     };
     std::fs::write(
         metadata_directory.join("drive_metadata.json"),
@@ -65,6 +67,8 @@ fn merges_database_os_and_drive_metadata() {
                 app_used_bytes: metadata.app_used_bytes,
                 priority: 1,
                 is_mounted: true,
+                created_at_ms: 0,
+                updated_at_ms: 0,
             })
             .expect("drive should save");
         repository
@@ -77,6 +81,8 @@ fn merges_database_os_and_drive_metadata() {
                 app_used_bytes: 200,
                 priority: 2,
                 is_mounted: true,
+                created_at_ms: 0,
+                updated_at_ms: 0,
             })
             .expect("missing drive should save");
 
@@ -188,6 +194,8 @@ fn mounts_matching_saved_and_file_metadata_without_changing_usage() {
         app_used_bytes: 400,
         priority: 7,
         is_mounted: false,
+        created_at_ms: 0,
+        updated_at_ms: 0,
     };
     write_drive_metadata(&root, &metadata);
 
@@ -251,6 +259,8 @@ fn saves_file_metadata_without_replacing_a_different_drive_id() {
         app_used_bytes: 500,
         priority: 0,
         is_mounted: false,
+        created_at_ms: 0,
+        updated_at_ms: 0,
     };
     write_drive_metadata(&root, &file_metadata);
 
@@ -267,6 +277,8 @@ fn saves_file_metadata_without_replacing_a_different_drive_id() {
                 app_used_bytes: file_metadata.app_used_bytes,
                 priority: 4,
                 is_mounted: false,
+                created_at_ms: 0,
+                updated_at_ms: 0,
             })
             .expect("mismatched drive should save");
         StorageService::new(repository, root.clone())
@@ -309,6 +321,8 @@ fn saves_existing_file_metadata_when_the_database_has_no_entry() {
         app_used_bytes: 600,
         priority: 0,
         is_mounted: false,
+        created_at_ms: 0,
+        updated_at_ms: 0,
     };
     write_drive_metadata(&root, &metadata);
 
@@ -354,6 +368,8 @@ fn unmounts_a_saved_drive_by_changing_only_its_mounted_flag() {
         app_used_bytes: 700,
         priority: 3,
         is_mounted: true,
+        created_at_ms: 0,
+        updated_at_ms: 0,
     };
     write_drive_metadata(&root, &metadata);
 
@@ -377,10 +393,16 @@ fn unmounts_a_saved_drive_by_changing_only_its_mounted_flag() {
     let repository = RedbStorageRepository::open(&database_path).expect("repository should reopen");
     let mut expected = metadata;
     expected.is_mounted = false;
-    assert_eq!(
-        repository.list().expect("saved drives should load"),
-        vec![expected]
-    );
+    let saved = repository
+        .list()
+        .expect("saved drives should load")
+        .pop()
+        .expect("unmounted drive should remain saved");
+    assert!(saved.created_at_ms > 0);
+    assert!(saved.updated_at_ms >= saved.created_at_ms);
+    expected.created_at_ms = saved.created_at_ms;
+    expected.updated_at_ms = saved.updated_at_ms;
+    assert_eq!(saved, expected);
     drop(repository);
 
     std::fs::remove_dir_all(root).expect("test directory should be removable");
@@ -401,6 +423,8 @@ fn updates_mounted_drive_configuration_in_requested_order() {
         app_used_bytes: 0,
         priority: 1,
         is_mounted: true,
+        created_at_ms: 0,
+        updated_at_ms: 0,
     };
     let second = DriveMetadata {
         drive_id: "second-drive".to_owned(),
@@ -411,6 +435,8 @@ fn updates_mounted_drive_configuration_in_requested_order() {
         app_used_bytes: 0,
         priority: 2,
         is_mounted: true,
+        created_at_ms: 0,
+        updated_at_ms: 0,
     };
 
     {
@@ -481,6 +507,8 @@ fn removes_a_saved_drive_from_the_database_only() {
         app_used_bytes: 800,
         priority: 4,
         is_mounted: true,
+        created_at_ms: 0,
+        updated_at_ms: 0,
     };
     write_drive_metadata(&root, &metadata);
 

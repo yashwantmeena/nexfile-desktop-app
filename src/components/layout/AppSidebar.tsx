@@ -25,7 +25,7 @@ export function AppSidebar({ activeItem, onActiveItemChange }: AppSidebarProps) 
           </button>
         ))}
       </nav>
-      <p className="sidebar-label status-label">Status</p>
+      <p className="sidebar-label activity-label">Background activity</p>
       <div className="index-status">
         <div><span>Indexing</span><strong>72%</strong></div>
         <div className="progress"><i /></div>

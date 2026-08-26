@@ -1,20 +1,26 @@
 use std::path::Path;
 
-use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
+use redb::{ReadableDatabase, ReadableTable, TableDefinition};
 
 use crate::error::{AppError, AppResult};
 use crate::models::storage::DriveMetadata;
+use crate::utils::time::current_time_millis;
+
+use super::database::RedbDatabase;
 
 const DRIVES_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("drives");
 
 pub struct RedbStorageRepository {
-    database: Database,
+    database: RedbDatabase,
 }
 
 impl RedbStorageRepository {
     pub fn open(path: impl AsRef<Path>) -> AppResult<Self> {
-        let database = Database::create(path).map_err(AppError::database)?;
-        let write = database.begin_write().map_err(AppError::database)?;
+        Self::new(RedbDatabase::open(path)?)
+    }
+
+    pub fn new(database: RedbDatabase) -> AppResult<Self> {
+        let write = database.inner().begin_write().map_err(AppError::database)?;
         write.open_table(DRIVES_TABLE).map_err(AppError::database)?;
         write.commit().map_err(AppError::database)?;
 
@@ -26,21 +32,19 @@ impl RedbStorageRepository {
     }
 
     pub fn save_many(&self, drives: &[DriveMetadata]) -> AppResult<()> {
-        let encoded_drives = drives
-            .iter()
-            .map(|drive| {
-                serde_json::to_vec(drive)
-                    .map(|encoded| (drive.drive_id.as_str(), encoded))
-                    .map_err(AppError::serialization)
-            })
-            .collect::<AppResult<Vec<_>>>()?;
-
-        let write = self.database.begin_write().map_err(AppError::database)?;
+        let write = self
+            .database
+            .inner()
+            .begin_write()
+            .map_err(AppError::database)?;
         {
             let mut table = write.open_table(DRIVES_TABLE).map_err(AppError::database)?;
-            for (drive_id, encoded) in encoded_drives {
+            for drive in drives {
+                let existing = read_drive(&table, drive.drive_id.as_str())?;
+                let timestamped = timestamped_drive(drive, existing.as_ref())?;
+                let encoded = serde_json::to_vec(&timestamped).map_err(AppError::serialization)?;
                 table
-                    .insert(drive_id, encoded.as_slice())
+                    .insert(drive.drive_id.as_str(), encoded.as_slice())
                     .map_err(AppError::database)?;
             }
         }
@@ -48,10 +52,17 @@ impl RedbStorageRepository {
     }
 
     pub fn replace(&self, previous_drive_id: Option<&str>, drive: &DriveMetadata) -> AppResult<()> {
-        let encoded = serde_json::to_vec(drive).map_err(AppError::serialization)?;
-        let write = self.database.begin_write().map_err(AppError::database)?;
+        let write = self
+            .database
+            .inner()
+            .begin_write()
+            .map_err(AppError::database)?;
         {
             let mut table = write.open_table(DRIVES_TABLE).map_err(AppError::database)?;
+            let existing =
+                read_drive(&table, previous_drive_id.unwrap_or(drive.drive_id.as_str()))?;
+            let timestamped = timestamped_drive(drive, existing.as_ref())?;
+            let encoded = serde_json::to_vec(&timestamped).map_err(AppError::serialization)?;
             if let Some(previous_drive_id) =
                 previous_drive_id.filter(|previous| *previous != drive.drive_id)
             {
@@ -67,7 +78,11 @@ impl RedbStorageRepository {
     }
 
     pub fn list(&self) -> AppResult<Vec<DriveMetadata>> {
-        let read = self.database.begin_read().map_err(AppError::database)?;
+        let read = self
+            .database
+            .inner()
+            .begin_read()
+            .map_err(AppError::database)?;
         let table = read.open_table(DRIVES_TABLE).map_err(AppError::database)?;
         let mut drives = Vec::new();
 
@@ -80,7 +95,11 @@ impl RedbStorageRepository {
     }
 
     pub fn delete(&self, drive_id: &str) -> AppResult<bool> {
-        let write = self.database.begin_write().map_err(AppError::database)?;
+        let write = self
+            .database
+            .inner()
+            .begin_write()
+            .map_err(AppError::database)?;
         let removed = {
             let mut table = write.open_table(DRIVES_TABLE).map_err(AppError::database)?;
             let removed = table.remove(drive_id).map_err(AppError::database)?;
@@ -89,4 +108,29 @@ impl RedbStorageRepository {
         write.commit().map_err(AppError::database)?;
         Ok(removed)
     }
+}
+
+fn read_drive(
+    table: &impl ReadableTable<&'static str, &'static [u8]>,
+    drive_id: &str,
+) -> AppResult<Option<DriveMetadata>> {
+    table
+        .get(drive_id)
+        .map_err(AppError::database)?
+        .map(|value| serde_json::from_slice(value.value()).map_err(AppError::serialization))
+        .transpose()
+}
+
+fn timestamped_drive(
+    drive: &DriveMetadata,
+    existing: Option<&DriveMetadata>,
+) -> AppResult<DriveMetadata> {
+    let now = current_time_millis()?;
+    let mut timestamped = drive.clone();
+    timestamped.created_at_ms = existing
+        .map(|drive| drive.created_at_ms)
+        .or_else(|| (drive.created_at_ms > 0).then_some(drive.created_at_ms))
+        .unwrap_or(now);
+    timestamped.updated_at_ms = now;
+    Ok(timestamped)
 }

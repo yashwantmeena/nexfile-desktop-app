@@ -10,11 +10,31 @@ fn metadata_defaults_to_unmounted() {
         "appLimitBytes": 1_000,
         "fileCount": 25,
         "appUsedBytes": 400,
+        "createdAtMs": 10,
+        "updatedAtMs": 20,
     }))
     .expect("metadata should deserialize");
 
     assert_eq!(drive.priority, 0);
     assert!(!drive.is_mounted);
+    assert_eq!(drive.created_at_ms, 10);
+    assert_eq!(drive.updated_at_ms, 20);
+}
+
+#[test]
+fn rejects_drive_metadata_without_timestamps() {
+    let result = serde_json::from_value::<DriveMetadata>(serde_json::json!({
+        "driveId": "test-drive",
+        "driveName": "Test SSD",
+        "partitionName": "Test (T:)",
+        "appLimitBytes": 1_000,
+        "fileCount": 25,
+        "appUsedBytes": 400,
+        "priority": 1,
+        "isMounted": true,
+    }));
+
+    assert!(result.is_err());
 }
 
 #[test]
@@ -135,6 +155,8 @@ fn serializes_and_deserializes_a_saved_drive() {
         app_used_bytes: 40,
         priority: 1,
         is_mounted: true,
+        created_at_ms: 10,
+        updated_at_ms: 20,
     };
 
     let value = serde_json::to_value(&drive).expect("drive should serialize");
@@ -145,6 +167,8 @@ fn serializes_and_deserializes_a_saved_drive() {
     assert_eq!(value["appUsedBytes"], 40);
     assert_eq!(value["priority"], 1);
     assert_eq!(value["isMounted"], true);
+    assert_eq!(value["createdAtMs"], 10);
+    assert_eq!(value["updatedAtMs"], 20);
 
     assert_eq!(
         serde_json::from_value::<DriveMetadata>(value).expect("drive should deserialize"),

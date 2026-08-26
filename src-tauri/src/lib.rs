@@ -18,6 +18,8 @@ pub use error::AppError;
 pub use models::storage::{
     DriveConfigurationUpdate, DriveInfo, DriveMetadata, StorageData, StorageDrive,
 };
+pub use repositories::background_processing::RedbBackgroundProcessingRepository;
+pub use repositories::database::RedbDatabase;
 pub use repositories::storage::RedbStorageRepository;
 pub use services::storage_service::StorageService;
 pub use system::filesystem::read_file;

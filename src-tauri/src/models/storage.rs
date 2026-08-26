@@ -22,6 +22,8 @@ pub struct DriveMetadata {
     pub priority: u32,
     #[serde(default)]
     pub is_mounted: bool,
+    pub created_at_ms: u64,
+    pub updated_at_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

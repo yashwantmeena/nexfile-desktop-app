@@ -288,6 +288,8 @@ fn metadata_for_mount(
             app_used_bytes: 0,
             priority: next_priority,
             is_mounted: true,
+            created_at_ms: 0,
+            updated_at_ms: 0,
         },
     };
 
