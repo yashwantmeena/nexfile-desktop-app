@@ -18,12 +18,14 @@ pub use ai_models::florence2::{
 };
 pub use error::AppError;
 pub use models::background_process::{BackgroundProcess, BackgroundProcessStatus};
+pub use models::import::ImportFileJob;
 pub use models::storage::{
     DriveConfigurationUpdate, DriveInfo, DriveMetadata, StorageData, StorageDrive,
 };
 pub use repositories::background_processing::SqliteBackgroundProcessingRepository;
 pub use repositories::database::SqliteDatabase;
 pub use repositories::storage::SqliteStorageRepository;
+pub use services::import_service::ImportService;
 pub use services::storage_service::StorageService;
 pub use system::filesystem::read_file;
 
@@ -33,6 +35,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| app::lifecycle::initialize(app).map_err(Into::into))
         .invoke_handler(tauri::generate_handler![
+            commands::import::import_file,
             commands::storage::get_storage_data,
             commands::storage::mount_drive,
             commands::storage::unmount_drive,
@@ -45,6 +48,7 @@ pub fn run() {
     app.run(|app_handle, event| {
         if matches!(event, tauri::RunEvent::Exit) {
             let state = app_handle.state::<app::state::AppState>();
+            tauri::async_runtime::block_on(state.imports.close());
             tauri::async_runtime::block_on(state.storage.close());
         }
     });

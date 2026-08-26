@@ -4,6 +4,7 @@ use crate::error::AppResult;
 use crate::repositories::background_processing::SqliteBackgroundProcessingRepository;
 use crate::repositories::database::SqliteDatabase;
 use crate::repositories::storage::SqliteStorageRepository;
+use crate::services::import_service::ImportService;
 use crate::services::storage_service::StorageService;
 
 use super::config::AppConfig;
@@ -14,10 +15,12 @@ pub fn initialize<R: tauri::Runtime>(app: &tauri::App<R>) -> AppResult<()> {
     std::fs::create_dir_all(&config.app_data_dir)?;
     let database = tauri::async_runtime::block_on(SqliteDatabase::open(config.database_path))?;
     let storage_repository = SqliteStorageRepository::new(database.clone());
-    let background_processing = SqliteBackgroundProcessingRepository::new(database);
+    let background_processing = SqliteBackgroundProcessingRepository::new(database.clone());
+    let imports =
+        tauri::async_runtime::block_on(ImportService::new(background_processing, &database))?;
 
-    app.manage(background_processing);
     app.manage(AppState {
+        imports,
         storage: StorageService::new(storage_repository, config.app_data_dir),
     });
     Ok(())

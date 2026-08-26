@@ -1,3 +1,5 @@
+pub(crate) mod constants;
+
 pub(crate) fn percentage(value: i64, total: i64) -> u8 {
     if value <= 0 || total <= 0 {
         return 0;

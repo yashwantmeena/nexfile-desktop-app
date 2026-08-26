@@ -1,0 +1,143 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use nexfile_desktop_app_lib::{
+    BackgroundProcessStatus, ImportFileJob, ImportService, SqliteBackgroundProcessingRepository,
+    SqliteDatabase,
+};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+
+fn test_root() -> std::path::PathBuf {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time should be valid")
+        .as_nanos();
+    std::env::temp_dir().join(format!(
+        "nexfile-import-service-{}-{unique}",
+        std::process::id()
+    ))
+}
+
+#[tokio::test]
+async fn persists_each_file_job_across_database_reopen() {
+    let root = test_root();
+    let database_path = root.join("nexfile.sqlite3");
+    let first_file_path = root.join("photo.jpg");
+    let second_file_path = root.join("notes.txt");
+    std::fs::create_dir_all(&root).expect("test directory should be created");
+    std::fs::write(&first_file_path, b"test image").expect("test file should be created");
+    std::fs::write(&second_file_path, b"test notes").expect("test file should be created");
+
+    let database = SqliteDatabase::open(&database_path)
+        .await
+        .expect("database should open");
+    let repository = SqliteBackgroundProcessingRepository::new(database.clone());
+    let service = ImportService::new(repository, &database)
+        .await
+        .expect("import queue should be initialized");
+
+    let process = service
+        .import_files([&first_file_path, &second_file_path])
+        .await
+        .expect("file imports should be queued");
+
+    assert_eq!(process.process_type, "import_file");
+    assert_eq!(process.status, BackgroundProcessStatus::Queued);
+    assert_eq!(process.total_items, 2);
+    assert_eq!(process.processed_items, 0);
+    assert_eq!(process.failed_items, 0);
+    assert!(process.created_at_ms > 0);
+    assert_eq!(process.updated_at_ms, process.created_at_ms);
+
+    service.close().await;
+
+    let reopened_database = SqliteDatabase::open(&database_path)
+        .await
+        .expect("database should reopen");
+    let reopened_repository = SqliteBackgroundProcessingRepository::new(reopened_database.clone());
+    let reopened_service = ImportService::new(reopened_repository, &reopened_database)
+        .await
+        .expect("persistent import queue should reopen");
+    let verification_pool = SqlitePoolOptions::new()
+        .connect_with(SqliteConnectOptions::new().filename(&database_path))
+        .await
+        .expect("verification database should open");
+    let saved = sqlx::query_as::<_, (String, String, String, i64)>(
+        "SELECT process_id, process_type, status, total_items
+         FROM background_processes
+         WHERE process_id = ?1",
+    )
+    .bind(&process.process_id)
+    .fetch_one(&verification_pool)
+    .await
+    .expect("background process should be saved");
+    assert_eq!(saved.0, process.process_id);
+    assert_eq!(saved.1, "import_file");
+    assert_eq!(saved.2, "queued");
+    assert_eq!(saved.3, 2);
+
+    let queued_jobs = sqlx::query_as::<_, (Vec<u8>,)>(
+        "SELECT job
+         FROM Jobs
+         WHERE job_type = ?1 AND status = 'Pending'
+         ORDER BY rowid",
+    )
+    .bind("import_file")
+    .fetch_all(&verification_pool)
+    .await
+    .expect("queued import jobs should survive reopening");
+    let queued_jobs = queued_jobs
+        .into_iter()
+        .map(|(job,)| serde_json::from_slice::<ImportFileJob>(&job).expect("job should decode"))
+        .collect::<Vec<_>>();
+    assert_eq!(queued_jobs.len(), 2);
+    assert_eq!(queued_jobs[0].process_id, process.process_id);
+    assert_eq!(queued_jobs[0].path, first_file_path);
+    assert_eq!(queued_jobs[1].process_id, process.process_id);
+    assert_eq!(queued_jobs[1].path, second_file_path);
+
+    verification_pool.close().await;
+    reopened_service.close().await;
+    std::fs::remove_dir_all(root).expect("test directory should be removable");
+}
+
+#[tokio::test]
+async fn rejects_a_path_that_is_not_a_file() {
+    let root = test_root();
+    let database_path = root.join("nexfile.sqlite3");
+    std::fs::create_dir_all(&root).expect("test directory should be created");
+
+    let database = SqliteDatabase::open(&database_path)
+        .await
+        .expect("database should open");
+    let repository = SqliteBackgroundProcessingRepository::new(database.clone());
+    let service = ImportService::new(repository, &database)
+        .await
+        .expect("import queue should be initialized");
+
+    let error = service
+        .import_files([&root])
+        .await
+        .expect_err("a directory should not be accepted as a file");
+    assert_eq!(error.code(), "VALIDATION_ERROR");
+    let empty_error = service
+        .import_files(Vec::<std::path::PathBuf>::new())
+        .await
+        .expect_err("an empty selection should not be accepted");
+    assert_eq!(empty_error.code(), "VALIDATION_ERROR");
+    let verification_pool = SqlitePoolOptions::new()
+        .connect_with(SqliteConnectOptions::new().filename(&database_path))
+        .await
+        .expect("verification database should open");
+    let queued_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM Jobs WHERE job_type = ?1 AND status = 'Pending'",
+    )
+    .bind("import_file")
+    .fetch_one(&verification_pool)
+    .await
+    .expect("queue should be readable");
+    assert_eq!(queued_count, 0);
+
+    verification_pool.close().await;
+    service.close().await;
+    std::fs::remove_dir_all(root).expect("test directory should be removable");
+}

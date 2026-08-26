@@ -22,6 +22,14 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+apalis = { version = "1.0.0-rc.9", default-features = false }
+apalis-sqlite = { git = "https://github.com/apalis-dev/apalis-sqlite.git", rev = "f49ea2ddb00ad8f0d7986e45a2d575c73849066a", default-features = false, features = [
+  "tokio-comp",
+  "migrate",
+  "json",
+  "chrono",
+] }
+futures = "0.3"
 sqlx = { version = "0.9.0", default-features = false, features = [
   "runtime-tokio",
   "sqlite",
