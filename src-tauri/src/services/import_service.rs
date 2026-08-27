@@ -20,8 +20,8 @@ use crate::services::storage_service::{
 };
 use crate::system::filesystem::get_drives;
 use crate::utils::constants::{
-    APALIS_MIGRATION_TABLE, IMPORTED_FILES_DIRECTORY, IMPORT_FILE_ID_LENGTH,
-    IMPORT_FILE_PROCESS_TYPE, IMPORT_FILE_QUEUE,
+    APALIS_MIGRATION_TABLE, IMPORTED_FILES_DIRECTORY, IMPORT_FILE_ID_ALPHABET,
+    IMPORT_FILE_ID_LENGTH, IMPORT_FILE_PROCESS_TYPE, IMPORT_FILE_QUEUE, IMPORT_FOLDER_PROCESS_TYPE,
 };
 
 #[derive(Clone)]
@@ -62,11 +62,27 @@ impl ImportService {
         P: AsRef<Path>,
     {
         let paths = validate_file_paths(paths)?;
+        self.queue_files(paths, IMPORT_FILE_PROCESS_TYPE).await
+    }
+
+    pub async fn import_folder(&self, path: impl AsRef<Path>) -> AppResult<BackgroundProcess> {
+        let path = path.as_ref().to_path_buf();
+        let paths = tauri::async_runtime::spawn_blocking(move || collect_folder_files(&path))
+            .await
+            .map_err(AppError::internal)??;
+        self.queue_files(paths, IMPORT_FOLDER_PROCESS_TYPE).await
+    }
+
+    async fn queue_files(
+        &self,
+        paths: Vec<PathBuf>,
+        process_type: &str,
+    ) -> AppResult<BackgroundProcess> {
         let total_items = u64::try_from(paths.len())
             .map_err(|_| AppError::validation("Too many files were selected."))?;
         let process = BackgroundProcess {
             process_id: uuid::Uuid::new_v4().to_string(),
-            process_type: IMPORT_FILE_PROCESS_TYPE.to_owned(),
+            process_type: process_type.to_owned(),
             status: BackgroundProcessStatus::Queued,
             priority: 0,
             total_items,
@@ -83,7 +99,7 @@ impl ImportService {
         let mut jobs = stream::iter(paths.into_iter().map(|path| {
             Task::builder(ImportFileJob {
                 process_id: process_id.clone(),
-                file_id: nanoid::nanoid!(IMPORT_FILE_ID_LENGTH),
+                file_id: nanoid::nanoid!(IMPORT_FILE_ID_LENGTH, &IMPORT_FILE_ID_ALPHABET),
                 path,
             })
             .build()
@@ -211,12 +227,42 @@ where
     Ok(paths)
 }
 
+fn collect_folder_files(root: &Path) -> AppResult<Vec<PathBuf>> {
+    if !root.is_dir() {
+        return Err(AppError::validation(
+            "The selected folder must be an existing directory.",
+        ));
+    }
+
+    let mut directories = vec![root.to_path_buf()];
+    let mut files = Vec::new();
+    while let Some(directory) = directories.pop() {
+        let mut entries = std::fs::read_dir(directory)?.collect::<Result<Vec<_>, _>>()?;
+        entries.sort_by_key(std::fs::DirEntry::path);
+
+        for entry in entries {
+            let file_type = entry.file_type()?;
+            if file_type.is_dir() {
+                directories.push(entry.path());
+            } else if file_type.is_file() {
+                files.push(entry.path());
+            }
+        }
+    }
+
+    if files.is_empty() {
+        return Err(AppError::validation(
+            "The selected folder does not contain any files.",
+        ));
+    }
+
+    files.sort();
+    Ok(files)
+}
+
 fn validate_job(job: &ImportFileJob) -> AppResult<()> {
     if job.file_id.len() != IMPORT_FILE_ID_LENGTH
-        || !job
-            .file_id
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+        || !job.file_id.bytes().all(|byte| byte.is_ascii_alphanumeric())
     {
         return Err(AppError::validation(
             "The queued import file ID is invalid.",

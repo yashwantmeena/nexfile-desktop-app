@@ -102,14 +102,84 @@ async fn persists_each_file_job_across_database_reopen() {
     assert_eq!(queued_jobs.len(), 2);
     assert_eq!(queued_jobs[0].process_id, process.process_id);
     assert_eq!(queued_jobs[0].file_id.len(), 14);
+    assert!(queued_jobs[0]
+        .file_id
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric()));
     assert_eq!(queued_jobs[0].path, first_file_path);
     assert_eq!(queued_jobs[1].process_id, process.process_id);
     assert_eq!(queued_jobs[1].file_id.len(), 14);
+    assert!(queued_jobs[1]
+        .file_id
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric()));
     assert_ne!(queued_jobs[0].file_id, queued_jobs[1].file_id);
     assert_eq!(queued_jobs[1].path, second_file_path);
 
     verification_pool.close().await;
     reopened_service.close().await;
+    std::fs::remove_dir_all(root).expect("test directory should be removable");
+}
+
+#[tokio::test]
+async fn expands_a_folder_into_individual_file_jobs() {
+    let root = test_root();
+    let database_path = root.join("nexfile.sqlite3");
+    let folder = root.join("selected-folder");
+    let nested = folder.join("nested");
+    let first_file_path = folder.join("photo.jpg");
+    let second_file_path = nested.join("notes.txt");
+    std::fs::create_dir_all(&nested).expect("nested directory should be created");
+    std::fs::write(&first_file_path, b"test image").expect("test image should be created");
+    std::fs::write(&second_file_path, b"test notes").expect("test notes should be created");
+
+    let database = SqliteDatabase::open(&database_path)
+        .await
+        .expect("database should open");
+    let service = ImportService::new(
+        SqliteBackgroundProcessingRepository::new(database.clone()),
+        SqliteStorageRepository::new(database.clone()),
+        &database,
+        root.clone(),
+    )
+    .await
+    .expect("import queue should be initialized");
+
+    let process = service
+        .import_folder(&folder)
+        .await
+        .expect("folder files should be queued");
+    assert_eq!(process.process_type, "import_folder");
+    assert_eq!(process.total_items, 2);
+
+    let verification_pool = SqlitePoolOptions::new()
+        .connect_with(SqliteConnectOptions::new().filename(&database_path))
+        .await
+        .expect("verification database should open");
+    let queued_jobs = sqlx::query_as::<_, (Vec<u8>,)>(
+        "SELECT job
+         FROM Jobs
+         WHERE job_type = ?1 AND status = 'Pending'",
+    )
+    .bind("import_file")
+    .fetch_all(&verification_pool)
+    .await
+    .expect("folder import jobs should be readable");
+    let mut queued_paths = queued_jobs
+        .into_iter()
+        .map(|(job,)| {
+            serde_json::from_slice::<ImportFileJob>(&job)
+                .expect("job should decode")
+                .path
+        })
+        .collect::<Vec<_>>();
+    queued_paths.sort();
+    let mut expected_paths = vec![first_file_path, second_file_path];
+    expected_paths.sort();
+    assert_eq!(queued_paths, expected_paths);
+
+    verification_pool.close().await;
+    service.close().await;
     std::fs::remove_dir_all(root).expect("test directory should be removable");
 }
 

@@ -39,6 +39,7 @@
 .import-menu { position:relative; margin-left:auto; flex:none; }
 .import-files-button { height:42px; padding:0 13px 0 16px; display:flex; align-items:center; justify-content:center; gap:8px; border:1px solid #1f5dca; border-radius:11px; color:#fff; background:#2868d8; font-size:13px; line-height:20px; font-weight:650; cursor:pointer; box-shadow:0 2px 5px rgba(37,99,235,.18); transition:border-color .14s,background .14s,box-shadow .14s,transform .14s; }
 .import-files-button:hover { border-color:#174eae; background:#215fc9; box-shadow:0 4px 10px rgba(37,99,235,.22); }
+.import-files-button:disabled { opacity:.7; cursor:wait; }
 .import-files-button:focus-visible { outline:3px solid rgba(37,99,235,.2); outline-offset:2px; }
 .import-files-button:active { transform:translateY(1px); }
 .import-files-button svg { width:17px; height:17px; stroke-width:2; }
@@ -51,6 +52,7 @@
 .import-options>button>span { min-width:0; display:grid; gap:1px; }
 .import-options strong { font-size:12.5px; line-height:17px; font-weight:650; }
 .import-options small { color:#8a94a4; font-size:10.5px; line-height:15px; font-weight:450; }
+.import-error { position:absolute; z-index:30; top:49px; right:0; width:280px; margin:0; padding:9px 12px; border:1px solid #f0c8cd; border-radius:9px; color:#a3313e; background:#fff6f7; font-size:11.5px; line-height:17px; box-shadow:0 8px 24px rgba(15,23,42,.1); }
 .search-filter-button { width:34px; height:34px; padding:0; display:grid; place-items:center; flex:none; border:0; border-radius:10px; color:#536176; background:#e9edf3; cursor:pointer; transition:color .14s,background .14s,transform .14s; }
 .search-filter-button:hover { color:#245fae; background:#dfe8f5; }
 .search-filter-button:focus-visible { outline:none; }

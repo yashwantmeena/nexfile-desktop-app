@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { CalendarDays, Check, ChevronDown, FileText, FileUp, FolderUp, SlidersHorizontal, Sparkles, Tag } from "lucide-react";
+import { getImportErrorMessage, selectAndImportFiles, selectAndImportFolder } from "@/features/import/services/import_service";
 
 export type DateFilter = "any" | "today" | "7days" | "30days" | "year";
 
@@ -31,10 +32,10 @@ export function AppToolbar({ query, dateFilter, onQueryChange, onDateFilterChang
   const [searchMenuOpen, setSearchMenuOpen] = useState(false);
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   const [importMenuOpen, setImportMenuOpen] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importError, setImportError] = useState<string>();
   const searchModeRef = useRef<HTMLDivElement>(null);
   const searchFilterRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const folderInputRef = useRef<HTMLInputElement>(null);
   const importMenuRef = useRef<HTMLDivElement>(null);
   const placeholder = searchMode === "tags" ? "Search files by tag..." : "Search files by name...";
 
@@ -58,6 +59,20 @@ export function AppToolbar({ query, dateFilter, onQueryChange, onDateFilterChang
       document.removeEventListener("keydown", closeOnEscape);
     };
   }, []);
+
+  const startImport = async (selectAndImport: () => Promise<unknown>) => {
+    setImportMenuOpen(false);
+    setImportError(undefined);
+    setIsImporting(true);
+
+    try {
+      await selectAndImport();
+    } catch (error) {
+      setImportError(getImportErrorMessage(error));
+    } finally {
+      setIsImporting(false);
+    }
+  };
 
   return (
     <header className="nf-toolbar">
@@ -109,32 +124,23 @@ export function AppToolbar({ query, dateFilter, onQueryChange, onDateFilterChang
           </div>}
         </div>
       </div>
-      <input ref={fileInputRef} className="import-files-input" type="file" multiple />
-      <input
-        ref={(input) => {
-          folderInputRef.current = input;
-          if (input) input.webkitdirectory = true;
-        }}
-        className="import-files-input"
-        type="file"
-        multiple
-      />
       <div className={`import-menu${importMenuOpen ? " open" : ""}`} ref={importMenuRef}>
-        <button className="import-files-button" type="button" aria-haspopup="menu" aria-expanded={importMenuOpen} onClick={() => setImportMenuOpen((open) => !open)}>
+        <button className="import-files-button" type="button" aria-haspopup="menu" aria-expanded={importMenuOpen} disabled={isImporting} onClick={() => setImportMenuOpen((open) => !open)}>
           <FileUp />
-          <span>Import</span>
+          <span>{isImporting ? "Queuing..." : "Import"}</span>
           <ChevronDown className="import-chevron" />
         </button>
         {importMenuOpen && <div className="import-options" role="menu">
-          <button type="button" role="menuitem" onClick={() => { setImportMenuOpen(false); fileInputRef.current?.click(); }}>
+          <button type="button" role="menuitem" onClick={() => void startImport(selectAndImportFiles)}>
             <FileUp />
             <span><strong>Import files</strong><small>Select one or more files</small></span>
           </button>
-          <button type="button" role="menuitem" onClick={() => { setImportMenuOpen(false); folderInputRef.current?.click(); }}>
+          <button type="button" role="menuitem" onClick={() => void startImport(selectAndImportFolder)}>
             <FolderUp />
             <span><strong>Import folder</strong><small>Select a folder and its contents</small></span>
           </button>
         </div>}
+        {importError && <p className="import-error" role="alert">{importError}</p>}
       </div>
     </header>
   );

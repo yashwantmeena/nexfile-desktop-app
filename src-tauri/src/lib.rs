@@ -33,10 +33,12 @@ pub use system::filesystem::read_file;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| app::lifecycle::initialize(app).map_err(Into::into))
         .invoke_handler(tauri::generate_handler![
             commands::import_command::import_file,
+            commands::import_command::import_folder,
             commands::storage_command::get_storage_data,
             commands::storage_command::mount_drive,
             commands::storage_command::unmount_drive,

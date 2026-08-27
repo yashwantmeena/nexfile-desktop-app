@@ -44,6 +44,7 @@ ndarray = "0.17"
 ort = "=2.0.0-rc.12"
 thiserror = "2"
 tokenizers = { version = "0.22", default-features = false, features = ["onig"] }
+tauri-plugin-dialog = "2"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62.2", features = [

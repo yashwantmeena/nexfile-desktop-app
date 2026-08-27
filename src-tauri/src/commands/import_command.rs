@@ -11,3 +11,11 @@ pub async fn import_file(
 ) -> AppResult<BackgroundProcess> {
     state.imports.import_files(paths).await
 }
+
+#[tauri::command]
+pub async fn import_folder(
+    path: String,
+    state: State<'_, AppState>,
+) -> AppResult<BackgroundProcess> {
+    state.imports.import_folder(path).await
+}
