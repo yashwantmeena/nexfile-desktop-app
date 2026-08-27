@@ -2,7 +2,7 @@ use tauri::State;
 
 use crate::app::state::AppState;
 use crate::error::AppResult;
-use crate::models::storage::{DriveConfigurationUpdate, StorageData};
+use crate::models::storage_model::{DriveConfigurationUpdate, StorageData};
 
 #[tauri::command]
 pub async fn get_storage_data(state: State<'_, AppState>) -> AppResult<StorageData> {

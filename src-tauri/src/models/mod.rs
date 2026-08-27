@@ -1,3 +1,3 @@
-pub mod background_process;
-pub mod import;
-pub mod storage;
+pub mod background_process_model;
+pub mod import_model;
+pub mod storage_model;

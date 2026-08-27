@@ -1,7 +1,7 @@
 use crate::error::{AppError, AppResult};
-use crate::models::background_process::BackgroundProcess;
+use crate::models::background_process_model::BackgroundProcess;
 
-use super::database::SqliteDatabase;
+use super::database_repository::SqliteDatabase;
 
 pub struct SqliteBackgroundProcessingRepository {
     database: SqliteDatabase,

@@ -15,7 +15,7 @@ use windows::Win32::System::Ioctl::{
 };
 use windows::Win32::System::IO::DeviceIoControl;
 
-use crate::models::storage::DriveInfo;
+use crate::models::storage_model::DriveInfo;
 
 /// Returns every mounted drive currently connected to this Windows machine.
 pub fn get_drives() -> Vec<DriveInfo> {

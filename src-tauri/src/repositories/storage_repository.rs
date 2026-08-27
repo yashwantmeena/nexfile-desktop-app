@@ -1,9 +1,9 @@
 use std::path::Path;
 
 use crate::error::{AppError, AppResult};
-use crate::models::storage::DriveMetadata;
+use crate::models::storage_model::DriveMetadata;
 
-use super::database::SqliteDatabase;
+use super::database_repository::SqliteDatabase;
 
 pub struct SqliteStorageRepository {
     database: SqliteDatabase,

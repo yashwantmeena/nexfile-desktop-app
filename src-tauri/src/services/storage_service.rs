@@ -2,13 +2,13 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use crate::error::{AppError, AppResult};
-use crate::mappers::storage::{disconnected_drive, merge_connected_drive, storage_data};
-use crate::models::storage::{DriveConfigurationUpdate, DriveInfo, DriveMetadata, StorageData};
-use crate::repositories::storage::SqliteStorageRepository;
+use crate::mappers::storage_mapper::{disconnected_drive, merge_connected_drive, storage_data};
+use crate::models::storage_model::{
+    DriveConfigurationUpdate, DriveInfo, DriveMetadata, StorageData,
+};
+use crate::repositories::storage_repository::SqliteStorageRepository;
 use crate::system::filesystem::{get_drives, read_file, write_file};
-
-const METADATA_DIRECTORY: &str = "nexfile";
-const METADATA_FILE: &str = "drive_metadata.json";
+use crate::utils::constants::{DRIVE_METADATA_FILE, NEXFILE_DIRECTORY};
 
 pub struct StorageService {
     repository: SqliteStorageRepository,
@@ -333,14 +333,18 @@ fn metadata_for_mount(
     metadata
 }
 
-fn metadata_path(drive: &DriveInfo, system_metadata_root: &Path) -> PathBuf {
+pub(crate) fn drive_storage_root(drive: &DriveInfo, system_metadata_root: &Path) -> PathBuf {
     let root = if drive.is_system {
         system_metadata_root
     } else {
         drive.mount_point.as_path()
     };
 
-    root.join(METADATA_DIRECTORY).join(METADATA_FILE)
+    root.join(NEXFILE_DIRECTORY)
+}
+
+fn metadata_path(drive: &DriveInfo, system_metadata_root: &Path) -> PathBuf {
+    drive_storage_root(drive, system_metadata_root).join(DRIVE_METADATA_FILE)
 }
 
 fn read_metadata(path: &Path) -> Option<DriveMetadata> {
@@ -348,8 +352,19 @@ fn read_metadata(path: &Path) -> Option<DriveMetadata> {
     serde_json::from_slice(&encoded).ok()
 }
 
-fn read_drive_metadata(drive: &DriveInfo, system_metadata_root: &Path) -> Option<DriveMetadata> {
+pub(crate) fn read_drive_metadata(
+    drive: &DriveInfo,
+    system_metadata_root: &Path,
+) -> Option<DriveMetadata> {
     read_metadata(&metadata_path(drive, system_metadata_root))
+}
+
+pub(crate) fn write_drive_metadata(
+    drive: &DriveInfo,
+    system_metadata_root: &Path,
+    metadata: &DriveMetadata,
+) -> AppResult<()> {
+    write_metadata(&metadata_path(drive, system_metadata_root), metadata)
 }
 
 fn write_metadata(path: &Path, metadata: &DriveMetadata) -> AppResult<()> {

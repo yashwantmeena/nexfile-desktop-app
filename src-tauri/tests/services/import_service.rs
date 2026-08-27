@@ -2,7 +2,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use nexfile_desktop_app_lib::{
     BackgroundProcessStatus, ImportFileJob, ImportService, SqliteBackgroundProcessingRepository,
-    SqliteDatabase,
+    SqliteDatabase, SqliteStorageRepository, StorageService,
 };
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 
@@ -31,9 +31,14 @@ async fn persists_each_file_job_across_database_reopen() {
         .await
         .expect("database should open");
     let repository = SqliteBackgroundProcessingRepository::new(database.clone());
-    let service = ImportService::new(repository, &database)
-        .await
-        .expect("import queue should be initialized");
+    let service = ImportService::new(
+        repository,
+        SqliteStorageRepository::new(database.clone()),
+        &database,
+        root.clone(),
+    )
+    .await
+    .expect("import queue should be initialized");
 
     let process = service
         .import_files([&first_file_path, &second_file_path])
@@ -54,9 +59,14 @@ async fn persists_each_file_job_across_database_reopen() {
         .await
         .expect("database should reopen");
     let reopened_repository = SqliteBackgroundProcessingRepository::new(reopened_database.clone());
-    let reopened_service = ImportService::new(reopened_repository, &reopened_database)
-        .await
-        .expect("persistent import queue should reopen");
+    let reopened_service = ImportService::new(
+        reopened_repository,
+        SqliteStorageRepository::new(reopened_database.clone()),
+        &reopened_database,
+        root.clone(),
+    )
+    .await
+    .expect("persistent import queue should reopen");
     let verification_pool = SqlitePoolOptions::new()
         .connect_with(SqliteConnectOptions::new().filename(&database_path))
         .await
@@ -91,8 +101,11 @@ async fn persists_each_file_job_across_database_reopen() {
         .collect::<Vec<_>>();
     assert_eq!(queued_jobs.len(), 2);
     assert_eq!(queued_jobs[0].process_id, process.process_id);
+    assert_eq!(queued_jobs[0].file_id.len(), 14);
     assert_eq!(queued_jobs[0].path, first_file_path);
     assert_eq!(queued_jobs[1].process_id, process.process_id);
+    assert_eq!(queued_jobs[1].file_id.len(), 14);
+    assert_ne!(queued_jobs[0].file_id, queued_jobs[1].file_id);
     assert_eq!(queued_jobs[1].path, second_file_path);
 
     verification_pool.close().await;
@@ -110,9 +123,14 @@ async fn rejects_a_path_that_is_not_a_file() {
         .await
         .expect("database should open");
     let repository = SqliteBackgroundProcessingRepository::new(database.clone());
-    let service = ImportService::new(repository, &database)
-        .await
-        .expect("import queue should be initialized");
+    let service = ImportService::new(
+        repository,
+        SqliteStorageRepository::new(database.clone()),
+        &database,
+        root.clone(),
+    )
+    .await
+    .expect("import queue should be initialized");
 
     let error = service
         .import_files([&root])
@@ -139,5 +157,73 @@ async fn rejects_a_path_that_is_not_a_file() {
 
     verification_pool.close().await;
     service.close().await;
+    std::fs::remove_dir_all(root).expect("test directory should be removable");
+}
+
+#[cfg(target_os = "windows")]
+#[tokio::test]
+async fn consumes_a_file_into_the_mounted_system_drive() {
+    let root = test_root();
+    let database_path = root.join("nexfile.sqlite3");
+    let source = root.join("movie.mp4");
+    std::fs::create_dir_all(&root).expect("test directory should be created");
+    std::fs::write(&source, b"video-content").expect("source should be written");
+
+    let database = SqliteDatabase::open(&database_path)
+        .await
+        .expect("database should open");
+    let storage = StorageService::new(SqliteStorageRepository::new(database.clone()), root.clone());
+    let system_partition = storage
+        .get_storage_data()
+        .await
+        .expect("drives should load")
+        .drives
+        .into_iter()
+        .find(|drive| drive.is_system)
+        .expect("system drive should exist")
+        .partition_name;
+    storage
+        .mount_drive(None, &system_partition)
+        .await
+        .expect("system drive should mount");
+
+    let imports = ImportService::new(
+        SqliteBackgroundProcessingRepository::new(database.clone()),
+        SqliteStorageRepository::new(database.clone()),
+        &database,
+        root.clone(),
+    )
+    .await
+    .expect("import service should initialize");
+    imports
+        .consume(ImportFileJob {
+            process_id: "process-1".to_owned(),
+            file_id: "abcdefghijklmn".to_owned(),
+            path: source,
+        })
+        .await
+        .expect("file should be consumed");
+
+    let destination = root
+        .join("nexfile")
+        .join("files")
+        .join("abcdefghijklmn.mp4");
+    assert_eq!(
+        std::fs::read(destination).expect("destination should be readable"),
+        b"video-content"
+    );
+    let mounted = storage
+        .get_storage_data()
+        .await
+        .expect("storage metadata should load")
+        .drives
+        .into_iter()
+        .find(|drive| drive.is_system && drive.is_mounted)
+        .expect("system drive should remain mounted");
+    assert_eq!(mounted.file_count, 1);
+    assert_eq!(mounted.app_used_bytes, Some(13));
+
+    imports.close().await;
+    storage.close().await;
     std::fs::remove_dir_all(root).expect("test directory should be removable");
 }

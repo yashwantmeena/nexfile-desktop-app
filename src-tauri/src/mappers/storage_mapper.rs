@@ -1,4 +1,4 @@
-use crate::models::storage::{DriveInfo, DriveMetadata, StorageData, StorageDrive};
+use crate::models::storage_model::{DriveInfo, DriveMetadata, StorageData, StorageDrive};
 use crate::utils::percentage;
 
 pub(crate) fn storage_data(drives: Vec<StorageDrive>) -> StorageData {

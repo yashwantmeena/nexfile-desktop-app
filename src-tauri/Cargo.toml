@@ -30,6 +30,7 @@ apalis-sqlite = { git = "https://github.com/apalis-dev/apalis-sqlite.git", rev =
   "chrono",
 ] }
 futures = "0.3"
+nanoid = "0.4"
 sqlx = { version = "0.9.0", default-features = false, features = [
   "runtime-tokio",
   "sqlite",

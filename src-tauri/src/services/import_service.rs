@@ -1,28 +1,44 @@
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use apalis::prelude::*;
 use apalis_sqlite::SqliteStorage;
 use futures::stream;
 use sqlx::SqlitePool;
+use tauri::async_runtime::Mutex;
 
 use crate::error::{AppError, AppResult};
-use crate::models::background_process::{BackgroundProcess, BackgroundProcessStatus};
-use crate::models::import::ImportFileJob;
-use crate::repositories::background_processing::SqliteBackgroundProcessingRepository;
-use crate::repositories::database::SqliteDatabase;
+use crate::models::background_process_model::{BackgroundProcess, BackgroundProcessStatus};
+use crate::models::import_model::ImportFileJob;
+use crate::models::storage_model::{DriveInfo, DriveMetadata};
+use crate::repositories::background_processing_repository::SqliteBackgroundProcessingRepository;
+use crate::repositories::database_repository::SqliteDatabase;
+use crate::repositories::storage_repository::SqliteStorageRepository;
+use crate::services::storage_service::{
+    drive_storage_root, read_drive_metadata, write_drive_metadata,
+};
+use crate::system::filesystem::get_drives;
 use crate::utils::constants::{
-    APALIS_MIGRATION_TABLE, IMPORT_FILE_PROCESS_TYPE, IMPORT_FILE_QUEUE,
+    APALIS_MIGRATION_TABLE, IMPORTED_FILES_DIRECTORY, IMPORT_FILE_ID_LENGTH,
+    IMPORT_FILE_PROCESS_TYPE, IMPORT_FILE_QUEUE,
 };
 
+#[derive(Clone)]
 pub struct ImportService {
-    repository: SqliteBackgroundProcessingRepository,
+    repository: Arc<SqliteBackgroundProcessingRepository>,
+    storage_repository: Arc<SqliteStorageRepository>,
     queue_pool: SqlitePool,
+    system_metadata_root: PathBuf,
+    copy_lock: Arc<Mutex<()>>,
 }
 
 impl ImportService {
     pub async fn new(
         repository: SqliteBackgroundProcessingRepository,
+        storage_repository: SqliteStorageRepository,
         database: &SqliteDatabase,
+        system_metadata_root: PathBuf,
     ) -> AppResult<Self> {
         let queue_pool = database.pool().clone();
         let mut migrations = SqliteStorage::migrations();
@@ -32,8 +48,11 @@ impl ImportService {
             .await
             .map_err(AppError::database)?;
         Ok(Self {
-            repository,
+            repository: Arc::new(repository),
+            storage_repository: Arc::new(storage_repository),
             queue_pool,
+            system_metadata_root,
+            copy_lock: Arc::new(Mutex::new(())),
         })
     }
 
@@ -64,6 +83,7 @@ impl ImportService {
         let mut jobs = stream::iter(paths.into_iter().map(|path| {
             Task::builder(ImportFileJob {
                 process_id: process_id.clone(),
+                file_id: nanoid::nanoid!(IMPORT_FILE_ID_LENGTH),
                 path,
             })
             .build()
@@ -79,6 +99,90 @@ impl ImportService {
         }
 
         Ok(process)
+    }
+
+    pub async fn consume(&self, job: ImportFileJob) -> AppResult<()> {
+        let _guard = self.copy_lock.lock().await;
+        self.consume_with_drives(job, get_drives()).await
+    }
+
+    async fn consume_with_drives(
+        &self,
+        job: ImportFileJob,
+        connected_drives: Vec<DriveInfo>,
+    ) -> AppResult<()> {
+        validate_job(&job)?;
+        let source_metadata = std::fs::metadata(&job.path)?;
+        if !source_metadata.is_file() {
+            return Err(AppError::validation(
+                "The queued import path is no longer a file.",
+            ));
+        }
+        let file_size = i64::try_from(source_metadata.len()).map_err(AppError::internal)?;
+        let saved_drives = self.storage_repository.list().await?;
+        let mut candidates = connected_drives
+            .into_iter()
+            .filter_map(|drive| {
+                let on_drive = read_drive_metadata(&drive, &self.system_metadata_root)?;
+                let saved = saved_drives
+                    .iter()
+                    .find(|saved| saved.drive_id == on_drive.drive_id && saved.is_mounted)?;
+                Some((drive, saved.clone()))
+            })
+            .collect::<Vec<_>>();
+        candidates.sort_by_key(|(_, metadata)| metadata.priority);
+
+        for (drive, mut saved) in candidates {
+            if !can_fit(&drive, &saved, file_size) {
+                continue;
+            }
+
+            let files_directory = drive_storage_root(&drive, &self.system_metadata_root)
+                .join(IMPORTED_FILES_DIRECTORY);
+            let destination = files_directory.join(destination_name(&job));
+
+            if destination.try_exists()? {
+                if std::fs::metadata(&destination)?.len() != source_metadata.len() {
+                    return Err(AppError::internal(std::io::Error::new(
+                        std::io::ErrorKind::AlreadyExists,
+                        "the import destination already exists with a different size",
+                    )));
+                }
+                let (file_count, app_used_bytes) = calculate_usage(&files_directory)?;
+                saved.file_count = file_count;
+                saved.app_used_bytes = app_used_bytes;
+                let updated = self.storage_repository.update(&saved).await?;
+                write_drive_metadata(&drive, &self.system_metadata_root, &updated)?;
+                return Ok(());
+            }
+
+            std::fs::create_dir_all(&files_directory)?;
+            let temporary = files_directory.join(format!(".{}.importing", job.file_id));
+            match copy_atomically(&job.path, &temporary, &destination, source_metadata.len()) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::StorageFull => {
+                    let _ = std::fs::remove_file(&temporary);
+                    continue;
+                }
+                Err(error) => return Err(error.into()),
+            }
+
+            saved.file_count = saved
+                .file_count
+                .checked_add(1)
+                .ok_or_else(|| AppError::internal(CounterOverflow))?;
+            saved.app_used_bytes = saved
+                .app_used_bytes
+                .checked_add(file_size)
+                .ok_or_else(|| AppError::internal(CounterOverflow))?;
+            let updated = self.storage_repository.update(&saved).await?;
+            write_drive_metadata(&drive, &self.system_metadata_root, &updated)?;
+            return Ok(());
+        }
+
+        Err(AppError::storage_unavailable(
+            "No mounted drive has enough available space for this file.",
+        ))
     }
 
     pub async fn close(&self) {
@@ -106,3 +210,80 @@ where
     }
     Ok(paths)
 }
+
+fn validate_job(job: &ImportFileJob) -> AppResult<()> {
+    if job.file_id.len() != IMPORT_FILE_ID_LENGTH
+        || !job
+            .file_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+    {
+        return Err(AppError::validation(
+            "The queued import file ID is invalid.",
+        ));
+    }
+    Ok(())
+}
+
+fn can_fit(drive: &DriveInfo, metadata: &DriveMetadata, file_size: i64) -> bool {
+    let physical_available = drive.total_bytes.saturating_sub(drive.system_used_bytes);
+    let app_available = metadata
+        .app_limit_bytes
+        .map(|limit| limit.saturating_sub(metadata.app_used_bytes))
+        .unwrap_or(physical_available);
+    file_size <= physical_available && file_size <= app_available
+}
+
+fn destination_name(job: &ImportFileJob) -> OsString {
+    let mut name = OsString::from(&job.file_id);
+    if let Some(extension) = job
+        .path
+        .extension()
+        .filter(|extension| !extension.is_empty())
+    {
+        name.push(".");
+        name.push(extension);
+    }
+    name
+}
+
+fn copy_atomically(
+    source: &Path,
+    temporary: &Path,
+    destination: &Path,
+    expected_size: u64,
+) -> std::io::Result<()> {
+    let copied = std::fs::copy(source, temporary)?;
+    if copied != expected_size {
+        let _ = std::fs::remove_file(temporary);
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::WriteZero,
+            "the complete source file was not copied",
+        ));
+    }
+    std::fs::rename(temporary, destination)
+}
+
+fn calculate_usage(files_directory: &Path) -> AppResult<(i64, i64)> {
+    let mut file_count = 0_i64;
+    let mut app_used_bytes = 0_i64;
+    for entry in std::fs::read_dir(files_directory)? {
+        let entry = entry?;
+        let metadata = entry.metadata()?;
+        if !metadata.is_file() || entry.file_name().to_string_lossy().starts_with('.') {
+            continue;
+        }
+        file_count = file_count
+            .checked_add(1)
+            .ok_or_else(|| AppError::internal(CounterOverflow))?;
+        let size = i64::try_from(metadata.len()).map_err(AppError::internal)?;
+        app_used_bytes = app_used_bytes
+            .checked_add(size)
+            .ok_or_else(|| AppError::internal(CounterOverflow))?;
+    }
+    Ok((file_count, app_used_bytes))
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("the import metadata counter overflowed")]
+struct CounterOverflow;

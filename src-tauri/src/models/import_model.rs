@@ -6,5 +6,6 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct ImportFileJob {
     pub process_id: String,
+    pub file_id: String,
     pub path: PathBuf,
 }
