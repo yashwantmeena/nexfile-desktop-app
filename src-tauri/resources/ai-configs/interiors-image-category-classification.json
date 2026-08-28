@@ -1,0 +1,37 @@
+{
+  "id": "6a74f883ca7a7e21533ab590",
+  "modality": "image",
+  "label": "interiors",
+  "parent_label": "non_ocr",
+  "level": "tertiary",
+  "task": "image-classification",
+  "name": "Interiors Image Category Classification",
+  "description": "Classify a non-OCR interior image into one or more detailed categories based on the room type, visible furnishings, spatial function, and indoor environment.",
+  "model": "openai/clip-vit-base-patch32",
+  "version": 1,
+  "enabled": true,
+  "configuration": {
+    "labels": {
+      "living_room": "An image primarily showing a living room, lounge, or sitting area with sofas, chairs, tables, or home decor.",
+      "bedroom": "An image primarily showing a bedroom with a bed, bedside furniture, wardrobes, or sleeping-area decor.",
+      "kitchen": "An image primarily showing a kitchen with cabinets, counters, cooking appliances, or food preparation areas.",
+      "bathroom": "An image primarily showing a bathroom with a toilet, sink, shower, bathtub, or wash area.",
+      "dining_room": "An image primarily showing a dining room or dining area with a table and seating.",
+      "office": "An image primarily showing an office workspace with desks, chairs, computers, meeting tables, or work equipment.",
+      "classroom": "An image primarily showing a classroom, lecture room, or training room with desks, chairs, or teaching equipment.",
+      "restaurant": "An image primarily showing the interior of a restaurant, cafe, bar, or dining establishment.",
+      "shop": "An image primarily showing the inside of a shop, store, showroom, supermarket, or retail space.",
+      "hotel_room": "An image primarily showing a hotel bedroom, suite, or guest accommodation.",
+      "lobby": "An image primarily showing a lobby, reception area, waiting area, or entrance hall inside a building.",
+      "hallway": "An image primarily showing an indoor hallway, corridor, passage, or connecting space.",
+      "hospital_room": "An image primarily showing a hospital room, clinic room, treatment room, or medical interior.",
+      "gym": "An image primarily showing an indoor gym, fitness center, exercise room, or workout space.",
+      "warehouse": "An image primarily showing the inside of a warehouse, storage facility, or industrial storage area."
+    },
+    "threshold": 0.28,
+    "multilabel": true,
+    "normalize_scores": false
+  },
+  "created_at": "2026-08-06T21:11:31.851Z",
+  "updated_at": "2026-08-06T21:11:31.851Z"
+}

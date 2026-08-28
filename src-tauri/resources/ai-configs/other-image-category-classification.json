@@ -1,0 +1,29 @@
+{
+  "id": "6a74f9c3ca7a7e21533ab59a",
+  "modality": "image",
+  "label": "other",
+  "parent_label": "non_ocr",
+  "level": "tertiary",
+  "task": "image-classification",
+  "name": "Other Image Category Classification",
+  "description": "Classify an unclear or unmatched non-OCR image into one or more fallback categories based on visual ambiguity, image quality, obstruction, corruption, or the absence of a recognizable primary subject.",
+  "model": "openai/clip-vit-base-patch32",
+  "version": 1,
+  "enabled": true,
+  "configuration": {
+    "labels": {
+      "mixed_visual_content": "An image containing several unrelated subjects with no single clear primary category.",
+      "unknown_image": "An image whose main subject cannot be confidently identified or matched to an available category.",
+      "blurry_image": "An image that is heavily blurred or out of focus, making the main subject difficult to recognize.",
+      "low_quality_image": "An image with very low resolution, poor lighting, heavy compression, or visual damage that prevents reliable classification.",
+      "obstructed_image": "An image where the main subject is largely hidden, cropped, covered, or blocked from view.",
+      "empty_scene": "An image showing an empty, plain, or visually insignificant scene without a clear searchable subject.",
+      "corrupted_image": "An image containing severe digital corruption, broken pixels, missing regions, or rendering errors."
+    },
+    "threshold": 0.25,
+    "multilabel": true,
+    "normalize_scores": false
+  },
+  "created_at": "2026-08-06T21:16:51.782Z",
+  "updated_at": "2026-08-06T21:16:51.782Z"
+}

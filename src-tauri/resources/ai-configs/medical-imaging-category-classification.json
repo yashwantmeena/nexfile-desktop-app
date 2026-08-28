@@ -1,0 +1,32 @@
+{
+  "id": "6a74f89eca7a7e21533ab591",
+  "modality": "image",
+  "label": "medical_imaging",
+  "parent_label": "non_ocr",
+  "level": "tertiary",
+  "task": "image-classification",
+  "name": "Medical Imaging Category Classification",
+  "description": "Classify a non-OCR medical image into one or more detailed categories based on the imaging technique, visible anatomy, image characteristics, and diagnostic context.",
+  "model": "openai/clip-vit-base-patch32",
+  "version": 1,
+  "enabled": true,
+  "configuration": {
+    "labels": {
+      "x_ray": "A medical image primarily showing an X-ray or radiograph of bones, chest, joints, or another body part.",
+      "ct_scan": "A medical image primarily showing cross-sectional computed tomography images of the head, chest, abdomen, spine, or another body region.",
+      "mri": "A medical image primarily showing magnetic resonance imaging of the brain, spine, joints, organs, or soft tissue.",
+      "ultrasound": "A medical image primarily showing an ultrasound or sonogram of internal organs, pregnancy, blood vessels, or soft tissue.",
+      "mammogram": "A medical image primarily showing breast tissue captured using mammography.",
+      "dental_imaging": "A medical image primarily showing teeth, jaws, gums, or dental structures using an X-ray or dental scan.",
+      "pathology": "A medical image primarily showing tissue samples, biopsy material, cells, or histology slides used for diagnosis.",
+      "endoscopy": "A medical image captured from inside the body using an endoscope, such as the stomach, intestine, throat, or airway.",
+      "retinal_imaging": "A medical image primarily showing the retina, optic disc, blood vessels, or internal structures of the eye.",
+      "nuclear_medicine": "A medical image primarily showing a PET scan, SPECT scan, or another radioactive tracer-based diagnostic scan."
+    },
+    "threshold": 0.3,
+    "multilabel": true,
+    "normalize_scores": false
+  },
+  "created_at": "2026-08-06T21:11:58.523Z",
+  "updated_at": "2026-08-06T21:11:58.523Z"
+}

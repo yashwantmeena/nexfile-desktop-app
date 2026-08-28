@@ -1,0 +1,30 @@
+{
+  "id": "6a74f7afca7a7e21533ab58b",
+  "modality": "image",
+  "label": "animals",
+  "parent_label": "non_ocr",
+  "level": "tertiary",
+  "task": "image-classification",
+  "name": "Animals Image Category Classification",
+  "description": "Classify a non-OCR animal image into one or more detailed categories based on the animal type, domestication, habitat, and visible biological group.",
+  "model": "openai/clip-vit-base-patch32",
+  "version": 1,
+  "enabled": true,
+  "configuration": {
+    "labels": {
+      "pet": "A photo primarily showing a domesticated animal kept as a household companion, such as a dog, cat, rabbit, or hamster.",
+      "bird": "A photo primarily showing one or more birds, including flying, perched, swimming, or domestic birds.",
+      "fish": "A photo primarily showing one or more fish in an aquarium, river, lake, ocean, or other aquatic environment.",
+      "reptile": "A photo primarily showing reptiles such as snakes, lizards, turtles, tortoises, crocodiles, or alligators.",
+      "amphibian": "A photo primarily showing amphibians such as frogs, toads, salamanders, or newts.",
+      "insect": "A photo primarily showing insects such as butterflies, bees, ants, beetles, flies, or grasshoppers.",
+      "wildlife": "A photo primarily showing wild animals living in a natural habitat, such as lions, elephants, deer, bears, or monkeys.",
+      "farm_animal": "A photo primarily showing domesticated animals commonly raised on farms, such as cattle, goats, sheep, pigs, horses, or chickens."
+    },
+    "threshold": 0.28,
+    "multilabel": true,
+    "normalize_scores": false
+  },
+  "created_at": "2026-08-06T21:07:59.321Z",
+  "updated_at": "2026-08-06T21:07:59.321Z"
+}

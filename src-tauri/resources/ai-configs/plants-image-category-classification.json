@@ -1,0 +1,32 @@
+{
+  "id": "6a74f783ca7a7e21533ab58a",
+  "modality": "image",
+  "label": "plants",
+  "parent_label": "non_ocr",
+  "level": "tertiary",
+  "task": "image-classification",
+  "name": "Plants Image Category Classification",
+  "description": "Classify a non-OCR plant image into one or more detailed categories based on the visible plant type, structure, growth pattern, and environment.",
+  "model": "openai/clip-vit-base-patch32",
+  "version": 1,
+  "enabled": true,
+  "configuration": {
+    "labels": {
+      "trees": "A photo primarily showing one or more trees with visible trunks, branches, and foliage.",
+      "flowers": "A photo primarily showing one or more flowers or blossoms.",
+      "grass": "A photo primarily showing grass, lawn, or low grassy vegetation.",
+      "shrubs": "A photo primarily showing short, dense, woody plants with multiple stems.",
+      "crops": "A photo primarily showing cultivated agricultural plants growing in fields or rows.",
+      "vines": "A photo primarily showing climbing or trailing plants growing along the ground or on supports.",
+      "moss": "A photo primarily showing soft, dense moss growing on soil, rocks, trees, or other surfaces.",
+      "ferns": "A photo primarily showing ferns with divided, feathery, or curled green fronds.",
+      "cacti": "A photo primarily showing cactus plants with thick stems, spines, or water-storing structures.",
+      "aquatic_plants": "A photo primarily showing plants growing in, floating on, or emerging from water."
+    },
+    "threshold": 0.28,
+    "multilabel": true,
+    "normalize_scores": false
+  },
+  "created_at": "2026-08-06T21:07:15.948Z",
+  "updated_at": "2026-08-06T21:07:15.948Z"
+}

@@ -1,0 +1,37 @@
+{
+  "id": "6a74f90eca7a7e21533ab594",
+  "modality": "image",
+  "label": "artwork",
+  "parent_label": "non_ocr",
+  "level": "tertiary",
+  "task": "image-classification",
+  "name": "Artwork Image Category Classification",
+  "description": "Classify a non-OCR artwork image into one or more detailed categories based on the artistic medium, production technique, visual style, and composition.",
+  "model": "openai/clip-vit-base-patch32",
+  "version": 1,
+  "enabled": true,
+  "configuration": {
+    "labels": {
+      "painting": "An image primarily showing artwork created with paint, such as an oil painting, watercolor painting, acrylic painting, or painted canvas.",
+      "drawing": "An image primarily showing finished hand-drawn artwork created with pencil, pen, charcoal, ink, or similar materials.",
+      "sketch": "An image primarily showing a rough, loose, preliminary, or unfinished hand-drawn artwork.",
+      "sculpture": "An image primarily showing a three-dimensional artistic object, statue, carving, or sculpted figure.",
+      "digital_art": "An image primarily showing an artistic composition created using digital painting, rendering, or image-editing tools.",
+      "illustration": "An image primarily showing a drawn or digitally illustrated visual such as character artwork, a storybook image, a stylized scene, or a designed illustration.",
+      "cartoon": "An image primarily showing a simplified, humorous, or exaggerated drawn character or scene.",
+      "comic": "An image primarily showing comic panels, sequential scenes, or illustrated storytelling without important readable text.",
+      "anime": "An image primarily showing characters or scenes illustrated in an anime-style visual form.",
+      "mural": "An image primarily showing a large painted artwork created directly on a wall, ceiling, or building surface.",
+      "collage": "An image primarily showing artwork created by combining multiple photographs, papers, textures, or visual elements.",
+      "craft": "An image primarily showing handmade decorative artwork such as pottery, paper craft, embroidery, woodcraft, or handmade ornaments.",
+      "mosaic": "An image primarily showing artwork formed from many small pieces of tile, glass, stone, or another material.",
+      "textile_art": "An image primarily showing artistic work created using fabric, weaving, embroidery, knitting, or other textile techniques.",
+      "calligraphy": "An image primarily showing decorative or artistic handwriting where the lettering style is the main visual subject and readable text is not essential."
+    },
+    "threshold": 0.28,
+    "multilabel": true,
+    "normalize_scores": false
+  },
+  "created_at": "2026-08-06T21:13:50.313Z",
+  "updated_at": "2026-08-06T21:13:50.313Z"
+}

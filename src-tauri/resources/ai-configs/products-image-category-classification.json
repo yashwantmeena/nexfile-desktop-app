@@ -1,0 +1,37 @@
+{
+  "id": "6a74f7cdca7a7e21533ab58c",
+  "modality": "image",
+  "label": "products",
+  "parent_label": "non_ocr",
+  "level": "tertiary",
+  "task": "image-classification",
+  "name": "Products Image Category Classification",
+  "description": "Classify a non-OCR product image into one or more detailed categories based on the product's type, purpose, design, and intended use.",
+  "model": "openai/clip-vit-base-patch32",
+  "version": 1,
+  "enabled": true,
+  "configuration": {
+    "labels": {
+      "electronics": "A photo primarily showing a consumer electronic product such as a phone, television, speaker, camera, headphone, or electronic accessory.",
+      "home_appliances": "A photo primarily showing a household appliance such as a refrigerator, washing machine, microwave, fan, air conditioner, or vacuum cleaner.",
+      "furniture": "A photo primarily showing an individual furniture product such as a chair, table, sofa, bed, cabinet, or shelf.",
+      "household_items": "A photo primarily showing a common household product used for cleaning, storage, organization, or everyday domestic use.",
+      "tools": "A photo primarily showing a hand tool, power tool, repair tool, gardening tool, or workshop equipment.",
+      "toys": "A photo primarily showing a toy, doll, action figure, building set, puzzle, or children's play object.",
+      "sports_equipment": "A photo primarily showing sports or fitness equipment without active gameplay, such as a ball, racket, bat, helmet, weights, or exercise machine.",
+      "kitchenware": "A photo primarily showing kitchen utensils, cookware, tableware, containers, or food preparation equipment.",
+      "beauty_and_personal_care": "A photo primarily showing cosmetics, skincare, hair-care, grooming, perfume, or personal-care products.",
+      "books_and_stationery": "A photo primarily showing a book, notebook, pen, pencil, art supply, or other stationery product.",
+      "musical_instruments": "A photo primarily showing a musical instrument such as a guitar, keyboard, drum, violin, flute, or microphone.",
+      "pet_supplies": "A photo primarily showing pet products such as pet food, bowls, cages, collars, toys, or grooming supplies.",
+      "baby_products": "A photo primarily showing products made for babies, such as bottles, strollers, cribs, diapers, or baby-care items.",
+      "automotive_products": "A photo primarily showing vehicle parts or accessories such as tyres, helmets, batteries, lights, or car-care products.",
+      "other_product": "A photo primarily showing a physical commercial product that does not clearly match another available product type."
+    },
+    "threshold": 0.27,
+    "multilabel": true,
+    "normalize_scores": false
+  },
+  "created_at": "2026-08-06T21:08:29.062Z",
+  "updated_at": "2026-08-06T21:08:29.062Z"
+}

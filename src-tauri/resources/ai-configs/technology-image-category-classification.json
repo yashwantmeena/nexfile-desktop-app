@@ -1,0 +1,37 @@
+{
+  "id": "6a74f97dca7a7e21533ab598",
+  "modality": "image",
+  "label": "technology",
+  "parent_label": "non_ocr",
+  "level": "tertiary",
+  "task": "image-classification",
+  "name": "Technology Image Category Classification",
+  "description": "Classify a non-OCR technology image into one or more detailed categories based on the visible device, electronic hardware, machinery, computing equipment, or technical system.",
+  "model": "openai/clip-vit-base-patch32",
+  "version": 1,
+  "enabled": true,
+  "configuration": {
+    "labels": {
+      "computer": "An image primarily showing a desktop computer, monitor, keyboard, computer setup, or workstation.",
+      "laptop": "An image primarily showing a laptop or notebook computer in use or as part of a technical setup.",
+      "smartphone": "An image primarily showing a smartphone or mobile device being used in a technical or digital context.",
+      "tablet": "An image primarily showing a tablet computer or touchscreen device.",
+      "robot": "An image primarily showing a robot, robotic arm, automated machine, or humanoid robotic system.",
+      "drone": "An image primarily showing a drone or unmanned aerial vehicle.",
+      "circuit_board": "An image primarily showing a printed circuit board, electronic board, chips, wires, or internal hardware components.",
+      "electronic_components": "An image primarily showing electronic parts such as processors, sensors, resistors, cables, batteries, or connectors.",
+      "server_equipment": "An image primarily showing servers, server racks, data-center equipment, or computer storage systems.",
+      "networking_equipment": "An image primarily showing routers, switches, antennas, network cables, or communication hardware.",
+      "machinery": "An image primarily showing industrial machinery, mechanical systems, manufacturing equipment, or automated production machines.",
+      "laboratory_equipment": "An image primarily showing scientific instruments, testing equipment, microscopes, or laboratory machines.",
+      "camera_equipment": "An image primarily showing a camera, lens, tripod, lighting equipment, or professional imaging setup.",
+      "smart_device": "An image primarily showing a connected electronic device such as a smartwatch, smart speaker, smart-home device, or wearable technology.",
+      "virtual_reality": "An image primarily showing a virtual-reality headset, controllers, or a person using VR equipment."
+    },
+    "threshold": 0.29,
+    "multilabel": true,
+    "normalize_scores": false
+  },
+  "created_at": "2026-08-06T21:15:41.618Z",
+  "updated_at": "2026-08-06T21:15:41.618Z"
+}

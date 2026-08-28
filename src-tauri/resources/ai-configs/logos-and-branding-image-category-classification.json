@@ -1,0 +1,35 @@
+{
+  "id": "6a74f92fca7a7e21533ab595",
+  "modality": "image",
+  "label": "logos_and_branding",
+  "parent_label": "non_ocr",
+  "level": "tertiary",
+  "task": "image-classification",
+  "name": "Logos and Branding Image Category Classification",
+  "description": "Classify a non-OCR logo or branding image into one or more detailed categories based on its visual structure, use of text, symbols, emblems, characters, and brand context.",
+  "model": "openai/clip-vit-base-patch32",
+  "version": 1,
+  "enabled": true,
+  "configuration": {
+    "labels": {
+      "wordmark": "An image primarily showing a brand or organization name designed as a text-based logo.",
+      "lettermark": "An image primarily showing one or more initials or letters designed as a logo.",
+      "symbol_logo": "An image primarily showing a graphic symbol, icon, or pictorial mark representing a brand or organization.",
+      "combination_logo": "An image primarily showing both a brand name and a graphic symbol combined into one logo.",
+      "emblem": "An image primarily showing a logo enclosed inside a badge, shield, circle, crest, or similar shape.",
+      "mascot_logo": "An image primarily showing a character, animal, person, or illustrated mascot used to represent a brand.",
+      "app_icon": "An image primarily showing an icon used to represent a mobile application, software product, or digital service.",
+      "brand_mark": "An image primarily showing a standalone visual mark strongly associated with a brand.",
+      "seal_or_badge": "An image primarily showing an official seal, certification badge, institutional insignia, or organization badge.",
+      "product_logo": "An image primarily showing the logo or visual identity of a specific commercial product.",
+      "corporate_logo": "An image primarily showing the official logo or visual identity of a company or business.",
+      "sports_logo": "An image primarily showing the logo, crest, or emblem of a sports team, club, league, or competition.",
+      "government_emblem": "An image primarily showing an official government emblem, national symbol, department seal, or public authority insignia."
+    },
+    "threshold": 0.3,
+    "multilabel": true,
+    "normalize_scores": false
+  },
+  "created_at": "2026-08-06T21:14:23.518Z",
+  "updated_at": "2026-08-06T21:14:23.518Z"
+}

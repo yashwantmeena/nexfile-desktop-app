@@ -1,0 +1,34 @@
+{
+  "id": "6a74f9abca7a7e21533ab599",
+  "modality": "image",
+  "label": "graphics",
+  "parent_label": "non_ocr",
+  "level": "tertiary",
+  "task": "image-classification",
+  "name": "Graphics Image Category Classification",
+  "description": "Classify a non-OCR graphic image into one or more detailed categories based on its visual structure, design purpose, shapes, patterns, data representation, and graphical composition.",
+  "model": "openai/clip-vit-base-patch32",
+  "version": 1,
+  "enabled": true,
+  "configuration": {
+    "labels": {
+      "icon": "An image primarily showing a simple pictorial icon representing an object, action, feature, or concept.",
+      "symbol": "An image primarily showing a recognizable visual symbol, sign, mark, or non-brand emblem.",
+      "pattern": "An image primarily showing a repeating decorative, geometric, floral, or abstract pattern.",
+      "abstract_graphic": "An image primarily showing non-representational shapes, lines, colors, gradients, or abstract visual forms.",
+      "geometric_design": "An image primarily showing an arranged composition of geometric shapes, lines, circles, polygons, or structured forms.",
+      "decorative_graphic": "An image primarily showing an ornamental visual design created for decoration rather than to represent a specific subject.",
+      "diagram": "An image primarily showing a visual arrangement of shapes, arrows, or connected components that explains a structure or relationship without important readable text.",
+      "chart": "An image primarily showing data visually using bars, lines, points, circles, or other chart forms without important readable text.",
+      "map_graphic": "An image primarily showing a designed, illustrated, or schematic map of a place, route, region, or area without important readable labels.",
+      "background_design": "An image primarily showing a decorative background, wallpaper, banner background, gradient, or visual backdrop.",
+      "texture": "An image primarily showing a surface texture or material pattern such as wood, stone, fabric, metal, paper, or an abstract texture.",
+      "infographic_element": "An image primarily showing a standalone visual element used in an infographic, such as arrows, timelines, process shapes, or data symbols."
+    },
+    "threshold": 0.28,
+    "multilabel": true,
+    "normalize_scores": false
+  },
+  "created_at": "2026-08-06T21:16:27.791Z",
+  "updated_at": "2026-08-06T21:16:27.791Z"
+}

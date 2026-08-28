@@ -1,0 +1,31 @@
+{
+  "id": "6a74f836ca7a7e21533ab58e",
+  "modality": "image",
+  "label": "food_and_drink",
+  "parent_label": "non_ocr",
+  "level": "tertiary",
+  "task": "image-classification",
+  "name": "Food and Drink Image Category Classification",
+  "description": "Classify a non-OCR food or drink image into one or more detailed categories based on the visible dish, ingredient, preparation type, and beverage content.",
+  "model": "openai/clip-vit-base-patch32",
+  "version": 1,
+  "enabled": true,
+  "configuration": {
+    "labels": {
+      "meal": "A photo primarily showing a complete prepared meal or plated dish.",
+      "fruit": "A photo primarily showing one or more fruits, such as apples, bananas, oranges, berries, or tropical fruits.",
+      "vegetables": "A photo primarily showing one or more vegetables, either raw, cooked, or prepared.",
+      "dessert": "A photo primarily showing a sweet food such as cake, ice cream, pastry, pudding, or chocolate.",
+      "beverage": "A photo primarily showing a drink such as water, tea, coffee, juice, soda, milk, or a smoothie.",
+      "snack": "A photo primarily showing a small ready-to-eat food such as chips, nuts, biscuits, popcorn, or crackers.",
+      "baked_goods": "A photo primarily showing bread, cakes, cookies, pastries, muffins, or other baked food.",
+      "seafood": "A photo primarily showing fish, prawns, crabs, shellfish, or a prepared seafood dish.",
+      "fast_food": "A photo primarily showing fast food such as burgers, pizza, fries, sandwiches, or fried food."
+    },
+    "threshold": 0.28,
+    "multilabel": true,
+    "normalize_scores": false
+  },
+  "created_at": "2026-08-06T21:10:14.851Z",
+  "updated_at": "2026-08-06T21:10:14.851Z"
+}

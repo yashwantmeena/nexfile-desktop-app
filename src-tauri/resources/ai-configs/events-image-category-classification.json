@@ -1,0 +1,37 @@
+{
+  "id": "6a74f973ca7a7e21533ab597",
+  "modality": "image",
+  "label": "events",
+  "parent_label": "non_ocr",
+  "level": "tertiary",
+  "task": "image-classification",
+  "name": "Events Image Category Classification",
+  "description": "Classify a non-OCR event image into one or more detailed categories based on the visible celebration, ceremony, gathering, performance, competition, or organized activity.",
+  "model": "openai/clip-vit-base-patch32",
+  "version": 1,
+  "enabled": true,
+  "configuration": {
+    "labels": {
+      "wedding": "An image primarily showing a wedding ceremony, bride and groom, wedding rituals, wedding clothing, or wedding celebration.",
+      "birthday": "An image primarily showing a birthday celebration with a cake, candles, gifts, balloons, or birthday decorations.",
+      "party": "An image primarily showing a social party with people celebrating, dancing, eating, or gathering together.",
+      "festival": "An image primarily showing a cultural, religious, seasonal, or public festival with crowds, decorations, rituals, or performances.",
+      "concert": "An image primarily showing a live music concert, musician, singer, stage performance, or audience.",
+      "conference": "An image primarily showing a professional conference, seminar, business event, panel discussion, or organized meeting.",
+      "graduation": "An image primarily showing a graduation ceremony, graduating students, academic gowns, caps, certificates, or diplomas.",
+      "ceremony": "An image primarily showing a formal ceremony, official function, ritual, award presentation, or organized celebration.",
+      "exhibition": "An image primarily showing an exhibition, trade show, art display, product showcase, or public presentation.",
+      "sports_event": "An image primarily showing an organized sports match, competition, tournament, race, or sporting ceremony.",
+      "religious_event": "An image primarily showing a religious ceremony, worship gathering, procession, prayer event, or spiritual celebration.",
+      "community_event": "An image primarily showing a local community gathering, fair, public celebration, charity event, or social program.",
+      "parade": "An image primarily showing an organized public procession with people, performers, decorated vehicles, or marching groups.",
+      "award_ceremony": "An image primarily showing awards, trophies, medals, winners, presenters, or a formal recognition event.",
+      "public_gathering": "An image primarily showing a large organized gathering, rally, public meeting, or crowd attending an event."
+    },
+    "threshold": 0.29,
+    "multilabel": true,
+    "normalize_scores": false
+  },
+  "created_at": "2026-08-06T21:15:31.555Z",
+  "updated_at": "2026-08-06T21:15:31.555Z"
+}

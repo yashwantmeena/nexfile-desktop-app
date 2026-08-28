@@ -1,0 +1,42 @@
+{
+  "id": "6a74f8ecca7a7e21533ab593",
+  "modality": "image",
+  "label": "sports",
+  "parent_label": "non_ocr",
+  "level": "tertiary",
+  "task": "image-classification",
+  "name": "Sports Image Category Classification",
+  "description": "Classify a non-OCR sports image into one or more detailed categories based on the visible sport, athletes, equipment, playing environment, and physical activity.",
+  "model": "openai/clip-vit-base-patch32",
+  "version": 1,
+  "enabled": true,
+  "configuration": {
+    "labels": {
+      "football": "An image primarily showing football or soccer players, a football field, goalposts, or football action.",
+      "cricket": "An image primarily showing cricket players, batting, bowling, wickets, or a cricket ground.",
+      "basketball": "An image primarily showing basketball players, a basketball court, hoop, or basketball action.",
+      "tennis": "An image primarily showing tennis players, rackets, a net, or a tennis court.",
+      "badminton": "An image primarily showing badminton players, rackets, shuttlecocks, or a badminton court.",
+      "volleyball": "An image primarily showing volleyball players, a net, or volleyball action on an indoor or outdoor court.",
+      "hockey": "An image primarily showing field hockey or ice hockey players, sticks, goals, or hockey action.",
+      "baseball": "An image primarily showing baseball players, bats, gloves, bases, or a baseball field.",
+      "swimming": "An image primarily showing people swimming in a pool, open water, or a swimming competition.",
+      "athletics": "An image primarily showing running, jumping, throwing, or track-and-field competition.",
+      "cycling": "An image primarily showing people riding bicycles in a race, sport, or training activity.",
+      "motorsport": "An image primarily showing competitive car or motorcycle racing on a track or racing course.",
+      "combat_sports": "An image primarily showing boxing, wrestling, martial arts, or another combat sport.",
+      "gymnastics": "An image primarily showing gymnasts performing floor routines, balance, bars, rings, or vault exercises.",
+      "golf": "An image primarily showing golfers, golf clubs, golf balls, or a golf course.",
+      "table_tennis": "An image primarily showing table tennis players, paddles, a net, or a table tennis match.",
+      "running": "An image primarily showing a person running, jogging, racing, or participating in a marathon.",
+      "gym_and_fitness": "An image primarily showing exercise, weight training, fitness activity, or people using gym equipment.",
+      "winter_sports": "An image primarily showing skiing, snowboarding, ice skating, or another sport performed on snow or ice.",
+      "water_sports": "An image primarily showing surfing, kayaking, rowing, diving, or another sport performed in or on water."
+    },
+    "threshold": 0.29,
+    "multilabel": true,
+    "normalize_scores": false
+  },
+  "created_at": "2026-08-06T21:13:16.865Z",
+  "updated_at": "2026-08-06T21:13:16.865Z"
+}

@@ -19,6 +19,7 @@ pub use ai_models::florence2::{
 };
 pub use error::AppError;
 pub use models::background_process_model::{BackgroundProcess, BackgroundProcessStatus};
+pub use models::image_processing_model::ImageProcessingJob;
 pub use models::import_model::ImportFileJob;
 pub use models::storage_model::{
     DriveConfigurationUpdate, DriveInfo, DriveMetadata, StorageData, StorageDrive,

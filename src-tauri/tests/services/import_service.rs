@@ -1,8 +1,8 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use nexfile_desktop_app_lib::{
-    BackgroundProcessStatus, ImportFileJob, ImportService, SqliteBackgroundProcessingRepository,
-    SqliteDatabase, SqliteStorageRepository, StorageService,
+    BackgroundProcessStatus, ImageProcessingJob, ImportFileJob, ImportService,
+    SqliteBackgroundProcessingRepository, SqliteDatabase, SqliteStorageRepository, StorageService,
 };
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 
@@ -279,7 +279,7 @@ async fn consumes_a_file_into_the_mounted_system_drive() {
         .join("files")
         .join("abcdefghijklmn.mp4");
     assert_eq!(
-        std::fs::read(destination).expect("destination should be readable"),
+        std::fs::read(&destination).expect("destination should be readable"),
         b"video-content"
     );
     let mounted = storage
@@ -293,6 +293,24 @@ async fn consumes_a_file_into_the_mounted_system_drive() {
     assert_eq!(mounted.file_count, 1);
     assert_eq!(mounted.app_used_bytes, Some(13));
 
+    let verification_pool = SqlitePoolOptions::new()
+        .connect_with(SqliteConnectOptions::new().filename(&database_path))
+        .await
+        .expect("verification database should open");
+    let (queued_job,) = sqlx::query_as::<_, (Vec<u8>,)>(
+        "SELECT job
+         FROM Jobs
+         WHERE job_type = ?1 AND status = 'Pending'",
+    )
+    .bind("image-processing")
+    .fetch_one(&verification_pool)
+    .await
+    .expect("image-processing job should be queued");
+    let queued_job = serde_json::from_slice::<ImageProcessingJob>(&queued_job)
+        .expect("image-processing job should decode");
+    assert_eq!(queued_job.path, destination);
+
+    verification_pool.close().await;
     imports.close().await;
     storage.close().await;
     std::fs::remove_dir_all(root).expect("test directory should be removable");

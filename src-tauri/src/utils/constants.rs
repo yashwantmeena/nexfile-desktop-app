@@ -1,5 +1,6 @@
 pub(crate) const APALIS_MIGRATION_TABLE: &str = "_apalis_migrations";
 pub(crate) const DRIVE_METADATA_FILE: &str = "drive_metadata.json";
+pub(crate) const IMAGE_PROCESSING_QUEUE: &str = "image-processing";
 pub(crate) const IMPORTED_FILES_DIRECTORY: &str = "files";
 pub(crate) const IMPORT_FOLDER_PROCESS_TYPE: &str = "import_folder";
 pub(crate) const IMPORT_FILE_ID_ALPHABET: [char; 62] = [

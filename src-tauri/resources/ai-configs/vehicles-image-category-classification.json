@@ -1,0 +1,32 @@
+{
+  "id": "6a74f7f3ca7a7e21533ab58d",
+  "modality": "image",
+  "label": "vehicles",
+  "parent_label": "non_ocr",
+  "level": "tertiary",
+  "task": "image-classification",
+  "name": "Vehicles Image Category Classification",
+  "description": "Classify a non-OCR vehicle image into one or more detailed categories based on the visible vehicle type, structure, and transportation mode.",
+  "model": "openai/clip-vit-base-patch32",
+  "version": 1,
+  "enabled": true,
+  "configuration": {
+    "labels": {
+      "car": "A photo primarily showing a car, sedan, hatchback, SUV, coupe, or similar passenger automobile.",
+      "motorcycle": "A photo primarily showing a motorcycle, motorbike, or scooter.",
+      "bicycle": "A photo primarily showing a bicycle, cycle, mountain bike, road bike, or similar pedal-powered vehicle.",
+      "van": "A photo primarily showing a van, minivan, delivery van, cargo van, or passenger van.",
+      "truck": "A photo primarily showing a truck, lorry, pickup truck, cargo truck, or other heavy road vehicle.",
+      "bus": "A photo primarily showing a bus, coach, minibus, school bus, or public transport bus.",
+      "construction_vehicle": "A photo primarily showing construction machinery such as an excavator, bulldozer, crane, loader, road roller, or dump truck.",
+      "train": "A photo primarily showing a train, locomotive, railway carriage, metro train, tram, or other rail vehicle.",
+      "aircraft": "A photo primarily showing an airplane, jet, helicopter, glider, or other aircraft.",
+      "boat": "A photo primarily showing a boat, ship, yacht, ferry, canoe, or other watercraft."
+    },
+    "threshold": 0.29,
+    "multilabel": true,
+    "normalize_scores": false
+  },
+  "created_at": "2026-08-06T21:09:07.291Z",
+  "updated_at": "2026-08-06T21:09:07.291Z"
+}

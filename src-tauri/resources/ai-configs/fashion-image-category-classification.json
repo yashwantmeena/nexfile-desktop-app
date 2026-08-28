@@ -1,0 +1,36 @@
+{
+  "id": "6a74f953ca7a7e21533ab596",
+  "modality": "image",
+  "label": "fashion",
+  "parent_label": "non_ocr",
+  "level": "tertiary",
+  "task": "image-classification",
+  "name": "Fashion Image Category Classification",
+  "description": "Classify a non-OCR fashion image into one or more detailed categories based on the visible garments, accessories, personal styling, cultural attire, and fashion presentation.",
+  "model": "openai/clip-vit-base-patch32",
+  "version": 1,
+  "enabled": true,
+  "configuration": {
+    "labels": {
+      "clothing": "An image primarily focused on clothing such as shirts, dresses, jackets, trousers, skirts, or other garments.",
+      "footwear": "An image primarily focused on shoes, sandals, boots, sneakers, slippers, or other footwear.",
+      "jewellery": "An image primarily focused on jewellery such as rings, necklaces, earrings, bracelets, or decorative ornaments.",
+      "bags": "An image primarily focused on handbags, backpacks, purses, clutches, or other fashion bags.",
+      "watches": "An image primarily focused on a wristwatch or fashion watch.",
+      "eyewear": "An image primarily focused on sunglasses, eyeglasses, or other fashion eyewear.",
+      "makeup": "An image primarily focused on makeup applied to a person or a completed cosmetic look.",
+      "hairstyle": "An image primarily focused on a haircut, hairstyle, hair colouring, or hair styling.",
+      "outfit": "An image primarily focused on a complete styled combination of clothing and accessories worn by a person.",
+      "traditional_wear": "An image primarily focused on traditional or cultural clothing such as sarees, lehengas, kurtas, sherwanis, or regional attire.",
+      "formal_wear": "An image primarily focused on formal clothing such as suits, gowns, blazers, or business attire.",
+      "sportswear": "An image primarily focused on athletic clothing, gym wear, tracksuits, or sports fashion.",
+      "fashion_model": "An image primarily showing a model posing to display clothing, accessories, or a styled fashion look.",
+      "fashion_show": "An image primarily showing models walking on a runway or participating in a fashion event."
+    },
+    "threshold": 0.29,
+    "multilabel": true,
+    "normalize_scores": false
+  },
+  "created_at": "2026-08-06T21:14:59.947Z",
+  "updated_at": "2026-08-06T21:14:59.947Z"
+}

@@ -1,0 +1,41 @@
+{
+  "id": "6a74f1bfca7a7e21533ab587",
+  "modality": "image",
+  "label": "non_ocr",
+  "parent_label": "primary",
+  "level": "secondary",
+  "task": "image-classification",
+  "name": "Non OCR Image Category Classification",
+  "description": "Classify a non-OCR image into exactly one content category based primarily on its visual subject, objects, scene, and composition.",
+  "model": "openai/clip-vit-base-patch32",
+  "version": 1,
+  "enabled": true,
+  "configuration": {
+    "labels": {
+      "people": "A photograph primarily showing one or more people, including portraits, selfies, families, groups, workers, performers, or crowds.",
+      "nature": "A natural outdoor scene such as mountains, forests, rivers, lakes, oceans, beaches, deserts, waterfalls, clouds, or landscapes.",
+      "plants": "An image primarily focused on plants, flowers, trees, leaves, grass, crops, shrubs, or other vegetation.",
+      "animals": "An image primarily showing animals, including pets, wildlife, birds, fish, reptiles, amphibians, insects, or farm animals.",
+      "products": "A physical item primarily presented as a commercial product, such as appliances, tools, furniture, cosmetics, toys, accessories, or household goods.",
+      "vehicles": "An image primarily showing a vehicle, including cars, motorcycles, bicycles, trucks, buses, trains, boats, aircraft, or construction vehicles.",
+      "food_and_drink": "An image primarily showing food, meals, ingredients, fruits, vegetables, desserts, snacks, beverages, or prepared dishes.",
+      "architecture": "An image primarily showing the exterior of a building or structure, such as a house, tower, monument, bridge, temple, office, or historical building.",
+      "interiors": "An image primarily showing an indoor space, such as a bedroom, living room, kitchen, office, shop, restaurant, hallway, or decorated room.",
+      "medical_imaging": "A clinical or diagnostic image such as an X-ray, MRI, CT scan, ultrasound, pathology image, dental scan, or other medical scan.",
+      "games": "An image primarily showing a video game scene, game character, virtual environment, game object, or gameplay without important readable interface text.",
+      "sports": "An image primarily showing a sport, athlete, sporting action, sports equipment, playing field, court, track, stadium, or competition.",
+      "artwork": "An image primarily showing a creative visual work such as a painting, drawing, sketch, sculpture, mural, illustration, cartoon, comic, vector art, digital art, storybook image, or other handmade or stylized artistic composition.",
+      "logos_and_branding": "An image primarily showing a logo, emblem, symbol, trademark, brand mark, badge, or visual brand identity.",
+      "fashion": "An image primarily focused on clothing, footwear, jewellery, accessories, makeup, hairstyles, models, outfits, or fashion styling.",
+      "events": "An image primarily showing an organized event such as a wedding, party, festival, concert, ceremony, conference, celebration, or public gathering.",
+      "technology": "An image primarily showing computers, electronics, robots, machinery, technical equipment, circuit boards, servers, or devices in a technical context.",
+      "graphics": "An abstract or designed visual such as an icon, pattern, decorative composition, geometric design, symbol set, background graphic, or non-text diagram.",
+      "other": "An unclear, mixed, unusual, or unmatched image that does not primarily fit any of the available categories."
+    },
+    "threshold": 0.3,
+    "multilabel": true,
+    "normalize_scores": true
+  },
+  "created_at": "2026-08-06T20:42:39.163Z",
+  "updated_at": "2026-08-06T20:42:39.163Z"
+}

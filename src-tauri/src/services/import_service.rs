@@ -10,6 +10,7 @@ use tauri::async_runtime::Mutex;
 
 use crate::error::{AppError, AppResult};
 use crate::models::background_process_model::{BackgroundProcess, BackgroundProcessStatus};
+use crate::models::image_processing_model::ImageProcessingJob;
 use crate::models::import_model::ImportFileJob;
 use crate::models::storage_model::{DriveInfo, DriveMetadata};
 use crate::repositories::background_processing_repository::SqliteBackgroundProcessingRepository;
@@ -20,8 +21,9 @@ use crate::services::storage_service::{
 };
 use crate::system::filesystem::get_drives;
 use crate::utils::constants::{
-    APALIS_MIGRATION_TABLE, IMPORTED_FILES_DIRECTORY, IMPORT_FILE_ID_ALPHABET,
-    IMPORT_FILE_ID_LENGTH, IMPORT_FILE_PROCESS_TYPE, IMPORT_FILE_QUEUE, IMPORT_FOLDER_PROCESS_TYPE,
+    APALIS_MIGRATION_TABLE, IMAGE_PROCESSING_QUEUE, IMPORTED_FILES_DIRECTORY,
+    IMPORT_FILE_ID_ALPHABET, IMPORT_FILE_ID_LENGTH, IMPORT_FILE_PROCESS_TYPE, IMPORT_FILE_QUEUE,
+    IMPORT_FOLDER_PROCESS_TYPE,
 };
 
 #[derive(Clone)]
@@ -169,6 +171,7 @@ impl ImportService {
                 saved.app_used_bytes = app_used_bytes;
                 let updated = self.storage_repository.update(&saved).await?;
                 write_drive_metadata(&drive, &self.system_metadata_root, &updated)?;
+                self.publish_for_image_processing(&destination).await?;
                 return Ok(());
             }
 
@@ -193,12 +196,26 @@ impl ImportService {
                 .ok_or_else(|| AppError::internal(CounterOverflow))?;
             let updated = self.storage_repository.update(&saved).await?;
             write_drive_metadata(&drive, &self.system_metadata_root, &updated)?;
+            self.publish_for_image_processing(&destination).await?;
             return Ok(());
         }
 
         Err(AppError::storage_unavailable(
             "No mounted drive has enough available space for this file.",
         ))
+    }
+
+    async fn publish_for_image_processing(&self, path: &Path) -> AppResult<()> {
+        let mut queue = SqliteStorage::<ImageProcessingJob, (), ()>::new_in_queue(
+            &self.queue_pool,
+            IMAGE_PROCESSING_QUEUE,
+        );
+        queue
+            .push(ImageProcessingJob {
+                path: path.to_path_buf(),
+            })
+            .await
+            .map_err(AppError::database)
     }
 
     pub async fn close(&self) {

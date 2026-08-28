@@ -1,0 +1,32 @@
+{
+  "id": "6a74f867ca7a7e21533ab58f",
+  "modality": "image",
+  "label": "architecture",
+  "parent_label": "non_ocr",
+  "level": "tertiary",
+  "task": "image-classification",
+  "name": "Architecture Image Category Classification",
+  "description": "Classify a non-OCR architecture image into one or more detailed categories based on the building's purpose, design, historical significance, and structural type.",
+  "model": "openai/clip-vit-base-patch32",
+  "version": 1,
+  "enabled": true,
+  "configuration": {
+    "labels": {
+      "residential": "An image primarily showing a residential building such as a house, villa, apartment building, or housing complex.",
+      "commercial": "An image primarily showing a commercial building such as an office, shopping mall, hotel, restaurant, or retail complex.",
+      "religious": "An image primarily showing a religious structure such as a temple, church, mosque, monastery, shrine, or synagogue.",
+      "industrial": "An image primarily showing an industrial building such as a factory, warehouse, power plant, refinery, or manufacturing facility.",
+      "public_building": "An image primarily showing a public or government building such as a courthouse, library, hospital, police station, or municipal office.",
+      "educational_building": "An image primarily showing a school, college, university, training institute, or other educational building.",
+      "historic_building": "An image primarily showing an old, historic, heritage, or traditional building such as a palace, fort, castle, or preserved structure.",
+      "monument": "An image primarily showing a monument, memorial, statue, arch, or commemorative structure.",
+      "bridge": "An image primarily showing a bridge, flyover, viaduct, suspension bridge, or pedestrian crossing structure.",
+      "tower": "An image primarily showing a tall structure such as a skyscraper, observation tower, clock tower, lighthouse, or communication tower."
+    },
+    "threshold": 0.29,
+    "multilabel": true,
+    "normalize_scores": false
+  },
+  "created_at": "2026-08-06T21:11:03.243Z",
+  "updated_at": "2026-08-06T21:11:03.243Z"
+}
