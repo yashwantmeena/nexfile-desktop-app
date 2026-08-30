@@ -8,7 +8,7 @@
   "name": "Plants Image Category Classification",
   "description": "Classify a non-OCR plant image into one or more detailed categories based on the visible plant type, structure, growth pattern, and environment.",
   "model": "openai/clip-vit-base-patch32",
-  "version": 1,
+  "version": 2,
   "enabled": true,
   "configuration": {
     "labels": {
@@ -23,7 +23,7 @@
       "cacti": "A photo primarily showing cactus plants with thick stems, spines, or water-storing structures.",
       "aquatic_plants": "A photo primarily showing plants growing in, floating on, or emerging from water."
     },
-    "threshold": 0.28,
+    "threshold": 0.24,
     "multilabel": true,
     "normalize_scores": false
   },

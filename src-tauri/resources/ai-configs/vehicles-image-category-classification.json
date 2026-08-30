@@ -8,7 +8,7 @@
   "name": "Vehicles Image Category Classification",
   "description": "Classify a non-OCR vehicle image into one or more detailed categories based on the visible vehicle type, structure, and transportation mode.",
   "model": "openai/clip-vit-base-patch32",
-  "version": 1,
+  "version": 2,
   "enabled": true,
   "configuration": {
     "labels": {
@@ -23,7 +23,7 @@
       "aircraft": "A photo primarily showing an airplane, jet, helicopter, glider, or other aircraft.",
       "boat": "A photo primarily showing a boat, ship, yacht, ferry, canoe, or other watercraft."
     },
-    "threshold": 0.29,
+    "threshold": 0.24,
     "multilabel": true,
     "normalize_scores": false
   },

@@ -232,12 +232,12 @@ async fn rejects_a_path_that_is_not_a_file() {
 
 #[cfg(target_os = "windows")]
 #[tokio::test]
-async fn consumes_a_file_into_the_mounted_system_drive() {
+async fn consumes_an_image_into_the_mounted_system_drive_and_queues_processing() {
     let root = test_root();
     let database_path = root.join("nexfile.sqlite3");
-    let source = root.join("movie.mp4");
+    let source = root.join("photo.avip");
     std::fs::create_dir_all(&root).expect("test directory should be created");
-    std::fs::write(&source, b"video-content").expect("source should be written");
+    std::fs::write(&source, b"image-content").expect("source should be written");
 
     let database = SqliteDatabase::open(&database_path)
         .await
@@ -277,10 +277,10 @@ async fn consumes_a_file_into_the_mounted_system_drive() {
     let destination = root
         .join("nexfile")
         .join("files")
-        .join("abcdefghijklmn.mp4");
+        .join("abcdefghijklmn.avip");
     assert_eq!(
         std::fs::read(&destination).expect("destination should be readable"),
-        b"video-content"
+        b"image-content"
     );
     let mounted = storage
         .get_storage_data()

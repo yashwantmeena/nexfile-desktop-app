@@ -8,7 +8,7 @@
   "name": "Architecture Image Category Classification",
   "description": "Classify a non-OCR architecture image into one or more detailed categories based on the building's purpose, design, historical significance, and structural type.",
   "model": "openai/clip-vit-base-patch32",
-  "version": 1,
+  "version": 2,
   "enabled": true,
   "configuration": {
     "labels": {
@@ -23,7 +23,7 @@
       "bridge": "An image primarily showing a bridge, flyover, viaduct, suspension bridge, or pedestrian crossing structure.",
       "tower": "An image primarily showing a tall structure such as a skyscraper, observation tower, clock tower, lighthouse, or communication tower."
     },
-    "threshold": 0.29,
+    "threshold": 0.24,
     "multilabel": true,
     "normalize_scores": false
   },

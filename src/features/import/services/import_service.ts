@@ -1,28 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 
-export type BackgroundProcessStatus =
-  | "queued"
-  | "running"
-  | "paused"
-  | "completed"
-  | "failed"
-  | "cancelled";
-
-export interface BackgroundProcess {
-  processId: string;
-  processType: string;
-  status: BackgroundProcessStatus;
-  priority: number;
-  totalItems: number;
-  processedItems: number;
-  failedItems: number;
-  remark: string | null;
-  createdAtMs: number;
-  updatedAtMs: number;
-  startedAtMs: number | null;
-  finishedAtMs: number | null;
-}
+import type { BackgroundProcess } from "../types/background-process";
 
 export async function selectAndImportFiles(): Promise<BackgroundProcess | null> {
   const selectedPaths = await open({

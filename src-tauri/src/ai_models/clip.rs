@@ -8,6 +8,9 @@ use ort::{
 };
 use tokenizers::{PaddingParams, PaddingStrategy, Tokenizer, TruncationParams};
 
+use crate::error::ClipError;
+use crate::utils::image_decoder::decode_image;
+
 const VISION_INPUT: &str = "pixel_values";
 const TEXT_INPUT: &str = "input_ids";
 const ATTENTION_MASK_INPUT: &str = "attention_mask";
@@ -16,26 +19,6 @@ const TEXT_OUTPUT: &str = "text_embeds";
 
 /// A unit-length CLIP vector in the shared image/text embedding space.
 pub type Embedding = Vec<f32>;
-
-#[derive(Debug, thiserror::Error)]
-pub enum ClipError {
-    #[error("required CLIP file does not exist: {0}")]
-    MissingFile(PathBuf),
-    #[error("invalid CLIP configuration: {0}")]
-    InvalidConfig(String),
-    #[error("incompatible CLIP ONNX export: {0}")]
-    IncompatibleModel(String),
-    #[error("failed to load or preprocess image: {0}")]
-    Image(#[from] image::ImageError),
-    #[error("ONNX Runtime error: {0}")]
-    Onnx(#[from] ort::Error),
-    #[error("CLIP tokenizer error: {0}")]
-    Tokenizer(String),
-    #[error("cannot compare embeddings with dimensions {left} and {right}")]
-    DimensionMismatch { left: usize, right: usize },
-    #[error("the model returned an empty or zero-length embedding")]
-    EmptyEmbedding,
-}
 
 /// Files required by a standard split CLIP ONNX export.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -167,7 +150,7 @@ impl ClipModel {
     }
 
     pub fn embed_image_path(&mut self, path: impl AsRef<Path>) -> Result<Embedding, ClipError> {
-        let image = image::open(path)?;
+        let image = decode_image(path.as_ref())?;
         self.embed_image(&image)
     }
 

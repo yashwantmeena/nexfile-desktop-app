@@ -8,7 +8,7 @@
   "name": "Semi OCR Image Category Classification",
   "description": "Classify a semi-OCR image into exactly one content category based on its visual layout, interface, graphics, and readable-text context.",
   "model": "openai/clip-vit-base-patch32",
-  "version": 1,
+  "version": 2,
   "enabled": true,
   "configuration": {
     "labels": {
@@ -39,7 +39,7 @@
       "sign": "Road signs, warning signs, safety signs, shop signs, information boards, banners, public notices, or digital signage.",
       "other": "Mixed, unclear, unreadable, or unmatched semi-OCR content that does not fit another category."
     },
-    "threshold": 0.25,
+    "threshold": 0.1,
     "multilabel": false,
     "normalize_scores": true
   },

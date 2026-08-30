@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { ChevronDown, Grid2X2, LayoutGrid, List } from "lucide-react";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { AppToolbar } from "@/components/layout/AppToolbar";
-import type { DateFilter } from "@/components/layout/AppToolbar";
+import type { DateFilter } from "./types/filter";
 import type { AppNavigationItem } from "@/types/navigation";
 import { CategoryFilters } from "./components/CategoryFilters";
 import { FileGrid } from "./components/FileGrid";

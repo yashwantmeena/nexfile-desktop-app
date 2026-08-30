@@ -8,7 +8,7 @@
   "name": "Fashion Image Category Classification",
   "description": "Classify a non-OCR fashion image into one or more detailed categories based on the visible garments, accessories, personal styling, cultural attire, and fashion presentation.",
   "model": "openai/clip-vit-base-patch32",
-  "version": 1,
+  "version": 2,
   "enabled": true,
   "configuration": {
     "labels": {
@@ -27,7 +27,7 @@
       "fashion_model": "An image primarily showing a model posing to display clothing, accessories, or a styled fashion look.",
       "fashion_show": "An image primarily showing models walking on a runway or participating in a fashion event."
     },
-    "threshold": 0.29,
+    "threshold": 0.24,
     "multilabel": true,
     "normalize_scores": false
   },

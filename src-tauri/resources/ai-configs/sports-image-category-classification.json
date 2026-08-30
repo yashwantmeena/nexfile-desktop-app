@@ -8,7 +8,7 @@
   "name": "Sports Image Category Classification",
   "description": "Classify a non-OCR sports image into one or more detailed categories based on the visible sport, athletes, equipment, playing environment, and physical activity.",
   "model": "openai/clip-vit-base-patch32",
-  "version": 1,
+  "version": 2,
   "enabled": true,
   "configuration": {
     "labels": {
@@ -33,7 +33,7 @@
       "winter_sports": "An image primarily showing skiing, snowboarding, ice skating, or another sport performed on snow or ice.",
       "water_sports": "An image primarily showing surfing, kayaking, rowing, diving, or another sport performed in or on water."
     },
-    "threshold": 0.29,
+    "threshold": 0.24,
     "multilabel": true,
     "normalize_scores": false
   },

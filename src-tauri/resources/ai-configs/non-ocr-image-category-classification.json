@@ -8,14 +8,14 @@
   "name": "Non OCR Image Category Classification",
   "description": "Classify a non-OCR image into exactly one content category based primarily on its visual subject, objects, scene, and composition.",
   "model": "openai/clip-vit-base-patch32",
-  "version": 1,
+  "version": 3,
   "enabled": true,
   "configuration": {
     "labels": {
       "people": "A photograph primarily showing one or more people, including portraits, selfies, families, groups, workers, performers, or crowds.",
       "nature": "A natural outdoor scene such as mountains, forests, rivers, lakes, oceans, beaches, deserts, waterfalls, clouds, or landscapes.",
       "plants": "An image primarily focused on plants, flowers, trees, leaves, grass, crops, shrubs, or other vegetation.",
-      "animals": "An image primarily showing animals, including pets, wildlife, birds, fish, reptiles, amphibians, insects, or farm animals.",
+      "animals": "a photo of an animal",
       "products": "A physical item primarily presented as a commercial product, such as appliances, tools, furniture, cosmetics, toys, accessories, or household goods.",
       "vehicles": "An image primarily showing a vehicle, including cars, motorcycles, bicycles, trucks, buses, trains, boats, aircraft, or construction vehicles.",
       "food_and_drink": "An image primarily showing food, meals, ingredients, fruits, vegetables, desserts, snacks, beverages, or prepared dishes.",
@@ -32,8 +32,8 @@
       "graphics": "An abstract or designed visual such as an icon, pattern, decorative composition, geometric design, symbol set, background graphic, or non-text diagram.",
       "other": "An unclear, mixed, unusual, or unmatched image that does not primarily fit any of the available categories."
     },
-    "threshold": 0.3,
-    "multilabel": true,
+    "threshold": 0.2,
+    "multilabel": false,
     "normalize_scores": true
   },
   "created_at": "2026-08-06T20:42:39.163Z",

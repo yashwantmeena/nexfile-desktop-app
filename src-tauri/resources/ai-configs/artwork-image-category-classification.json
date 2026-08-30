@@ -8,7 +8,7 @@
   "name": "Artwork Image Category Classification",
   "description": "Classify a non-OCR artwork image into one or more detailed categories based on the artistic medium, production technique, visual style, and composition.",
   "model": "openai/clip-vit-base-patch32",
-  "version": 1,
+  "version": 2,
   "enabled": true,
   "configuration": {
     "labels": {
@@ -28,7 +28,7 @@
       "textile_art": "An image primarily showing artistic work created using fabric, weaving, embroidery, knitting, or other textile techniques.",
       "calligraphy": "An image primarily showing decorative or artistic handwriting where the lettering style is the main visual subject and readable text is not essential."
     },
-    "threshold": 0.28,
+    "threshold": 0.24,
     "multilabel": true,
     "normalize_scores": false
   },

@@ -8,7 +8,7 @@
   "name": "Events Image Category Classification",
   "description": "Classify a non-OCR event image into one or more detailed categories based on the visible celebration, ceremony, gathering, performance, competition, or organized activity.",
   "model": "openai/clip-vit-base-patch32",
-  "version": 1,
+  "version": 2,
   "enabled": true,
   "configuration": {
     "labels": {
@@ -28,7 +28,7 @@
       "award_ceremony": "An image primarily showing awards, trophies, medals, winners, presenters, or a formal recognition event.",
       "public_gathering": "An image primarily showing a large organized gathering, rally, public meeting, or crowd attending an event."
     },
-    "threshold": 0.29,
+    "threshold": 0.24,
     "multilabel": true,
     "normalize_scores": false
   },

@@ -8,7 +8,7 @@
   "name": "People Image Category Classification",
   "description": "Classify a non-OCR people image into one or more detailed categories based on the subjects, framing, age group, activity, event, and environment shown.",
   "model": "openai/clip-vit-base-patch32",
-  "version": 1,
+  "version": 2,
   "enabled": true,
   "configuration": {
     "labels": {
@@ -39,9 +39,9 @@
       "outdoor": "A photo showing people primarily in an outdoor environment under open sky.",
       "indoor": "A photo showing people primarily inside a room, building, or enclosed space."
     },
-    "threshold": 0.27,
+    "threshold": 0.24,
     "multilabel": true,
-    "normalize_scores": true
+    "normalize_scores": false
   },
   "created_at": "2026-08-06T21:04:49.086Z",
   "updated_at": "2026-08-06T21:04:49.086Z"

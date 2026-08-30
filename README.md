@@ -32,3 +32,17 @@ npm run build
 npm run tauri dev
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
+
+On Windows, a clean Rust build also needs CMake, Perl, and NASM 2.16.x on
+`PATH` to compile the bundled AVIF decoder. Git for Windows includes Perl.
+NASM 3.x is not currently compatible with the pinned libaom release.
+
+## Image classification formats
+
+Classification accepts `.avif`, `.avip`, `.bmp`, `.gif`, `.heic`, `.heif`,
+`.ico`, `.jpeg`, `.jpg`, `.png`, `.svg`, `.tif`, `.tiff`, and `.webp` files.
+The original file stays unchanged. Before model processing, each image is decoded
+or rasterized, resized so its longest side is at most 2048 pixels, flattened onto
+white when it has transparency, and saved as a temporary quality-90 JPEG. The same
+prepared file can be shared by CLIP and Florence-2, and is deleted automatically
+when processing finishes or fails.

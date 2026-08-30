@@ -8,7 +8,7 @@
   "name": "Other Image Category Classification",
   "description": "Classify an unclear or unmatched non-OCR image into one or more fallback categories based on visual ambiguity, image quality, obstruction, corruption, or the absence of a recognizable primary subject.",
   "model": "openai/clip-vit-base-patch32",
-  "version": 1,
+  "version": 2,
   "enabled": true,
   "configuration": {
     "labels": {
@@ -20,7 +20,7 @@
       "empty_scene": "An image showing an empty, plain, or visually insignificant scene without a clear searchable subject.",
       "corrupted_image": "An image containing severe digital corruption, broken pixels, missing regions, or rendering errors."
     },
-    "threshold": 0.25,
+    "threshold": 0.24,
     "multilabel": true,
     "normalize_scores": false
   },

@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Downloaded AI model assets
+src-tauri/resources/ai-models/**/*.onnx
+src-tauri/resources/ai-models/**/tokenizer.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

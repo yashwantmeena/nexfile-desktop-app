@@ -8,7 +8,7 @@
   "name": "Technology Image Category Classification",
   "description": "Classify a non-OCR technology image into one or more detailed categories based on the visible device, electronic hardware, machinery, computing equipment, or technical system.",
   "model": "openai/clip-vit-base-patch32",
-  "version": 1,
+  "version": 2,
   "enabled": true,
   "configuration": {
     "labels": {
@@ -28,7 +28,7 @@
       "smart_device": "An image primarily showing a connected electronic device such as a smartwatch, smart speaker, smart-home device, or wearable technology.",
       "virtual_reality": "An image primarily showing a virtual-reality headset, controllers, or a person using VR equipment."
     },
-    "threshold": 0.29,
+    "threshold": 0.24,
     "multilabel": true,
     "normalize_scores": false
   },

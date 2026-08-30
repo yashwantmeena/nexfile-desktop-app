@@ -20,6 +20,7 @@ impl ImportWorker {
         );
         let worker = WorkerBuilder::new(IMPORT_FILE_WORKER)
             .backend(backend)
+            .concurrency(1)
             .build(move |job: ImportFileJob| {
                 let service = service.clone();
                 async move { consume_import_file(job, service).await }

@@ -12,14 +12,15 @@ mod workers;
 
 use tauri::Manager;
 
-pub use ai_models::clip::{ClipConfig, ClipError, ClipModel, ClipModelPaths, Embedding};
+pub use ai_models::clip::{ClipConfig, ClipModel, ClipModelPaths, Embedding};
 pub use ai_models::florence2::{
-    Florence2Config, Florence2Error, Florence2Model, Florence2ModelPaths, Florence2Output,
-    Florence2Task,
+    Florence2Config, Florence2Model, Florence2ModelPaths, Florence2Output, Florence2Task,
 };
-pub use error::AppError;
+pub use error::{AppError, ClipError, Florence2Error};
 pub use models::background_process_model::{BackgroundProcess, BackgroundProcessStatus};
-pub use models::image_processing_model::ImageProcessingJob;
+pub use models::image_processing_model::{
+    ClassificationPrediction, ImageClassificationOutput, ImageProcessingJob, ImageProcessingOutput,
+};
 pub use models::import_model::ImportFileJob;
 pub use models::storage_model::{
     DriveConfigurationUpdate, DriveInfo, DriveMetadata, StorageData, StorageDrive,
@@ -53,6 +54,7 @@ pub fn run() {
         if matches!(event, tauri::RunEvent::Exit) {
             let state = app_handle.state::<app::state::AppState>();
             tauri::async_runtime::block_on(state.import_worker.close());
+            tauri::async_runtime::block_on(state.image_processing_worker.close());
             tauri::async_runtime::block_on(state.imports.close());
             tauri::async_runtime::block_on(state.storage.close());
         }

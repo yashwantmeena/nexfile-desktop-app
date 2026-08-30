@@ -8,7 +8,7 @@
   "name": "Nature Image Category Classification",
   "description": "Classify a non-OCR nature image into one or more detailed categories based on the visible landscape, terrain, water body, weather, atmosphere, and natural environment.",
   "model": "openai/clip-vit-base-patch32",
-  "version": 1,
+  "version": 2,
   "enabled": true,
   "configuration": {
     "labels": {
@@ -58,7 +58,7 @@
       "farmland": "A rural landscape primarily showing cultivated fields, crops, pastures, or agricultural land.",
       "underwater_nature": "A natural underwater environment showing aquatic terrain, coral, plants, rocks, or marine scenery."
     },
-    "threshold": 0.27,
+    "threshold": 0.24,
     "multilabel": true,
     "normalize_scores": false
   },

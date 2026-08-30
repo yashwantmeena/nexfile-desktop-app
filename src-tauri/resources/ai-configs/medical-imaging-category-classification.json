@@ -8,7 +8,7 @@
   "name": "Medical Imaging Category Classification",
   "description": "Classify a non-OCR medical image into one or more detailed categories based on the imaging technique, visible anatomy, image characteristics, and diagnostic context.",
   "model": "openai/clip-vit-base-patch32",
-  "version": 1,
+  "version": 2,
   "enabled": true,
   "configuration": {
     "labels": {
@@ -23,7 +23,7 @@
       "retinal_imaging": "A medical image primarily showing the retina, optic disc, blood vessels, or internal structures of the eye.",
       "nuclear_medicine": "A medical image primarily showing a PET scan, SPECT scan, or another radioactive tracer-based diagnostic scan."
     },
-    "threshold": 0.3,
+    "threshold": 0.24,
     "multilabel": true,
     "normalize_scores": false
   },

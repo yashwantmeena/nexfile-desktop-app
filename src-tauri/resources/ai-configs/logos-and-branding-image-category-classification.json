@@ -8,7 +8,7 @@
   "name": "Logos and Branding Image Category Classification",
   "description": "Classify a non-OCR logo or branding image into one or more detailed categories based on its visual structure, use of text, symbols, emblems, characters, and brand context.",
   "model": "openai/clip-vit-base-patch32",
-  "version": 1,
+  "version": 2,
   "enabled": true,
   "configuration": {
     "labels": {
@@ -26,7 +26,7 @@
       "sports_logo": "An image primarily showing the logo, crest, or emblem of a sports team, club, league, or competition.",
       "government_emblem": "An image primarily showing an official government emblem, national symbol, department seal, or public authority insignia."
     },
-    "threshold": 0.3,
+    "threshold": 0.24,
     "multilabel": true,
     "normalize_scores": false
   },

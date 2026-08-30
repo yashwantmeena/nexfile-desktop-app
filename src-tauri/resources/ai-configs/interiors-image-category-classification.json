@@ -8,7 +8,7 @@
   "name": "Interiors Image Category Classification",
   "description": "Classify a non-OCR interior image into one or more detailed categories based on the room type, visible furnishings, spatial function, and indoor environment.",
   "model": "openai/clip-vit-base-patch32",
-  "version": 1,
+  "version": 2,
   "enabled": true,
   "configuration": {
     "labels": {
@@ -28,7 +28,7 @@
       "gym": "An image primarily showing an indoor gym, fitness center, exercise room, or workout space.",
       "warehouse": "An image primarily showing the inside of a warehouse, storage facility, or industrial storage area."
     },
-    "threshold": 0.28,
+    "threshold": 0.24,
     "multilabel": true,
     "normalize_scores": false
   },

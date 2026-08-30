@@ -8,7 +8,7 @@ use futures::stream;
 use sqlx::SqlitePool;
 use tauri::async_runtime::Mutex;
 
-use crate::error::{AppError, AppResult};
+use crate::error::{AppError, AppResult, CounterOverflow};
 use crate::models::background_process_model::{BackgroundProcess, BackgroundProcessStatus};
 use crate::models::image_processing_model::ImageProcessingJob;
 use crate::models::import_model::ImportFileJob;
@@ -16,6 +16,7 @@ use crate::models::storage_model::{DriveInfo, DriveMetadata};
 use crate::repositories::background_processing_repository::SqliteBackgroundProcessingRepository;
 use crate::repositories::database_repository::SqliteDatabase;
 use crate::repositories::storage_repository::SqliteStorageRepository;
+use crate::services::image_processing_service::has_valid_classification_output;
 use crate::services::storage_service::{
     drive_storage_root, read_drive_metadata, write_drive_metadata,
 };
@@ -206,6 +207,9 @@ impl ImportService {
     }
 
     async fn publish_for_image_processing(&self, path: &Path) -> AppResult<()> {
+        if !is_supported_image(path) {
+            return Ok(());
+        }
         let mut queue = SqliteStorage::<ImageProcessingJob, (), ()>::new_in_queue(
             &self.queue_pool,
             IMAGE_PROCESSING_QUEUE,
@@ -218,9 +222,81 @@ impl ImportService {
             .map_err(AppError::database)
     }
 
+    pub async fn enqueue_unclassified_images(&self) -> AppResult<usize> {
+        let saved_drives = self.storage_repository.list().await?;
+        let mut paths = Vec::new();
+
+        for drive in get_drives() {
+            let Some(on_drive) = read_drive_metadata(&drive, &self.system_metadata_root) else {
+                continue;
+            };
+            if !saved_drives
+                .iter()
+                .any(|saved| saved.drive_id == on_drive.drive_id && saved.is_mounted)
+            {
+                continue;
+            }
+
+            let files_directory = drive_storage_root(&drive, &self.system_metadata_root)
+                .join(IMPORTED_FILES_DIRECTORY);
+            if !files_directory.is_dir() {
+                continue;
+            }
+
+            let mut entries = std::fs::read_dir(files_directory)?.collect::<Result<Vec<_>, _>>()?;
+            entries.sort_by_key(|entry| entry.file_name());
+            for entry in entries {
+                let path = entry.path();
+                if path.is_file()
+                    && is_supported_image(&path)
+                    && !has_valid_classification_output(&path)?
+                {
+                    paths.push(path);
+                }
+            }
+        }
+
+        let count = paths.len();
+        let mut queue = SqliteStorage::<ImageProcessingJob, (), ()>::new_in_queue(
+            &self.queue_pool,
+            IMAGE_PROCESSING_QUEUE,
+        );
+        for path in paths {
+            queue
+                .push(ImageProcessingJob { path })
+                .await
+                .map_err(AppError::database)?;
+        }
+        Ok(count)
+    }
+
     pub async fn close(&self) {
         self.repository.close().await;
     }
+}
+
+fn is_supported_image(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            matches!(
+                extension.to_ascii_lowercase().as_str(),
+                "avif"
+                    | "avip"
+                    | "bmp"
+                    | "gif"
+                    | "heic"
+                    | "heif"
+                    | "ico"
+                    | "jpeg"
+                    | "jpg"
+                    | "png"
+                    | "svg"
+                    | "tif"
+                    | "tiff"
+                    | "webp"
+            )
+        })
 }
 
 fn validate_file_paths<I, P>(paths: I) -> AppResult<Vec<PathBuf>>
@@ -347,6 +423,6 @@ fn calculate_usage(files_directory: &Path) -> AppResult<(i64, i64)> {
     Ok((file_count, app_used_bytes))
 }
 
-#[derive(Debug, thiserror::Error)]
-#[error("the import metadata counter overflowed")]
-struct CounterOverflow;
+#[cfg(test)]
+#[path = "../../tests/services/import_service_unit.rs"]
+mod tests;

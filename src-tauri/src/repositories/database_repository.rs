@@ -25,7 +25,7 @@ impl SqliteDatabase {
             .busy_timeout(Duration::from_secs(5));
         let pool = SqlitePoolOptions::new()
             .min_connections(1)
-            .max_connections(5)
+            .max_connections(16)
             .acquire_timeout(Duration::from_secs(5))
             .connect_with(options)
             .await

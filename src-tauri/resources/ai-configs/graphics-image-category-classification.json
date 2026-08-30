@@ -8,7 +8,7 @@
   "name": "Graphics Image Category Classification",
   "description": "Classify a non-OCR graphic image into one or more detailed categories based on its visual structure, design purpose, shapes, patterns, data representation, and graphical composition.",
   "model": "openai/clip-vit-base-patch32",
-  "version": 1,
+  "version": 2,
   "enabled": true,
   "configuration": {
     "labels": {
@@ -25,7 +25,7 @@
       "texture": "An image primarily showing a surface texture or material pattern such as wood, stone, fabric, metal, paper, or an abstract texture.",
       "infographic_element": "An image primarily showing a standalone visual element used in an infographic, such as arrows, timelines, process shapes, or data symbols."
     },
-    "threshold": 0.28,
+    "threshold": 0.24,
     "multilabel": true,
     "normalize_scores": false
   },

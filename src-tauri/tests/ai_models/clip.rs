@@ -35,3 +35,32 @@ fn rejects_mismatched_embedding_dimensions() {
     let error = ClipModel::cosine_similarity(&[1.0], &[1.0, 0.0]).unwrap_err();
     assert!(matches!(error, ClipError::DimensionMismatch { .. }));
 }
+
+#[test]
+#[ignore = "loads the bundled CLIP model and runs ONNX inference"]
+fn bundled_model_runs_image_and_text_inference() {
+    let model_directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("resources")
+        .join("ai-models")
+        .join("clip-vit-base-patch32");
+    let mut model = ClipModel::load(ClipModelPaths::from_dir(model_directory))
+        .expect("bundled CLIP model should load");
+
+    let text = model
+        .embed_text("A solid red image.")
+        .expect("text inference should succeed");
+    let image = image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(
+        224,
+        224,
+        image::Rgb([255, 0, 0]),
+    ));
+    let image = model
+        .embed_image(&image)
+        .expect("image inference should succeed");
+
+    assert!(!text.is_empty());
+    assert_eq!(text.len(), image.len());
+    assert!(ClipModel::cosine_similarity(&text, &image)
+        .expect("embeddings should be comparable")
+        .is_finite());
+}

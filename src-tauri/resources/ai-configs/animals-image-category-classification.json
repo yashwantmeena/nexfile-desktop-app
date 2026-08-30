@@ -8,7 +8,7 @@
   "name": "Animals Image Category Classification",
   "description": "Classify a non-OCR animal image into one or more detailed categories based on the animal type, domestication, habitat, and visible biological group.",
   "model": "openai/clip-vit-base-patch32",
-  "version": 1,
+  "version": 3,
   "enabled": true,
   "configuration": {
     "labels": {
@@ -21,7 +21,7 @@
       "wildlife": "A photo primarily showing wild animals living in a natural habitat, such as lions, elephants, deer, bears, or monkeys.",
       "farm_animal": "A photo primarily showing domesticated animals commonly raised on farms, such as cattle, goats, sheep, pigs, horses, or chickens."
     },
-    "threshold": 0.28,
+    "threshold": 0.26,
     "multilabel": true,
     "normalize_scores": false
   },

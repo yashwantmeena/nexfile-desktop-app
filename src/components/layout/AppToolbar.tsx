@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CalendarDays, Check, ChevronDown, FileText, FileUp, FolderUp, SlidersHorizontal, Sparkles, Tag } from "lucide-react";
 import { getImportErrorMessage, selectAndImportFiles, selectAndImportFolder } from "@/features/import/services/import_service";
-
-export type DateFilter = "any" | "today" | "7days" | "30days" | "year";
+import type { DateFilter } from "@/features/dashboard/types/filter";
 
 interface AppToolbarProps {
   query: string;

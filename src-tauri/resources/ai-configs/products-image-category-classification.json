@@ -8,7 +8,7 @@
   "name": "Products Image Category Classification",
   "description": "Classify a non-OCR product image into one or more detailed categories based on the product's type, purpose, design, and intended use.",
   "model": "openai/clip-vit-base-patch32",
-  "version": 1,
+  "version": 2,
   "enabled": true,
   "configuration": {
     "labels": {
@@ -28,7 +28,7 @@
       "automotive_products": "A photo primarily showing vehicle parts or accessories such as tyres, helmets, batteries, lights, or car-care products.",
       "other_product": "A photo primarily showing a physical commercial product that does not clearly match another available product type."
     },
-    "threshold": 0.27,
+    "threshold": 0.24,
     "multilabel": true,
     "normalize_scores": false
   },

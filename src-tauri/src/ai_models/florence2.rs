@@ -9,6 +9,8 @@ use ort::{
 use serde::{Deserialize, Serialize};
 use tokenizers::{Tokenizer, TruncationParams};
 
+use crate::error::Florence2Error;
+
 const PIXEL_VALUES: &str = "pixel_values";
 const INPUT_IDS: &str = "input_ids";
 const INPUTS_EMBEDS: &str = "inputs_embeds";
@@ -18,26 +20,6 @@ const ENCODER_HIDDEN_STATES: &str = "encoder_hidden_states";
 const IMAGE_FEATURES: &str = "image_features";
 const LAST_HIDDEN_STATE: &str = "last_hidden_state";
 const LOGITS: &str = "logits";
-
-#[derive(Debug, thiserror::Error)]
-pub enum Florence2Error {
-    #[error("required Florence-2 file does not exist: {0}")]
-    MissingFile(PathBuf),
-    #[error("invalid Florence-2 configuration: {0}")]
-    InvalidConfig(String),
-    #[error("incompatible Florence-2 ONNX export: {0}")]
-    IncompatibleModel(String),
-    #[error("failed to load or preprocess image: {0}")]
-    Image(#[from] image::ImageError),
-    #[error("ONNX Runtime error: {0}")]
-    Onnx(#[from] ort::Error),
-    #[error("Florence-2 tokenizer error: {0}")]
-    Tokenizer(String),
-    #[error("Florence-2 tensor error: {0}")]
-    Tensor(String),
-    #[error("Florence-2 returned no usable token logits")]
-    EmptyLogits,
-}
 
 /// Paths for the standard `onnx-community/Florence-2-base-ft` export layout.
 #[derive(Clone, Debug, Eq, PartialEq)]

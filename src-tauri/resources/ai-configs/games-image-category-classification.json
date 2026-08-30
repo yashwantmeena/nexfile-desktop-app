@@ -8,7 +8,7 @@
   "name": "Games Image Category Classification",
   "description": "Classify a non-OCR game image into one or more detailed categories based on the visible character, environment, gameplay activity, game genre, or physical game type.",
   "model": "openai/clip-vit-base-patch32",
-  "version": 1,
+  "version": 2,
   "enabled": true,
   "configuration": {
     "labels": {
@@ -25,7 +25,7 @@
       "board_game": "A photo primarily showing a physical board game, game board, tokens, dice, or playing pieces.",
       "card_game": "A photo primarily showing playing cards, collectible cards, or a physical card game."
     },
-    "threshold": 0.28,
+    "threshold": 0.24,
     "multilabel": true,
     "normalize_scores": false
   },

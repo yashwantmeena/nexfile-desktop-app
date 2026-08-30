@@ -8,13 +8,13 @@
   "name": "Primary Image Classification",
   "description": "Classify an image as full OCR, semi OCR, or non OCR based on whether its meaning depends primarily on text, both text and visual structure, or visual content.",
   "model": "openai/clip-vit-base-patch32",
-  "version": 4,
+  "version": 5,
   "enabled": true,
   "configuration": {
     "labels": {
-      "full_ocr": "A text-dense document, form, invoice, receipt, contract, certificate, letter, report, or scanned book page.",
-      "semi_ocr": "A screenshot, webpage, app interface, chat, social media post, slide, table, chart, infographic, poster, menu, sign, comic, or meme where text and visual layout are both important.",
-      "non_ocr": "A photograph or visual image of people, animals, nature, products, vehicles, food, buildings, art, medical imagery, logos, icons, or graphics with little meaningful text."
+      "full_ocr": "a scanned text document",
+      "semi_ocr": "a screenshot containing text and graphics",
+      "non_ocr": "a photograph of a person, animal, object, place, or natural scene"
     },
     "threshold": 0.2,
     "multilabel": false,

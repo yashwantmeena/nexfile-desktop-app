@@ -1,4 +1,5 @@
 pub(crate) mod constants;
+pub mod image_decoder;
 
 pub(crate) fn percentage(value: i64, total: i64) -> u8 {
     if value <= 0 || total <= 0 {
