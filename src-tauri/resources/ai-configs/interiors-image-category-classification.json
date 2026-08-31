@@ -2,7 +2,7 @@
   "id": "6a74f883ca7a7e21533ab590",
   "modality": "image",
   "label": "interiors",
-  "parent_label": "non_ocr",
+  "parent_label": "visual",
   "level": "tertiary",
   "task": "image-classification",
   "name": "Interiors Image Category Classification",

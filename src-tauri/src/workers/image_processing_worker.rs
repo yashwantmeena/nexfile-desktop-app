@@ -72,7 +72,7 @@ async fn consume_image_processing_job(
     let path = job.path.clone();
     if !path.is_file() {
         eprintln!(
-            "skipped stale image-processing job because the source file no longer exists: {}",
+            "[image-processing-queue][ACK] {} | stale source no longer exists",
             path.display()
         );
         return Ok(());
@@ -81,7 +81,7 @@ async fn consume_image_processing_job(
     match service.process(job).await {
         Ok(output_path) => {
             eprintln!(
-                "captioned and classified image {} -> {}",
+                "[image-processing-queue][ACK] {} | output={}",
                 path.display(),
                 output_path.display()
             );
@@ -89,13 +89,16 @@ async fn consume_image_processing_job(
         }
         Err(_) if !path.is_file() => {
             eprintln!(
-                "skipped stale image-processing job because the source file disappeared: {}",
+                "[image-processing-queue][ACK] {} | source disappeared during processing",
                 path.display()
             );
             Ok(())
         }
         Err(error) => {
-            eprintln!("image processing failed for {}: {error:?}", path.display());
+            eprintln!(
+                "[image-processing-queue][RETRY] {} | {error:?}",
+                path.display()
+            );
             Err(error)
         }
     }

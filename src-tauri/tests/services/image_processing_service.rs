@@ -41,11 +41,21 @@ fn normalized_single_label_config_returns_only_the_best_match() {
 
 #[test]
 fn single_label_config_returns_the_best_match_below_threshold() {
-    let config = prepared_config("secondary", "semi_ocr", 0.9, false, true);
+    let config = prepared_config("secondary", "test_parent", 0.9, false, true);
     let predictions = select_predictions(&config, vec![0.21, 0.20]);
     assert_eq!(predictions.len(), 1);
     assert_eq!(predictions[0].label, "first");
     assert!(predictions[0].score < config.threshold);
+}
+
+#[test]
+fn removes_florence_location_tokens_from_searchable_ocr_text() {
+    assert_eq!(
+        strip_florence_location_tokens(
+            "NexFile<loc_10><loc_20><loc_300><loc_80> Search<loc_40><loc_100><loc_200><loc_160>"
+        ),
+        "NexFile Search"
+    );
 }
 
 #[test]
@@ -66,32 +76,129 @@ fn raw_multilabel_config_falls_back_to_the_best_match() {
 }
 
 #[test]
+fn extracts_one_to_three_word_candidates_from_a_detailed_caption() {
+    let candidates = extract_keyword_candidates(
+        "A red vintage car parked beside a brick building on a rainy city street.",
+    );
+
+    assert!(candidates.contains(&"red vintage car".to_owned()));
+    assert!(candidates.contains(&"vintage car".to_owned()));
+    assert!(candidates.contains(&"car parked".to_owned()));
+    assert!(candidates.contains(&"parked".to_owned()));
+    assert!(candidates.contains(&"brick building".to_owned()));
+    assert!(candidates.contains(&"rainy city street".to_owned()));
+    assert!(!candidates
+        .iter()
+        .any(|candidate| candidate.contains("beside")));
+}
+
+#[test]
+fn keeps_searchable_activity_words_as_candidates() {
+    let candidates = extract_keyword_candidates(
+        "People standing, sitting, holding signs, wearing uniforms, walking, looking, with parked cars.",
+    );
+
+    for activity in [
+        "standing", "sitting", "holding", "wearing", "walking", "looking", "parked",
+    ] {
+        assert!(
+            candidates
+                .iter()
+                .any(|candidate| candidate.split_whitespace().any(|word| word == activity)),
+            "missing searchable activity: {activity}"
+        );
+    }
+}
+
+#[test]
+fn removes_viewpoint_pronoun_and_incomplete_descriptor_candidates() {
+    let candidates = extract_keyword_candidates(
+        "A large green and red bird is looking directly at the camera. Its head has blue eyes.",
+    );
+
+    assert!(candidates.contains(&"red bird".to_owned()));
+    assert!(candidates.contains(&"blue eyes".to_owned()));
+    assert!(candidates.contains(&"eyes".to_owned()));
+    assert!(candidates.contains(&"head".to_owned()));
+    assert!(!candidates.contains(&"large green".to_owned()));
+    for rejected in ["camera", "directly", "its"] {
+        assert!(!candidates
+            .iter()
+            .any(|candidate| candidate.split_whitespace().any(|word| word == rejected)));
+    }
+}
+
+#[test]
+fn keeps_body_and_animal_part_words_as_candidates() {
+    for word in [
+        "eye", "eyes", "nose", "ear", "ears", "head", "mouth", "hair", "fur", "skin", "body",
+        "neck", "leg", "legs", "paw", "paws", "hand", "hands", "foot", "feet", "wing", "wings",
+        "feather", "feathers", "tail", "whisker", "whiskers", "beak", "horn", "horns", "mane",
+    ] {
+        assert_eq!(
+            extract_keyword_candidates(word),
+            vec![word.to_owned()],
+            "missing searchable body or animal part: {word}"
+        );
+    }
+}
+
+#[test]
+fn selects_highest_scoring_non_redundant_search_tags() {
+    let tags = select_search_tags(vec![
+        ("car".to_owned(), 0.34),
+        ("red vintage car".to_owned(), 0.36),
+        ("brick building".to_owned(), 0.33),
+        ("building".to_owned(), 0.31),
+        ("city street".to_owned(), 0.30),
+        ("carpet".to_owned(), 0.29),
+    ]);
+
+    assert_eq!(
+        tags,
+        ["red vintage car", "brick building", "city street", "carpet"]
+    );
+}
+
+#[test]
 fn loads_the_complete_resource_configuration_hierarchy() {
     let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("resources")
         .join("ai-configs");
     let definitions = load_config_definitions(&directory).expect("configs should load");
-    assert_eq!(definitions.len(), 22);
+    assert_eq!(definitions.len(), 21);
     assert!(definitions.iter().any(|config| {
         config.level == "primary" && config.label == "primary" && config.parent_label.is_none()
     }));
     assert!(definitions.iter().any(|config| {
         config.level == "tertiary"
             && config.label == "people"
-            && config.parent_label.as_deref() == Some("non_ocr")
+            && config.parent_label.as_deref() == Some("visual")
     }));
 
-    let semi_ocr = definitions
+    let primary = definitions
         .iter()
-        .find(|config| config.level == "secondary" && config.label == "semi_ocr")
-        .expect("semi-OCR config should exist");
-    assert_eq!(semi_ocr.configuration.threshold, 0.1);
+        .find(|config| config.level == "primary" && config.label == "primary")
+        .expect("primary config should exist");
+    assert_eq!(
+        primary.configuration.labels["ocr"],
+        "an image containing clearly readable and meaningful words, sentences, labels, signs, or document text"
+    );
+    assert_eq!(
+        primary.configuration.labels["visual"],
+        "a photograph or visual image without clearly readable or meaningful text"
+    );
+    assert_eq!(primary.configuration.labels.len(), 2);
 
-    let non_ocr = definitions
+    assert!(!definitions
         .iter()
-        .find(|config| config.level == "secondary" && config.label == "non_ocr")
-        .expect("non-OCR config should exist");
-    assert!(!non_ocr.configuration.multilabel);
+        .any(|config| config.level == "secondary" && config.label == "semi_ocr"));
+
+    let visual = definitions
+        .iter()
+        .find(|config| config.level == "secondary" && config.label == "visual")
+        .expect("visual config should exist");
+    assert!(!visual.configuration.multilabel);
 
     for tertiary in definitions
         .iter()
@@ -241,7 +348,7 @@ fn treats_unversioned_classification_output_as_stale() {
 }
 
 #[test]
-fn treats_pre_caption_output_version_as_stale() {
+fn treats_previous_primary_label_version_as_stale() {
     let root = std::env::temp_dir().join(format!(
         "nexfile-old-classification-version-{}",
         uuid::Uuid::new_v4()
@@ -250,7 +357,7 @@ fn treats_pre_caption_output_version_as_stale() {
     let output_path = root.join("image.jpg.json");
     std::fs::write(
         &output_path,
-        r#"{"version":4,"classification":{"primary":[],"secondary":[],"tertiary":[]}}"#,
+        r#"{"version":10,"caption":null,"ocr":{"text":"NexFile","rawTextWithRegions":"NexFile"},"tags":["nexfile"],"classification":{"primary":[{"label":"contains_readable_text","parentLabel":null,"score":0.9}],"secondary":[],"tertiary":[]}}"#,
     )
     .expect("old output should be written");
 
@@ -266,7 +373,7 @@ fn treats_an_empty_caption_as_stale() {
     std::fs::write(
         &output_path,
         format!(
-            r#"{{"version":{IMAGE_PROCESSING_OUTPUT_VERSION},"caption":"  ","classification":{{"primary":[],"secondary":[],"tertiary":[]}}}}"#
+            r#"{{"version":{IMAGE_PROCESSING_OUTPUT_VERSION},"caption":"  ","ocr":null,"tags":["test"],"classification":{{"primary":[],"secondary":[],"tertiary":[]}}}}"#
         ),
     )
     .expect("empty caption output should be written");
@@ -275,9 +382,26 @@ fn treats_an_empty_caption_as_stale() {
     std::fs::remove_dir_all(root).expect("test directory should be removed");
 }
 
+#[test]
+fn accepts_a_current_ocr_output_without_a_caption() {
+    let root = std::env::temp_dir().join(format!("nexfile-ocr-output-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&root).expect("test directory should be created");
+    let output_path = root.join("image.jpg.json");
+    std::fs::write(
+        &output_path,
+        format!(
+            r#"{{"version":{IMAGE_PROCESSING_OUTPUT_VERSION},"caption":null,"ocr":{{"text":"NexFile","rawTextWithRegions":"NexFile<loc_1><loc_2><loc_3><loc_4>"}},"tags":["nexfile"],"classification":{{"primary":[{{"label":"ocr","parentLabel":null,"score":0.9}}],"secondary":[],"tertiary":[]}}}}"#
+        ),
+    )
+    .expect("OCR output should be written");
+
+    assert!(valid_existing_output(&output_path).expect("OCR output should be checked"));
+    std::fs::remove_dir_all(root).expect("test directory should be removed");
+}
+
 #[tokio::test]
 #[ignore = "loads the bundled CLIP and Florence-2 models"]
-async fn bundled_models_write_classification_and_caption_for_real_images() {
+async fn bundled_models_write_binary_analysis_and_tags_for_real_images() {
     let root = std::env::temp_dir().join(format!(
         "nexfile-image-classification-{}",
         uuid::Uuid::new_v4()
@@ -343,22 +467,30 @@ async fn bundled_models_write_classification_and_caption_for_real_images() {
         assert_eq!(output_path, classification_output_path(&image_path));
         assert_eq!(output.version, IMAGE_PROCESSING_OUTPUT_VERSION);
         assert!(
-            !output.caption.trim().is_empty(),
-            "caption should not be empty for {image_path:?}"
+            !output.tags.is_empty(),
+            "search tags should not be empty for {image_path:?}"
         );
         assert!(
             !output.classification.primary.is_empty(),
             "primary classification should not be empty for {image_path:?}"
         );
-        assert!(
-            !output.classification.secondary.is_empty(),
-            "secondary classification should not be empty for {image_path:?}"
-        );
-        if output.classification.primary[0].label == "non_ocr" {
-            assert!(
-                !output.classification.tertiary.is_empty(),
-                "tertiary classification should not be empty for {image_path:?}"
-            );
+        match output.classification.primary[0].label.as_str() {
+            "visual" => {
+                assert!(output
+                    .caption
+                    .as_deref()
+                    .is_some_and(|text| !text.trim().is_empty()));
+                assert!(output.ocr.is_none());
+                assert!(!output.classification.secondary.is_empty());
+                assert!(!output.classification.tertiary.is_empty());
+            }
+            "ocr" => {
+                assert!(output.caption.is_none());
+                assert!(output.ocr.is_some());
+                assert!(output.classification.secondary.is_empty());
+                assert!(output.classification.tertiary.is_empty());
+            }
+            label => panic!("unexpected primary label for {image_path:?}: {label}"),
         }
     }
 
@@ -397,13 +529,30 @@ fn reports_classification_score_distributions() {
         .position(|config| config.level == "primary" && config.label == "primary")
         .expect("primary config should exist");
     let mut statistics = BTreeMap::<usize, CalibrationStats>::new();
+    let mut calibrated_count = 0_usize;
+    let mut skipped_count = 0_usize;
 
     for path in &paths {
-        let prepared = PreparedModelImage::prepare(path).expect("image should be prepared");
-        let embedding = classifier
-            .model
-            .embed_image_path(prepared.path())
-            .expect("image embedding should be generated");
+        let prepared = match PreparedModelImage::prepare(path) {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                skipped_count += 1;
+                eprintln!(
+                    "skipped unreadable calibration image {}: {error}",
+                    path.display()
+                );
+                continue;
+            }
+        };
+        let embedding = match classifier.model.embed_image_path(prepared.path()) {
+            Ok(embedding) => embedding,
+            Err(error) => {
+                skipped_count += 1;
+                eprintln!("skipped calibration image {}: {error}", path.display());
+                continue;
+            }
+        };
+        calibrated_count += 1;
         let mut config_index = Some(primary_index);
 
         while let Some(index) = config_index {
@@ -432,7 +581,11 @@ fn reports_classification_score_distributions() {
         }
     }
 
-    eprintln!("calibrated {} image(s)", paths.len());
+    assert!(
+        calibrated_count > 0,
+        "no calibration image could be processed"
+    );
+    eprintln!("calibrated {calibrated_count} image(s); skipped {skipped_count}");
     for (index, stats) in statistics {
         let config = &classifier.configs[index];
         let passing = stats

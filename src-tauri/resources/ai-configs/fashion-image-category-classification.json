@@ -2,7 +2,7 @@
   "id": "6a74f953ca7a7e21533ab596",
   "modality": "image",
   "label": "fashion",
-  "parent_label": "non_ocr",
+  "parent_label": "visual",
   "level": "tertiary",
   "task": "image-classification",
   "name": "Fashion Image Category Classification",

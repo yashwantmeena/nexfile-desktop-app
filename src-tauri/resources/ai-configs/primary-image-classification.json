@@ -6,15 +6,14 @@
   "level": "primary",
   "task": "image-classification",
   "name": "Primary Image Classification",
-  "description": "Classify an image as full OCR, semi OCR, or non OCR based on whether its meaning depends primarily on text, both text and visual structure, or visual content.",
+  "description": "Classify whether an image contains clearly readable, meaningful text that should be processed with OCR.",
   "model": "openai/clip-vit-base-patch32",
   "version": 5,
   "enabled": true,
   "configuration": {
     "labels": {
-      "full_ocr": "a scanned text document",
-      "semi_ocr": "a screenshot containing text and graphics",
-      "non_ocr": "a photograph of a person, animal, object, place, or natural scene"
+      "ocr": "an image containing clearly readable and meaningful words, sentences, labels, signs, or document text",
+      "visual": "a photograph or visual image without clearly readable or meaningful text"
     },
     "threshold": 0.2,
     "multilabel": false,

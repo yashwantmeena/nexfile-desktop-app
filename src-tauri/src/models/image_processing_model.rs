@@ -48,6 +48,15 @@ pub struct ImageClassificationOutput {
 #[serde(rename_all = "camelCase")]
 pub struct ImageProcessingOutput {
     pub version: u32,
-    pub caption: String,
+    pub caption: Option<String>,
+    pub ocr: Option<ImageOcrOutput>,
+    pub tags: Vec<String>,
     pub classification: ImageClassificationOutput,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageOcrOutput {
+    pub text: String,
+    pub raw_text_with_regions: String,
 }

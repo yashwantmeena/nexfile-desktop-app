@@ -30,6 +30,10 @@ fn constructs_official_task_prompts() {
         "Describe in detail what is shown in the image."
     );
     assert_eq!(
+        Florence2Task::MoreDetailedCaption.prompt(),
+        "Describe with a paragraph what is shown in the image."
+    );
+    assert_eq!(
         Florence2Task::OpenVocabularyDetection("red car".into()).prompt(),
         "Locate red car in the image."
     );

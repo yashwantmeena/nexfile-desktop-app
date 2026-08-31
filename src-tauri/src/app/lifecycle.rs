@@ -30,7 +30,7 @@ pub fn initialize<R: tauri::Runtime>(app: &tauri::App<R>) -> AppResult<()> {
     ))?;
     let queued_images = tauri::async_runtime::block_on(imports.enqueue_unclassified_images())?;
     if queued_images > 0 {
-        eprintln!("queued {queued_images} existing image(s) for classification");
+        eprintln!("[image-processing-queue][RECOVER] queued {queued_images} existing image(s)");
     }
     let import_worker = ImportWorker::start(&database, imports.clone());
     let image_processing_worker = ImageProcessingWorker::start(

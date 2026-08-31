@@ -2,7 +2,7 @@
   "id": "6a74f836ca7a7e21533ab58e",
   "modality": "image",
   "label": "food_and_drink",
-  "parent_label": "non_ocr",
+  "parent_label": "visual",
   "level": "tertiary",
   "task": "image-classification",
   "name": "Food and Drink Image Category Classification",

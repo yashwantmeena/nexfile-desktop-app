@@ -2,7 +2,7 @@
   "id": "6a74f783ca7a7e21533ab58a",
   "modality": "image",
   "label": "plants",
-  "parent_label": "non_ocr",
+  "parent_label": "visual",
   "level": "tertiary",
   "task": "image-classification",
   "name": "Plants Image Category Classification",

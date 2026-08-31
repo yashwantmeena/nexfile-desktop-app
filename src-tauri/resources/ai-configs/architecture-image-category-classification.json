@@ -2,7 +2,7 @@
   "id": "6a74f867ca7a7e21533ab58f",
   "modality": "image",
   "label": "architecture",
-  "parent_label": "non_ocr",
+  "parent_label": "visual",
   "level": "tertiary",
   "task": "image-classification",
   "name": "Architecture Image Category Classification",

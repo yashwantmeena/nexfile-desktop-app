@@ -2,7 +2,7 @@
   "id": "6a74f90eca7a7e21533ab594",
   "modality": "image",
   "label": "artwork",
-  "parent_label": "non_ocr",
+  "parent_label": "visual",
   "level": "tertiary",
   "task": "image-classification",
   "name": "Artwork Image Category Classification",

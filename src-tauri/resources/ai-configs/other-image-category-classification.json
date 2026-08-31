@@ -2,7 +2,7 @@
   "id": "6a74f9c3ca7a7e21533ab59a",
   "modality": "image",
   "label": "other",
-  "parent_label": "non_ocr",
+  "parent_label": "visual",
   "level": "tertiary",
   "task": "image-classification",
   "name": "Other Image Category Classification",

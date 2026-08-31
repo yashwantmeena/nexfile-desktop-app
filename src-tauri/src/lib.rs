@@ -19,7 +19,8 @@ pub use ai_models::florence2::{
 pub use error::{AppError, ClipError, Florence2Error};
 pub use models::background_process_model::{BackgroundProcess, BackgroundProcessStatus};
 pub use models::image_processing_model::{
-    ClassificationPrediction, ImageClassificationOutput, ImageProcessingJob, ImageProcessingOutput,
+    ClassificationPrediction, ImageClassificationOutput, ImageOcrOutput, ImageProcessingJob,
+    ImageProcessingOutput,
 };
 pub use models::import_model::ImportFileJob;
 pub use models::storage_model::{

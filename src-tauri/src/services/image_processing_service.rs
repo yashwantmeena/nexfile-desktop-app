@@ -14,13 +14,15 @@ use crate::error::{
 };
 use crate::models::image_processing_model::{
     ClassificationConfigDefinition, ClassificationPrediction, ImageClassificationOutput,
-    ImageProcessingJob, ImageProcessingOutput,
+    ImageOcrOutput, ImageProcessingJob, ImageProcessingOutput,
 };
 use crate::utils::constants::{
     CLIP_LOGIT_SCALE, IMAGE_PROCESSING_OUTPUT_VERSION, MAX_MODEL_IMAGE_DIMENSION,
-    MODEL_IMAGE_TEMP_DIRECTORY, MODEL_JPEG_QUALITY,
+    MODEL_IMAGE_TEMP_DIRECTORY, MODEL_JPEG_QUALITY, OCR_LABEL, TAG_SPECIFICITY_BONUS, VISUAL_LABEL,
 };
 use crate::utils::image_decoder::decode_image;
+use crate::utils::operation_logger::OperationLogger;
+use crate::utils::search_tags::{extract_keyword_candidates, select_search_tags};
 
 #[derive(Clone)]
 pub struct ImageProcessingService {
@@ -54,6 +56,19 @@ impl ImageProcessingService {
     }
 
     fn process_blocking(&self, job: ImageProcessingJob) -> AppResult<PathBuf> {
+        let logger = OperationLogger::start("image-processing", job.path.display());
+        let result = self.process_blocking_logged(&job, &logger);
+        if let Err(error) = &result {
+            logger.failed(error);
+        }
+        result
+    }
+
+    fn process_blocking_logged(
+        &self,
+        job: &ImageProcessingJob,
+        logger: &OperationLogger,
+    ) -> AppResult<PathBuf> {
         if !job.path.is_file() {
             return Err(AppError::validation(
                 "The queued image-processing path is no longer a file.",
@@ -62,12 +77,20 @@ impl ImageProcessingService {
 
         let output_path = classification_output_path(&job.path);
         if valid_existing_output(&output_path)? {
+            logger.cached(output_path.display());
             return Ok(output_path);
         }
 
+        let preparation_started = logger.stage("prepare normalized model image");
         let prepared_image = PreparedModelImage::prepare(&job.path).map_err(AppError::internal)?;
+        logger.stage_complete(
+            "model image preparation",
+            preparation_started,
+            format_args!("temporary={}", prepared_image.path().display()),
+        );
 
-        let classification = {
+        let classification_started = logger.stage("run CLIP classification");
+        let (classification, image_embedding) = {
             let mut classifier = self
                 .classifier
                 .lock()
@@ -83,8 +106,40 @@ impl ImageProcessingService {
                 .expect("classifier is initialized before use")
                 .classify(prepared_image.path())?
         };
+        logger.stage_complete(
+            "CLIP classification",
+            classification_started,
+            classification_summary(&classification),
+        );
 
-        let caption = {
+        let primary_label = classification
+            .primary
+            .first()
+            .map(|prediction| prediction.label.as_str())
+            .ok_or_else(|| {
+                AppError::validation("Primary image classification returned no label.")
+            })?;
+        let use_ocr = match primary_label {
+            OCR_LABEL => true,
+            VISUAL_LABEL => false,
+            label => {
+                return Err(AppError::validation(format!(
+                    "Unsupported primary image-classification label: {label}"
+                )))
+            }
+        };
+        let florence_task = if use_ocr {
+            Florence2Task::OcrWithRegion
+        } else {
+            Florence2Task::MoreDetailedCaption
+        };
+        let florence_stage_name = if use_ocr {
+            "generate Florence-2 OCR with regions"
+        } else {
+            "generate Florence-2 paragraph caption"
+        };
+        let florence_started = logger.stage(florence_stage_name);
+        let florence_text = {
             let mut captioner = self
                 .captioner
                 .lock()
@@ -101,17 +156,69 @@ impl ImageProcessingService {
             captioner
                 .as_mut()
                 .expect("captioner is initialized before use")
-                .generate_path(prepared_image.path(), Florence2Task::DetailedCaption)
+                .generate_path(prepared_image.path(), florence_task)
                 .map_err(AppError::internal)?
                 .text
         };
+        let (caption, ocr, tag_source) = if use_ocr {
+            let text = strip_florence_location_tokens(&florence_text);
+            (
+                None,
+                Some(ImageOcrOutput {
+                    text: text.clone(),
+                    raw_text_with_regions: florence_text,
+                }),
+                text,
+            )
+        } else {
+            (Some(florence_text.clone()), None, florence_text)
+        };
+        logger.stage_complete(
+            if use_ocr {
+                "Florence-2 OCR"
+            } else {
+                "Florence-2 caption"
+            },
+            florence_started,
+            format_args!(
+                "characters={} words={}",
+                tag_source.chars().count(),
+                tag_source.split_whitespace().count()
+            ),
+        );
+
+        let tags_started = logger.stage("extract and rank search tags with CLIP");
+        let (tags, candidate_count) = {
+            let mut classifier = self
+                .classifier
+                .lock()
+                .map_err(|_| AppError::internal(ClassifierLockPoisoned))?;
+            classifier
+                .as_mut()
+                .expect("classifier is initialized before use")
+                .extract_tags(&tag_source, &image_embedding)?
+        };
+        logger.stage_complete(
+            "search-tag extraction",
+            tags_started,
+            format_args!(
+                "candidates={candidate_count} selected={} tags=[{}]",
+                tags.len(),
+                tags.join(", ")
+            ),
+        );
 
         let output = ImageProcessingOutput {
             version: IMAGE_PROCESSING_OUTPUT_VERSION,
             caption,
+            ocr,
+            tags,
             classification,
         };
+        let write_started = logger.stage("write JSON sidecar");
         write_output(&output_path, &output)?;
+        logger.stage_complete("JSON sidecar write", write_started, output_path.display());
+        logger.complete(output_path.display());
         Ok(output_path)
     }
 }
@@ -223,7 +330,7 @@ impl PreparedImageClassifier {
         Ok(Self { model, configs })
     }
 
-    fn classify(&mut self, image_path: &Path) -> AppResult<ImageClassificationOutput> {
+    fn classify(&mut self, image_path: &Path) -> AppResult<(ImageClassificationOutput, Embedding)> {
         let image_embedding = self
             .model
             .embed_image_path(image_path)
@@ -264,8 +371,71 @@ impl PreparedImageClassifier {
             }
         }
 
-        Ok(classification)
+        Ok((classification, image_embedding))
     }
+
+    fn extract_tags(
+        &mut self,
+        caption: &str,
+        image_embedding: &[f32],
+    ) -> AppResult<(Vec<String>, usize)> {
+        let candidates = extract_keyword_candidates(caption);
+        let candidate_count = candidates.len();
+        let scored = candidates
+            .into_iter()
+            .map(|candidate| {
+                let text_embedding = self
+                    .model
+                    .embed_text(&candidate)
+                    .map_err(AppError::internal)?;
+                let similarity = ClipModel::cosine_similarity(image_embedding, &text_embedding)
+                    .map_err(AppError::internal)?;
+                let word_bonus = candidate.split_whitespace().count().saturating_sub(1) as f32
+                    * TAG_SPECIFICITY_BONUS;
+                Ok((candidate, similarity + word_bonus))
+            })
+            .collect::<AppResult<Vec<_>>>()?;
+
+        Ok((select_search_tags(scored), candidate_count))
+    }
+}
+
+fn classification_summary(classification: &ImageClassificationOutput) -> String {
+    format!(
+        "primary={} secondary={} tertiary={}",
+        prediction_labels(&classification.primary),
+        prediction_labels(&classification.secondary),
+        prediction_labels(&classification.tertiary)
+    )
+}
+
+fn strip_florence_location_tokens(text: &str) -> String {
+    let mut remaining = text;
+    let mut cleaned = String::with_capacity(text.len());
+    while let Some(start) = remaining.find("<loc_") {
+        cleaned.push_str(&remaining[..start]);
+        let token = &remaining[start..];
+        let Some(end) = token.find('>') else {
+            cleaned.push_str(token);
+            remaining = "";
+            break;
+        };
+        cleaned.push(' ');
+        remaining = &token[end + 1..];
+    }
+    cleaned.push_str(remaining);
+    cleaned.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn prediction_labels(predictions: &[ClassificationPrediction]) -> String {
+    if predictions.is_empty() {
+        return "-".to_owned();
+    }
+    predictions
+        .iter()
+        .map(|prediction| prediction.label.as_str())
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 struct PreparedClassificationConfig {
@@ -440,7 +610,12 @@ fn valid_existing_output(path: &Path) -> AppResult<bool> {
     let bytes = std::fs::read(path)?;
     Ok(
         serde_json::from_slice::<ImageProcessingOutput>(&bytes).is_ok_and(|output| {
-            output.version == IMAGE_PROCESSING_OUTPUT_VERSION && !output.caption.trim().is_empty()
+            let has_caption = output
+                .caption
+                .as_deref()
+                .is_some_and(|caption| !caption.trim().is_empty());
+            output.version == IMAGE_PROCESSING_OUTPUT_VERSION
+                && (has_caption || output.ocr.is_some())
         }),
     )
 }
