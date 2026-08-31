@@ -8,29 +8,41 @@ use std::sync::{Arc, Mutex};
 use image::{codecs::jpeg::JpegEncoder, imageops::FilterType, DynamicImage};
 
 use crate::ai_models::clip::{ClipModel, ClipModelPaths, Embedding};
-use crate::error::{AppError, AppResult, ClassifierLockPoisoned, ImagePreparationError};
+use crate::ai_models::florence2::{Florence2Model, Florence2ModelPaths, Florence2Task};
+use crate::error::{
+    AppError, AppResult, CaptionerLockPoisoned, ClassifierLockPoisoned, ImagePreparationError,
+};
 use crate::models::image_processing_model::{
     ClassificationConfigDefinition, ClassificationPrediction, ImageClassificationOutput,
-    ImageProcessingJob, ImageProcessingOutput, IMAGE_PROCESSING_OUTPUT_VERSION,
+    ImageProcessingJob, ImageProcessingOutput,
 };
 use crate::utils::constants::{
-    CLIP_LOGIT_SCALE, MAX_MODEL_IMAGE_DIMENSION, MODEL_IMAGE_TEMP_DIRECTORY, MODEL_JPEG_QUALITY,
+    CLIP_LOGIT_SCALE, IMAGE_PROCESSING_OUTPUT_VERSION, MAX_MODEL_IMAGE_DIMENSION,
+    MODEL_IMAGE_TEMP_DIRECTORY, MODEL_JPEG_QUALITY,
 };
 use crate::utils::image_decoder::decode_image;
 
 #[derive(Clone)]
 pub struct ImageProcessingService {
-    model_directory: PathBuf,
+    clip_model_directory: PathBuf,
+    florence2_model_directory: PathBuf,
     configs_directory: PathBuf,
     classifier: Arc<Mutex<Option<PreparedImageClassifier>>>,
+    captioner: Arc<Mutex<Option<Florence2Model>>>,
 }
 
 impl ImageProcessingService {
-    pub fn new(model_directory: PathBuf, configs_directory: PathBuf) -> Self {
+    pub fn new(
+        clip_model_directory: PathBuf,
+        florence2_model_directory: PathBuf,
+        configs_directory: PathBuf,
+    ) -> Self {
         Self {
-            model_directory,
+            clip_model_directory,
+            florence2_model_directory,
             configs_directory,
             classifier: Arc::new(Mutex::new(None)),
+            captioner: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -55,20 +67,50 @@ impl ImageProcessingService {
 
         let prepared_image = PreparedModelImage::prepare(&job.path).map_err(AppError::internal)?;
 
-        let mut classifier = self
-            .classifier
-            .lock()
-            .map_err(|_| AppError::internal(ClassifierLockPoisoned))?;
-        if classifier.is_none() {
-            *classifier = Some(PreparedImageClassifier::load(
-                &self.model_directory,
-                &self.configs_directory,
-            )?);
-        }
-        let output = classifier
-            .as_mut()
-            .expect("classifier is initialized before use")
-            .classify(prepared_image.path())?;
+        let classification = {
+            let mut classifier = self
+                .classifier
+                .lock()
+                .map_err(|_| AppError::internal(ClassifierLockPoisoned))?;
+            if classifier.is_none() {
+                *classifier = Some(PreparedImageClassifier::load(
+                    &self.clip_model_directory,
+                    &self.configs_directory,
+                )?);
+            }
+            classifier
+                .as_mut()
+                .expect("classifier is initialized before use")
+                .classify(prepared_image.path())?
+        };
+
+        let caption = {
+            let mut captioner = self
+                .captioner
+                .lock()
+                .map_err(|_| AppError::internal(CaptionerLockPoisoned))?;
+            if captioner.is_none() {
+                *captioner = Some(
+                    Florence2Model::load(Florence2ModelPaths::from_dir_with_suffix(
+                        &self.florence2_model_directory,
+                        Some("_int8"),
+                    ))
+                    .map_err(AppError::internal)?,
+                );
+            }
+            captioner
+                .as_mut()
+                .expect("captioner is initialized before use")
+                .generate_path(prepared_image.path(), Florence2Task::DetailedCaption)
+                .map_err(AppError::internal)?
+                .text
+        };
+
+        let output = ImageProcessingOutput {
+            version: IMAGE_PROCESSING_OUTPUT_VERSION,
+            caption,
+            classification,
+        };
         write_output(&output_path, &output)?;
         Ok(output_path)
     }
@@ -181,7 +223,7 @@ impl PreparedImageClassifier {
         Ok(Self { model, configs })
     }
 
-    fn classify(&mut self, image_path: &Path) -> AppResult<ImageProcessingOutput> {
+    fn classify(&mut self, image_path: &Path) -> AppResult<ImageClassificationOutput> {
         let image_embedding = self
             .model
             .embed_image_path(image_path)
@@ -222,10 +264,7 @@ impl PreparedImageClassifier {
             }
         }
 
-        Ok(ImageProcessingOutput {
-            version: IMAGE_PROCESSING_OUTPUT_VERSION,
-            classification,
-        })
+        Ok(classification)
     }
 }
 
@@ -399,8 +438,11 @@ fn valid_existing_output(path: &Path) -> AppResult<bool> {
         return Ok(false);
     }
     let bytes = std::fs::read(path)?;
-    Ok(serde_json::from_slice::<ImageProcessingOutput>(&bytes)
-        .is_ok_and(|output| output.version == IMAGE_PROCESSING_OUTPUT_VERSION))
+    Ok(
+        serde_json::from_slice::<ImageProcessingOutput>(&bytes).is_ok_and(|output| {
+            output.version == IMAGE_PROCESSING_OUTPUT_VERSION && !output.caption.trim().is_empty()
+        }),
+    )
 }
 
 fn write_output(path: &Path, output: &ImageProcessingOutput) -> AppResult<()> {

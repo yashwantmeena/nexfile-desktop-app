@@ -3,8 +3,6 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-pub const IMAGE_PROCESSING_OUTPUT_VERSION: u32 = 4;
-
 #[derive(Debug, Deserialize)]
 pub(crate) struct ClassificationConfigDefinition {
     pub(crate) modality: String,
@@ -50,5 +48,6 @@ pub struct ImageClassificationOutput {
 #[serde(rename_all = "camelCase")]
 pub struct ImageProcessingOutput {
     pub version: u32,
+    pub caption: String,
     pub classification: ImageClassificationOutput,
 }

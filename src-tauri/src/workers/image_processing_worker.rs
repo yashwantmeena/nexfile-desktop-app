@@ -17,10 +17,15 @@ pub struct ImageProcessingWorker {
 impl ImageProcessingWorker {
     pub fn start(
         database: &SqliteDatabase,
-        model_directory: PathBuf,
+        clip_model_directory: PathBuf,
+        florence2_model_directory: PathBuf,
         configs_directory: PathBuf,
     ) -> Self {
-        let service = ImageProcessingService::new(model_directory, configs_directory);
+        let service = ImageProcessingService::new(
+            clip_model_directory,
+            florence2_model_directory,
+            configs_directory,
+        );
         let backend = SqliteStorage::<ImageProcessingJob, (), ()>::new_in_queue(
             database.pool(),
             IMAGE_PROCESSING_QUEUE,
@@ -76,7 +81,7 @@ async fn consume_image_processing_job(
     match service.process(job).await {
         Ok(output_path) => {
             eprintln!(
-                "classified image {} -> {}",
+                "captioned and classified image {} -> {}",
                 path.display(),
                 output_path.display()
             );
@@ -90,10 +95,7 @@ async fn consume_image_processing_job(
             Ok(())
         }
         Err(error) => {
-            eprintln!(
-                "image classification failed for {}: {error:?}",
-                path.display()
-            );
+            eprintln!("image processing failed for {}: {error:?}", path.display());
             Err(error)
         }
     }

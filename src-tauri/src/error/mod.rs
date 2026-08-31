@@ -10,6 +10,8 @@ pub use app_error::AppError;
 pub use clip_error::ClipError;
 pub use florence2_error::Florence2Error;
 pub use image_decoder_error::ImageDecoderError;
-pub(crate) use image_processing_error::{ClassifierLockPoisoned, ImagePreparationError};
+pub(crate) use image_processing_error::{
+    CaptionerLockPoisoned, ClassifierLockPoisoned, ImagePreparationError,
+};
 pub(crate) use import_error::CounterOverflow;
 pub use result::AppResult;

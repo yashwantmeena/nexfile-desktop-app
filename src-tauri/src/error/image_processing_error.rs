@@ -13,3 +13,7 @@ pub(crate) enum ImagePreparationError {
 #[derive(Debug, thiserror::Error)]
 #[error("the image classifier lock was poisoned")]
 pub(crate) struct ClassifierLockPoisoned;
+
+#[derive(Debug, thiserror::Error)]
+#[error("the Florence-2 captioner lock was poisoned")]
+pub(crate) struct CaptionerLockPoisoned;

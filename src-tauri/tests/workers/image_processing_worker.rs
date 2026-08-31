@@ -1,7 +1,11 @@
 use super::*;
 
 fn test_service(root: &std::path::Path) -> ImageProcessingService {
-    ImageProcessingService::new(root.join("missing-model"), root.join("missing-configs"))
+    ImageProcessingService::new(
+        root.join("missing-clip-model"),
+        root.join("missing-florence-model"),
+        root.join("missing-configs"),
+    )
 }
 
 #[tokio::test]

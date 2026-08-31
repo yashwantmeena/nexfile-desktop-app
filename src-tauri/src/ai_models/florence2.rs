@@ -236,12 +236,7 @@ impl Florence2Model {
         validate_session(
             &decoder,
             "decoder",
-            &[
-                INPUTS_EMBEDS,
-                ATTENTION_MASK,
-                ENCODER_ATTENTION_MASK,
-                ENCODER_HIDDEN_STATES,
-            ],
+            &[INPUTS_EMBEDS, ENCODER_ATTENTION_MASK, ENCODER_HIDDEN_STATES],
             &[LOGITS],
         )?;
 
@@ -373,16 +368,33 @@ impl Florence2Model {
                     let decoder_inputs = self.embed_tokens(&generated_i64)?;
                     let decoder_attention_mask = Array2::from_elem((1, generated.len()), 1_i64);
 
-                    let logits = run_f32(
-                        &mut self.decoder,
-                        ort::inputs![
-                            INPUTS_EMBEDS => Tensor::from_array(decoder_inputs)?,
-                            ATTENTION_MASK => Tensor::from_array(decoder_attention_mask)?,
-                            ENCODER_ATTENTION_MASK => Tensor::from_array(encoder_attention_mask.clone())?,
-                            ENCODER_HIDDEN_STATES => Tensor::from_array(encoder_hidden_states.clone())?,
-                        ],
-                        LOGITS,
-                    )?;
+                    let accepts_attention_mask = self
+                        .decoder
+                        .inputs()
+                        .iter()
+                        .any(|input| input.name() == ATTENTION_MASK);
+                    let logits = if accepts_attention_mask {
+                        run_f32(
+                            &mut self.decoder,
+                            ort::inputs![
+                                INPUTS_EMBEDS => Tensor::from_array(decoder_inputs)?,
+                                ATTENTION_MASK => Tensor::from_array(decoder_attention_mask)?,
+                                ENCODER_ATTENTION_MASK => Tensor::from_array(encoder_attention_mask.clone())?,
+                                ENCODER_HIDDEN_STATES => Tensor::from_array(encoder_hidden_states.clone())?,
+                            ],
+                            LOGITS,
+                        )?
+                    } else {
+                        run_f32(
+                            &mut self.decoder,
+                            ort::inputs![
+                                INPUTS_EMBEDS => Tensor::from_array(decoder_inputs)?,
+                                ENCODER_ATTENTION_MASK => Tensor::from_array(encoder_attention_mask.clone())?,
+                                ENCODER_HIDDEN_STATES => Tensor::from_array(encoder_hidden_states.clone())?,
+                            ],
+                            LOGITS,
+                        )?
+                    };
                     argmax_last_token(&logits)? as u32
                 }
             };

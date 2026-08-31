@@ -241,7 +241,7 @@ fn treats_unversioned_classification_output_as_stale() {
 }
 
 #[test]
-fn treats_older_classification_output_version_as_stale() {
+fn treats_pre_caption_output_version_as_stale() {
     let root = std::env::temp_dir().join(format!(
         "nexfile-old-classification-version-{}",
         uuid::Uuid::new_v4()
@@ -250,7 +250,7 @@ fn treats_older_classification_output_version_as_stale() {
     let output_path = root.join("image.jpg.json");
     std::fs::write(
         &output_path,
-        r#"{"version":3,"classification":{"primary":[],"secondary":[],"tertiary":[]}}"#,
+        r#"{"version":4,"classification":{"primary":[],"secondary":[],"tertiary":[]}}"#,
     )
     .expect("old output should be written");
 
@@ -258,9 +258,26 @@ fn treats_older_classification_output_version_as_stale() {
     std::fs::remove_dir_all(root).expect("test directory should be removed");
 }
 
+#[test]
+fn treats_an_empty_caption_as_stale() {
+    let root = std::env::temp_dir().join(format!("nexfile-empty-caption-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&root).expect("test directory should be created");
+    let output_path = root.join("image.jpg.json");
+    std::fs::write(
+        &output_path,
+        format!(
+            r#"{{"version":{IMAGE_PROCESSING_OUTPUT_VERSION},"caption":"  ","classification":{{"primary":[],"secondary":[],"tertiary":[]}}}}"#
+        ),
+    )
+    .expect("empty caption output should be written");
+
+    assert!(!valid_existing_output(&output_path).expect("output should be checked"));
+    std::fs::remove_dir_all(root).expect("test directory should be removed");
+}
+
 #[tokio::test]
-#[ignore = "loads the bundled CLIP model and prepares every classification prompt"]
-async fn bundled_classifier_writes_output_for_a_real_image() {
+#[ignore = "loads the bundled CLIP and Florence-2 models"]
+async fn bundled_models_write_classification_and_caption_for_real_images() {
     let root = std::env::temp_dir().join(format!(
         "nexfile-image-classification-{}",
         uuid::Uuid::new_v4()
@@ -305,6 +322,7 @@ async fn bundled_classifier_writes_output_for_a_real_image() {
     let resources = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources");
     let service = ImageProcessingService::new(
         resources.join("ai-models").join("clip-vit-base-patch32"),
+        resources.join("ai-models").join("florence-2-base-ft"),
         resources.join("ai-configs"),
     );
 
@@ -315,7 +333,7 @@ async fn bundled_classifier_writes_output_for_a_real_image() {
             })
             .await
             .unwrap_or_else(|error| {
-                panic!("classification should succeed for {image_path:?}: {error}")
+                panic!("image processing should succeed for {image_path:?}: {error:?}")
             });
         let output = serde_json::from_slice::<ImageProcessingOutput>(
             &std::fs::read(&output_path).expect("classification output should be readable"),
@@ -324,6 +342,10 @@ async fn bundled_classifier_writes_output_for_a_real_image() {
 
         assert_eq!(output_path, classification_output_path(&image_path));
         assert_eq!(output.version, IMAGE_PROCESSING_OUTPUT_VERSION);
+        assert!(
+            !output.caption.trim().is_empty(),
+            "caption should not be empty for {image_path:?}"
+        );
         assert!(
             !output.classification.primary.is_empty(),
             "primary classification should not be empty for {image_path:?}"

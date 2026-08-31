@@ -37,12 +37,17 @@ On Windows, a clean Rust build also needs CMake, Perl, and NASM 2.16.x on
 `PATH` to compile the bundled AVIF decoder. Git for Windows includes Perl.
 NASM 3.x is not currently compatible with the pinned libaom release.
 
-## Image classification formats
+## Image processing
 
-Classification accepts `.avif`, `.avip`, `.bmp`, `.gif`, `.heic`, `.heif`,
+Image classification and Florence-2 detailed captioning accept `.avif`, `.avip`, `.bmp`, `.gif`, `.heic`, `.heif`,
 `.ico`, `.jpeg`, `.jpg`, `.png`, `.svg`, `.tif`, `.tiff`, and `.webp` files.
 The original file stays unchanged. Before model processing, each image is decoded
 or rasterized, resized so its longest side is at most 2048 pixels, flattened onto
 white when it has transparency, and saved as a temporary quality-90 JPEG. The same
 prepared file can be shared by CLIP and Florence-2, and is deleted automatically
 when processing finishes or fails.
+
+The resulting `<image-name>.<extension>.json` sidecar contains a `caption` and
+the hierarchical CLIP `classification`. Run `npm run prepare:models` to download
+the pinned, checksum-verified CLIP and Florence-2 ONNX assets. Model binaries and
+tokenizers are generated dependencies and remain excluded from Git.

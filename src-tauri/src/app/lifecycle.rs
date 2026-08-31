@@ -6,7 +6,9 @@ use crate::repositories::database_repository::SqliteDatabase;
 use crate::repositories::storage_repository::SqliteStorageRepository;
 use crate::services::import_service::ImportService;
 use crate::services::storage_service::StorageService;
-use crate::utils::constants::{AI_CONFIGS_DIRECTORY, AI_MODELS_DIRECTORY, CLIP_MODEL_DIRECTORY};
+use crate::utils::constants::{
+    AI_CONFIGS_DIRECTORY, AI_MODELS_DIRECTORY, CLIP_MODEL_DIRECTORY, FLORENCE2_MODEL_DIRECTORY,
+};
 use crate::workers::image_processing_worker::ImageProcessingWorker;
 use crate::workers::import_worker::ImportWorker;
 
@@ -37,6 +39,10 @@ pub fn initialize<R: tauri::Runtime>(app: &tauri::App<R>) -> AppResult<()> {
             .resources_dir
             .join(AI_MODELS_DIRECTORY)
             .join(CLIP_MODEL_DIRECTORY),
+        config
+            .resources_dir
+            .join(AI_MODELS_DIRECTORY)
+            .join(FLORENCE2_MODEL_DIRECTORY),
         config.resources_dir.join(AI_CONFIGS_DIRECTORY),
     );
 
