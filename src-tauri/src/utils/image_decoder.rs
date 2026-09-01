@@ -20,6 +20,28 @@ pub fn decode_image(path: &Path) -> Result<DynamicImage, ImageDecoderError> {
     }
 }
 
+pub(crate) fn is_supported_image(path: &Path) -> bool {
+    matches!(
+        extension(path).as_deref(),
+        Some(
+            "avif"
+                | "avip"
+                | "bmp"
+                | "gif"
+                | "heic"
+                | "heif"
+                | "ico"
+                | "jpeg"
+                | "jpg"
+                | "png"
+                | "svg"
+                | "tif"
+                | "tiff"
+                | "webp"
+        )
+    )
+}
+
 fn extension(path: &Path) -> Option<String> {
     path.extension()
         .and_then(|extension| extension.to_str())

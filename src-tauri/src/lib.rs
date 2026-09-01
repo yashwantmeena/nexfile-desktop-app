@@ -5,6 +5,7 @@ mod error;
 mod mappers;
 mod models;
 mod repositories;
+mod search;
 mod services;
 mod system;
 pub mod utils;
@@ -19,8 +20,8 @@ pub use ai_models::florence2::{
 pub use error::{AppError, ClipError, Florence2Error};
 pub use models::background_process_model::{BackgroundProcess, BackgroundProcessStatus};
 pub use models::image_processing_model::{
-    ClassificationPrediction, ImageClassificationOutput, ImageOcrOutput, ImageProcessingJob,
-    ImageProcessingOutput,
+    ClassificationPrediction, ImageBoundingBox, ImageClassificationOutput, ImageObjectDetection,
+    ImageObjectDetectionOutput, ImageOcrOutput, ImageProcessingJob, ImageProcessingOutput,
 };
 pub use models::import_model::ImportFileJob;
 pub use models::storage_model::{
@@ -29,6 +30,7 @@ pub use models::storage_model::{
 pub use repositories::background_processing_repository::SqliteBackgroundProcessingRepository;
 pub use repositories::database_repository::SqliteDatabase;
 pub use repositories::storage_repository::SqliteStorageRepository;
+pub use search::{SearchFields, SearchIndex};
 pub use services::import_service::ImportService;
 pub use services::storage_service::StorageService;
 pub use system::filesystem::read_file;

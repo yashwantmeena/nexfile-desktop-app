@@ -93,6 +93,63 @@ fn extracts_one_to_three_word_candidates_from_a_detailed_caption() {
 }
 
 #[test]
+fn extracts_individual_concepts_from_a_punctuated_caption_list() {
+    let candidates = extract_keyword_candidates(
+        "This is an animated image. In this image we can also see many trees, plants, flowers, grass and sky with clouds.",
+    );
+
+    assert_eq!(
+        candidates,
+        ["trees", "plants", "flowers", "grass", "sky", "clouds"]
+    );
+}
+
+#[test]
+fn parses_florence_object_labels_and_boxes_in_original_image_coordinates() {
+    let detections = parse_object_detections(
+        "<s><od>Tree<loc_0><loc_100><loc_500><loc_900>Flower<loc_250><loc_300><loc_750><loc_800></od></s>",
+        2000,
+        1000,
+    );
+
+    assert_eq!(
+        detections,
+        [
+            ImageObjectDetection {
+                label: "tree".to_owned(),
+                bounding_box: ImageBoundingBox {
+                    x_min: 1,
+                    y_min: 100,
+                    x_max: 1001,
+                    y_max: 900,
+                },
+            },
+            ImageObjectDetection {
+                label: "flower".to_owned(),
+                bounding_box: ImageBoundingBox {
+                    x_min: 501,
+                    y_min: 300,
+                    x_max: 1501,
+                    y_max: 800,
+                },
+            },
+        ]
+    );
+}
+
+#[test]
+fn keeps_multiple_boxes_for_one_florence_object_label() {
+    let detections = parse_object_detections(
+        "tree<loc_10><loc_20><loc_30><loc_40><loc_50><loc_60><loc_70><loc_80>",
+        1000,
+        1000,
+    );
+
+    assert_eq!(detections.len(), 2);
+    assert!(detections.iter().all(|detection| detection.label == "tree"));
+}
+
+#[test]
 fn keeps_searchable_activity_words_as_candidates() {
     let candidates = extract_keyword_candidates(
         "People standing, sitting, holding signs, wearing uniforms, walking, looking, with parked cars.",
@@ -199,6 +256,10 @@ fn loads_the_complete_resource_configuration_hierarchy() {
         .find(|config| config.level == "secondary" && config.label == "visual")
         .expect("visual config should exist");
     assert!(!visual.configuration.multilabel);
+    assert_eq!(
+        visual.configuration.labels["fungi"],
+        "An image primarily focused on fungi, such as mushrooms, toadstools, molds, bracket fungi, puffballs, or other fungal growth."
+    );
 
     for tertiary in definitions
         .iter()
@@ -481,12 +542,19 @@ async fn bundled_models_write_binary_analysis_and_tags_for_real_images() {
                     .as_deref()
                     .is_some_and(|text| !text.trim().is_empty()));
                 assert!(output.ocr.is_none());
+                let object_detection = output
+                    .object_detection
+                    .as_ref()
+                    .expect("visual images should include Florence-2 object detection");
+                assert!(object_detection.image_width > 0);
+                assert!(object_detection.image_height > 0);
                 assert!(!output.classification.secondary.is_empty());
-                assert!(!output.classification.tertiary.is_empty());
+                assert!(output.classification.tertiary.is_empty());
             }
             "ocr" => {
                 assert!(output.caption.is_none());
                 assert!(output.ocr.is_some());
+                assert!(output.object_detection.is_none());
                 assert!(output.classification.secondary.is_empty());
                 assert!(output.classification.tertiary.is_empty());
             }

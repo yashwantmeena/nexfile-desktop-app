@@ -4,6 +4,7 @@ use crate::error::AppResult;
 use crate::repositories::background_processing_repository::SqliteBackgroundProcessingRepository;
 use crate::repositories::database_repository::SqliteDatabase;
 use crate::repositories::storage_repository::SqliteStorageRepository;
+use crate::search::SearchIndex;
 use crate::services::import_service::ImportService;
 use crate::services::storage_service::StorageService;
 use crate::utils::constants::{
@@ -18,6 +19,7 @@ use super::state::AppState;
 pub fn initialize<R: tauri::Runtime>(app: &tauri::App<R>) -> AppResult<()> {
     let config = AppConfig::resolve(app)?;
     std::fs::create_dir_all(&config.app_data_dir)?;
+    let search = SearchIndex::open(&config.app_data_dir)?;
     let system_metadata_root = config.app_data_dir.clone();
     let database = tauri::async_runtime::block_on(SqliteDatabase::open(config.database_path))?;
     let storage_repository = SqliteStorageRepository::new(database.clone());
@@ -28,10 +30,6 @@ pub fn initialize<R: tauri::Runtime>(app: &tauri::App<R>) -> AppResult<()> {
         &database,
         system_metadata_root,
     ))?;
-    let queued_images = tauri::async_runtime::block_on(imports.enqueue_unclassified_images())?;
-    if queued_images > 0 {
-        eprintln!("[image-processing-queue][RECOVER] queued {queued_images} existing image(s)");
-    }
     let import_worker = ImportWorker::start(&database, imports.clone());
     let image_processing_worker = ImageProcessingWorker::start(
         &database,
@@ -50,6 +48,7 @@ pub fn initialize<R: tauri::Runtime>(app: &tauri::App<R>) -> AppResult<()> {
         image_processing_worker,
         import_worker,
         imports,
+        search,
         storage: StorageService::new(storage_repository, config.app_data_dir),
     });
     Ok(())

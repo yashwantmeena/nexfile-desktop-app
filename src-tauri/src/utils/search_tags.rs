@@ -4,29 +4,29 @@ use crate::utils::constants::{MAX_KEYWORD_CANDIDATES, MAX_SEARCH_TAGS, MAX_TAG_W
 
 pub(crate) fn extract_keyword_candidates(text: &str) -> Vec<String> {
     let mut segments = Vec::new();
-    let mut current_segment = Vec::new();
+    for clause in text.split(is_clause_boundary) {
+        let mut current_segment = Vec::new();
 
-    for raw_token in
-        text.split(|character: char| !(character.is_alphanumeric() || character == '-'))
-    {
-        let token = raw_token.trim_matches('-').to_lowercase();
-        if token.is_empty() {
-            continue;
-        }
-
-        if is_phrase_boundary(&token) || token.len() < 3 || !token.chars().any(char::is_alphabetic)
+        for raw_token in
+            clause.split(|character: char| !(character.is_alphanumeric() || character == '-'))
         {
-            if !current_segment.is_empty() {
-                segments.push(std::mem::take(&mut current_segment));
+            let token = raw_token.trim_matches('-').to_lowercase();
+            if token.is_empty() {
+                continue;
             }
-            continue;
+
+            if is_phrase_boundary(&token)
+                || token.len() < 3
+                || !token.chars().any(char::is_alphabetic)
+            {
+                flush_segment(&mut current_segment, &mut segments);
+                continue;
+            }
+
+            current_segment.push(token);
         }
 
-        current_segment.push(token);
-    }
-
-    if !current_segment.is_empty() {
-        segments.push(current_segment);
+        flush_segment(&mut current_segment, &mut segments);
     }
 
     let mut seen = HashSet::new();
@@ -46,6 +46,19 @@ pub(crate) fn extract_keyword_candidates(text: &str) -> Vec<String> {
         }
     }
     candidates
+}
+
+fn flush_segment(current_segment: &mut Vec<String>, segments: &mut Vec<Vec<String>>) {
+    if !current_segment.is_empty() {
+        segments.push(std::mem::take(current_segment));
+    }
+}
+
+fn is_clause_boundary(character: char) -> bool {
+    matches!(
+        character,
+        ',' | '.' | ';' | ':' | '!' | '?' | '\n' | '\r' | '(' | ')' | '[' | ']' | '{' | '}'
+    )
 }
 
 pub(crate) fn select_search_tags(mut scored_candidates: Vec<(String, f32)>) -> Vec<String> {
@@ -115,7 +128,9 @@ fn is_phrase_boundary(word: &str) -> bool {
             | "their"
             | "them"
             | "both"
+            | "also"
             | "all"
+            | "many"
             | "his"
             | "her"
             | "hers"
@@ -153,6 +168,12 @@ fn is_phrase_boundary(word: &str) -> bool {
             | "has"
             | "have"
             | "had"
+            | "can"
+            | "could"
+            | "may"
+            | "might"
+            | "see"
+            | "seen"
             | "located"
             | "placed"
             | "displayed"
@@ -183,6 +204,7 @@ fn is_low_information_singleton(word: &str) -> bool {
         word,
         "open"
             | "closed"
+            | "animated"
             | "pointed"
             | "pointy"
             | "sticking"

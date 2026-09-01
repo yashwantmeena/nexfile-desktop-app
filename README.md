@@ -39,7 +39,7 @@ NASM 3.x is not currently compatible with the pinned libaom release.
 
 ## Image processing
 
-Image classification and Florence-2 paragraph-level captioning accept `.avif`, `.avip`, `.bmp`, `.gif`, `.heic`, `.heif`,
+Image classification and Florence-2 detailed captioning accept `.avif`, `.avip`, `.bmp`, `.gif`, `.heic`, `.heif`,
 `.ico`, `.jpeg`, `.jpg`, `.png`, `.svg`, `.tif`, `.tiff`, and `.webp` files.
 The original file stays unchanged. Before model processing, each image is decoded
 or rasterized, resized so its longest side is at most 2048 pixels, flattened onto
@@ -49,8 +49,11 @@ when processing finishes or fails.
 
 The primary CLIP decision separates images with meaningful readable text from visual images.
 Text images are sent directly to Florence-2 OCR with regions. Visual images receive the
-existing secondary and tertiary classification plus a paragraph-level caption. The resulting
+Florence-2 detailed caption and object-detection output. Search tags are derived from those
+semantic results, while secondary CLIP classification provides one broader category without
+the overlapping tertiary layer. The resulting
 `<image-name>.<extension>.json` sidecar contains either `ocr` or `caption`, CLIP-ranked search
-`tags`, and the applicable CLIP `classification`. Run `npm run prepare:models` to download
+`tags`, object detections for visual images, and primary plus applicable secondary classification.
+Run `npm run prepare:models` to download
 the pinned, checksum-verified CLIP and Florence-2 ONNX assets. Model binaries and
 tokenizers are generated dependencies and remain excluded from Git.

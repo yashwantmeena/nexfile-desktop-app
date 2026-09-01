@@ -8,13 +8,14 @@
   "name": "Visual Content Category Classification",
   "description": "Classify a visual-route image into exactly one content category based on its subject, objects, scene, and composition.",
   "model": "openai/clip-vit-base-patch32",
-  "version": 3,
+  "version": 4,
   "enabled": true,
   "configuration": {
     "labels": {
       "people": "A photograph primarily showing one or more people, including portraits, selfies, families, groups, workers, performers, or crowds.",
       "nature": "A natural outdoor scene such as mountains, forests, rivers, lakes, oceans, beaches, deserts, waterfalls, clouds, or landscapes.",
       "plants": "An image primarily focused on plants, flowers, trees, leaves, grass, crops, shrubs, or other vegetation.",
+      "fungi": "An image primarily focused on fungi, such as mushrooms, toadstools, molds, bracket fungi, puffballs, or other fungal growth.",
       "animals": "a photo of an animal",
       "products": "A physical item primarily presented as a commercial product, such as appliances, tools, furniture, cosmetics, toys, accessories, or household goods.",
       "vehicles": "An image primarily showing a vehicle, including cars, motorcycles, bicycles, trucks, buses, trains, boats, aircraft, or construction vehicles.",
@@ -37,5 +38,5 @@
     "normalize_scores": true
   },
   "created_at": "2026-08-06T20:42:39.163Z",
-  "updated_at": "2026-08-06T20:42:39.163Z"
+  "updated_at": "2026-09-01T00:00:00.000Z"
 }

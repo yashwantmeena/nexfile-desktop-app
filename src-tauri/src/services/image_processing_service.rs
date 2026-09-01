@@ -13,12 +13,13 @@ use crate::error::{
     AppError, AppResult, CaptionerLockPoisoned, ClassifierLockPoisoned, ImagePreparationError,
 };
 use crate::models::image_processing_model::{
-    ClassificationConfigDefinition, ClassificationPrediction, ImageClassificationOutput,
-    ImageOcrOutput, ImageProcessingJob, ImageProcessingOutput,
+    ClassificationConfigDefinition, ClassificationPrediction, ImageBoundingBox,
+    ImageClassificationOutput, ImageObjectDetection, ImageObjectDetectionOutput, ImageOcrOutput,
+    ImageProcessingJob, ImageProcessingOutput,
 };
 use crate::utils::constants::{
     CLIP_LOGIT_SCALE, IMAGE_PROCESSING_OUTPUT_VERSION, MAX_MODEL_IMAGE_DIMENSION,
-    MODEL_IMAGE_TEMP_DIRECTORY, MODEL_JPEG_QUALITY, OCR_LABEL, TAG_SPECIFICITY_BONUS, VISUAL_LABEL,
+    MODEL_IMAGE_TEMP_DIRECTORY, MODEL_JPEG_QUALITY, OCR_LABEL, VISUAL_LABEL,
 };
 use crate::utils::image_decoder::decode_image;
 use crate::utils::operation_logger::OperationLogger;
@@ -131,15 +132,15 @@ impl ImageProcessingService {
         let florence_task = if use_ocr {
             Florence2Task::OcrWithRegion
         } else {
-            Florence2Task::MoreDetailedCaption
+            Florence2Task::DetailedCaption
         };
         let florence_stage_name = if use_ocr {
             "generate Florence-2 OCR with regions"
         } else {
-            "generate Florence-2 paragraph caption"
+            "generate Florence-2 detailed caption"
         };
         let florence_started = logger.stage(florence_stage_name);
-        let florence_text = {
+        let (florence_text, object_detection) = {
             let mut captioner = self
                 .captioner
                 .lock()
@@ -153,14 +154,54 @@ impl ImageProcessingService {
                     .map_err(AppError::internal)?,
                 );
             }
-            captioner
+            let captioner = captioner
                 .as_mut()
-                .expect("captioner is initialized before use")
+                .expect("captioner is initialized before use");
+            let florence_output = captioner
                 .generate_path(prepared_image.path(), florence_task)
-                .map_err(AppError::internal)?
-                .text
+                .map_err(AppError::internal)?;
+            logger.stage_complete(
+                if use_ocr {
+                    "Florence-2 OCR"
+                } else {
+                    "Florence-2 caption"
+                },
+                florence_started,
+                format_args!(
+                    "characters={} words={}",
+                    florence_output.text.chars().count(),
+                    florence_output.text.split_whitespace().count()
+                ),
+            );
+
+            let object_detection = if use_ocr {
+                None
+            } else {
+                let detection_started = logger.stage("generate Florence-2 object detections");
+                let detection_output = captioner
+                    .generate_path(prepared_image.path(), Florence2Task::ObjectDetection)
+                    .map_err(AppError::internal)?;
+                let detections = parse_object_detections(
+                    &detection_output.text,
+                    prepared_image.original_width(),
+                    prepared_image.original_height(),
+                );
+                logger.stage_complete(
+                    "Florence-2 object detection",
+                    detection_started,
+                    format_args!("detections={}", detections.len()),
+                );
+                Some(ImageObjectDetectionOutput {
+                    raw_text: detection_output.text,
+                    image_width: prepared_image.original_width(),
+                    image_height: prepared_image.original_height(),
+                    detections,
+                })
+            };
+
+            (florence_output.text, object_detection)
         };
-        let (caption, ocr, tag_source) = if use_ocr {
+        let (caption, ocr, mut tag_source) = if use_ocr {
             let text = strip_florence_location_tokens(&florence_text);
             (
                 None,
@@ -173,19 +214,12 @@ impl ImageProcessingService {
         } else {
             (Some(florence_text.clone()), None, florence_text)
         };
-        logger.stage_complete(
-            if use_ocr {
-                "Florence-2 OCR"
-            } else {
-                "Florence-2 caption"
-            },
-            florence_started,
-            format_args!(
-                "characters={} words={}",
-                tag_source.chars().count(),
-                tag_source.split_whitespace().count()
-            ),
-        );
+        if let Some(detection) = &object_detection {
+            for detected in &detection.detections {
+                tag_source.push_str(", ");
+                tag_source.push_str(&detected.label);
+            }
+        }
 
         let tags_started = logger.stage("extract and rank search tags with CLIP");
         let (tags, candidate_count) = {
@@ -212,6 +246,7 @@ impl ImageProcessingService {
             version: IMAGE_PROCESSING_OUTPUT_VERSION,
             caption,
             ocr,
+            object_detection,
             tags,
             classification,
         };
@@ -226,6 +261,8 @@ impl ImageProcessingService {
 /// A normalized JPEG that is deleted when the processing scope ends.
 struct PreparedModelImage {
     path: PathBuf,
+    original_width: u32,
+    original_height: u32,
 }
 
 impl PreparedModelImage {
@@ -236,6 +273,8 @@ impl PreparedModelImage {
                 image::error::LimitError::from_kind(image::error::LimitErrorKind::DimensionError),
             )));
         }
+        let original_width = decoded.width();
+        let original_height = decoded.height();
 
         let resized = if decoded.width().max(decoded.height()) > MAX_MODEL_IMAGE_DIMENSION {
             decoded.resize(
@@ -251,7 +290,11 @@ impl PreparedModelImage {
         let directory = std::env::temp_dir().join(MODEL_IMAGE_TEMP_DIRECTORY);
         std::fs::create_dir_all(&directory)?;
         let path = directory.join(format!("{}.jpg", uuid::Uuid::new_v4()));
-        let prepared = Self { path };
+        let prepared = Self {
+            path,
+            original_width,
+            original_height,
+        };
         if let Err(error) = write_jpeg(prepared.path(), &rgb) {
             drop(prepared);
             return Err(error);
@@ -261,6 +304,14 @@ impl PreparedModelImage {
 
     fn path(&self) -> &Path {
         &self.path
+    }
+
+    const fn original_width(&self) -> u32 {
+        self.original_width
+    }
+
+    const fn original_height(&self) -> u32 {
+        self.original_height
     }
 }
 
@@ -302,9 +353,12 @@ impl PreparedImageClassifier {
         let mut model = ClipModel::load(ClipModelPaths::from_dir(model_directory))
             .map_err(AppError::internal)?;
         let definitions = load_config_definitions(configs_directory)?;
-        let mut configs = Vec::with_capacity(definitions.len());
+        let mut configs = Vec::new();
 
         for definition in definitions {
+            if definition.level == "tertiary" {
+                continue;
+            }
             let mut labels = Vec::with_capacity(definition.configuration.labels.len());
             for (label, prompt) in definition.configuration.labels {
                 let embedding = model.embed_text(&prompt).map_err(AppError::internal)?;
@@ -338,13 +392,8 @@ impl PreparedImageClassifier {
         let primary_config = find_config(&self.configs, "primary", "primary", None)
             .expect("primary configuration is validated during loading");
         let primary = classify_with_config(primary_config, &image_embedding)?;
-
-        let mut classification = ImageClassificationOutput {
-            primary: primary.clone(),
-            ..Default::default()
-        };
-
-        for primary_prediction in primary {
+        let mut secondary = Vec::new();
+        for primary_prediction in &primary {
             let Some(secondary_config) = find_config(
                 &self.configs,
                 "secondary",
@@ -353,25 +402,16 @@ impl PreparedImageClassifier {
             ) else {
                 continue;
             };
-            let secondary = classify_with_config(secondary_config, &image_embedding)?;
-            classification.secondary.extend(secondary.clone());
-
-            for secondary_prediction in secondary {
-                let Some(tertiary_config) = find_config(
-                    &self.configs,
-                    "tertiary",
-                    &secondary_prediction.label,
-                    Some(&primary_prediction.label),
-                ) else {
-                    continue;
-                };
-                classification
-                    .tertiary
-                    .extend(classify_with_config(tertiary_config, &image_embedding)?);
-            }
+            secondary.extend(classify_with_config(secondary_config, &image_embedding)?);
         }
-
-        Ok((classification, image_embedding))
+        Ok((
+            ImageClassificationOutput {
+                primary,
+                secondary,
+                ..Default::default()
+            },
+            image_embedding,
+        ))
     }
 
     fn extract_tags(
@@ -390,9 +430,7 @@ impl PreparedImageClassifier {
                     .map_err(AppError::internal)?;
                 let similarity = ClipModel::cosine_similarity(image_embedding, &text_embedding)
                     .map_err(AppError::internal)?;
-                let word_bonus = candidate.split_whitespace().count().saturating_sub(1) as f32
-                    * TAG_SPECIFICITY_BONUS;
-                Ok((candidate, similarity + word_bonus))
+                Ok((candidate, similarity))
             })
             .collect::<AppResult<Vec<_>>>()?;
 
@@ -402,10 +440,9 @@ impl PreparedImageClassifier {
 
 fn classification_summary(classification: &ImageClassificationOutput) -> String {
     format!(
-        "primary={} secondary={} tertiary={}",
+        "primary={} secondary={}",
         prediction_labels(&classification.primary),
-        prediction_labels(&classification.secondary),
-        prediction_labels(&classification.tertiary)
+        prediction_labels(&classification.secondary)
     )
 }
 
@@ -425,6 +462,104 @@ fn strip_florence_location_tokens(text: &str) -> String {
     }
     cleaned.push_str(remaining);
     cleaned.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+pub(crate) fn parse_object_detections(
+    text: &str,
+    image_width: u32,
+    image_height: u32,
+) -> Vec<ImageObjectDetection> {
+    if image_width == 0 || image_height == 0 {
+        return Vec::new();
+    }
+
+    let mut detections = Vec::new();
+    let mut current_label = String::new();
+    let mut cursor = 0;
+
+    while let Some(offset) = text[cursor..].find("<loc_") {
+        let token_start = cursor + offset;
+        let label = clean_detection_label(&text[cursor..token_start]);
+        if !label.is_empty() {
+            current_label = label;
+        }
+
+        let mut location_bins = Vec::new();
+        let mut position = token_start;
+        while let Some((bin, next_position)) = parse_location_token(text, position) {
+            location_bins.push(bin);
+            position = next_position;
+        }
+
+        if position == token_start {
+            cursor = token_start + "<loc_".len();
+            continue;
+        }
+
+        if !current_label.is_empty() {
+            for coordinates in location_bins.chunks_exact(4) {
+                if coordinates.iter().any(|coordinate| *coordinate >= 1000) {
+                    continue;
+                }
+                let first_x = dequantize_location(coordinates[0], image_width);
+                let first_y = dequantize_location(coordinates[1], image_height);
+                let second_x = dequantize_location(coordinates[2], image_width);
+                let second_y = dequantize_location(coordinates[3], image_height);
+                let detection = ImageObjectDetection {
+                    label: current_label.clone(),
+                    bounding_box: ImageBoundingBox {
+                        x_min: first_x.min(second_x),
+                        y_min: first_y.min(second_y),
+                        x_max: first_x.max(second_x),
+                        y_max: first_y.max(second_y),
+                    },
+                };
+                if !detections.contains(&detection) {
+                    detections.push(detection);
+                }
+            }
+        }
+
+        cursor = position;
+    }
+
+    detections
+}
+
+fn parse_location_token(text: &str, start: usize) -> Option<(u32, usize)> {
+    let remainder = text.get(start..)?.strip_prefix("<loc_")?;
+    let closing = remainder.find('>')?;
+    let bin = remainder[..closing].parse::<u32>().ok()?;
+    Some((bin, start + "<loc_".len() + closing + 1))
+}
+
+fn clean_detection_label(text: &str) -> String {
+    let mut cleaned = String::with_capacity(text.len());
+    let mut remaining = text;
+    while let Some(start) = remaining.find('<') {
+        cleaned.push_str(&remaining[..start]);
+        let Some(end) = remaining[start..].find('>') else {
+            cleaned.push_str(&remaining[start..]);
+            remaining = "";
+            break;
+        };
+        remaining = &remaining[start + end + 1..];
+    }
+    cleaned.push_str(remaining);
+    cleaned
+        .trim_matches(|character: char| {
+            character.is_whitespace()
+                || matches!(character, ',' | '.' | ';' | ':' | '!' | '?' | '|' | '-')
+        })
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+fn dequantize_location(bin: u32, dimension: u32) -> u32 {
+    ((((f64::from(bin) + 0.5) * f64::from(dimension)) / 1000.0).floor() as u32)
+        .min(dimension.saturating_sub(1))
 }
 
 fn prediction_labels(predictions: &[ClassificationPrediction]) -> String {
@@ -599,10 +734,6 @@ pub fn classification_output_path(image_path: &Path) -> PathBuf {
     image_path.with_file_name(file_name)
 }
 
-pub(crate) fn has_valid_classification_output(image_path: &Path) -> AppResult<bool> {
-    valid_existing_output(&classification_output_path(image_path))
-}
-
 fn valid_existing_output(path: &Path) -> AppResult<bool> {
     if !path.try_exists()? {
         return Ok(false);
@@ -615,7 +746,7 @@ fn valid_existing_output(path: &Path) -> AppResult<bool> {
                 .as_deref()
                 .is_some_and(|caption| !caption.trim().is_empty());
             output.version == IMAGE_PROCESSING_OUTPUT_VERSION
-                && (has_caption || output.ocr.is_some())
+                && ((has_caption && output.object_detection.is_some()) || output.ocr.is_some())
         }),
     )
 }

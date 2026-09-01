@@ -16,9 +16,8 @@ use crate::models::storage_model::{DriveInfo, DriveMetadata};
 use crate::repositories::background_processing_repository::SqliteBackgroundProcessingRepository;
 use crate::repositories::database_repository::SqliteDatabase;
 use crate::repositories::storage_repository::SqliteStorageRepository;
-use crate::services::image_processing_service::has_valid_classification_output;
 use crate::services::storage_service::{
-    drive_storage_root, read_drive_metadata, write_drive_metadata,
+    calculate_managed_usage, drive_storage_root, read_drive_metadata, write_drive_metadata,
 };
 use crate::system::filesystem::get_drives;
 use crate::utils::constants::{
@@ -26,6 +25,7 @@ use crate::utils::constants::{
     IMPORT_FILE_ID_ALPHABET, IMPORT_FILE_ID_LENGTH, IMPORT_FILE_PROCESS_TYPE, IMPORT_FILE_QUEUE,
     IMPORT_FOLDER_PROCESS_TYPE,
 };
+use crate::utils::image_decoder::is_supported_image;
 
 #[derive(Clone)]
 pub struct ImportService {
@@ -167,7 +167,7 @@ impl ImportService {
                         "the import destination already exists with a different size",
                     )));
                 }
-                let (file_count, app_used_bytes) = calculate_usage(&files_directory)?;
+                let (file_count, app_used_bytes) = calculate_managed_usage(&files_directory)?;
                 saved.file_count = file_count;
                 saved.app_used_bytes = app_used_bytes;
                 let updated = self.storage_repository.update(&saved).await?;
@@ -222,81 +222,9 @@ impl ImportService {
             .map_err(AppError::database)
     }
 
-    pub async fn enqueue_unclassified_images(&self) -> AppResult<usize> {
-        let saved_drives = self.storage_repository.list().await?;
-        let mut paths = Vec::new();
-
-        for drive in get_drives() {
-            let Some(on_drive) = read_drive_metadata(&drive, &self.system_metadata_root) else {
-                continue;
-            };
-            if !saved_drives
-                .iter()
-                .any(|saved| saved.drive_id == on_drive.drive_id && saved.is_mounted)
-            {
-                continue;
-            }
-
-            let files_directory = drive_storage_root(&drive, &self.system_metadata_root)
-                .join(IMPORTED_FILES_DIRECTORY);
-            if !files_directory.is_dir() {
-                continue;
-            }
-
-            let mut entries = std::fs::read_dir(files_directory)?.collect::<Result<Vec<_>, _>>()?;
-            entries.sort_by_key(|entry| entry.file_name());
-            for entry in entries {
-                let path = entry.path();
-                if path.is_file()
-                    && is_supported_image(&path)
-                    && !has_valid_classification_output(&path)?
-                {
-                    paths.push(path);
-                }
-            }
-        }
-
-        let count = paths.len();
-        let mut queue = SqliteStorage::<ImageProcessingJob, (), ()>::new_in_queue(
-            &self.queue_pool,
-            IMAGE_PROCESSING_QUEUE,
-        );
-        for path in paths {
-            queue
-                .push(ImageProcessingJob { path })
-                .await
-                .map_err(AppError::database)?;
-        }
-        Ok(count)
-    }
-
     pub async fn close(&self) {
         self.repository.close().await;
     }
-}
-
-fn is_supported_image(path: &Path) -> bool {
-    path.extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| {
-            matches!(
-                extension.to_ascii_lowercase().as_str(),
-                "avif"
-                    | "avip"
-                    | "bmp"
-                    | "gif"
-                    | "heic"
-                    | "heif"
-                    | "ico"
-                    | "jpeg"
-                    | "jpg"
-                    | "png"
-                    | "svg"
-                    | "tif"
-                    | "tiff"
-                    | "webp"
-            )
-        })
 }
 
 fn validate_file_paths<I, P>(paths: I) -> AppResult<Vec<PathBuf>>
@@ -401,26 +329,6 @@ fn copy_atomically(
         ));
     }
     std::fs::rename(temporary, destination)
-}
-
-fn calculate_usage(files_directory: &Path) -> AppResult<(i64, i64)> {
-    let mut file_count = 0_i64;
-    let mut app_used_bytes = 0_i64;
-    for entry in std::fs::read_dir(files_directory)? {
-        let entry = entry?;
-        let metadata = entry.metadata()?;
-        if !metadata.is_file() || entry.file_name().to_string_lossy().starts_with('.') {
-            continue;
-        }
-        file_count = file_count
-            .checked_add(1)
-            .ok_or_else(|| AppError::internal(CounterOverflow))?;
-        let size = i64::try_from(metadata.len()).map_err(AppError::internal)?;
-        app_used_bytes = app_used_bytes
-            .checked_add(size)
-            .ok_or_else(|| AppError::internal(CounterOverflow))?;
-    }
-    Ok((file_count, app_used_bytes))
 }
 
 #[cfg(test)]
