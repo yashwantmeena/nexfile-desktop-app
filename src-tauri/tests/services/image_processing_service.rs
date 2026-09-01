@@ -371,6 +371,18 @@ fn prepares_resized_jpeg_and_removes_it_on_drop() {
         assert_eq!((model_image.width(), model_image.height()), (2048, 1024));
         let pixel = model_image.to_rgb8().get_pixel(0, 0).0;
         assert!(pixel.iter().all(|channel| *channel >= 250));
+
+        let metadata = extract_image_metadata(&source, &prepared)
+            .expect("source image metadata should be extracted");
+        assert_eq!(metadata.media_type.as_deref(), Some("image/png"));
+        assert_eq!((metadata.width, metadata.height), (2050, 1025));
+        assert_eq!(metadata.location, None);
+        assert!(metadata.size_bytes > 0);
+        assert_eq!(metadata.perceptual_hash.len(), 16);
+        assert!(metadata
+            .perceptual_hash
+            .chars()
+            .all(|character| character.is_ascii_hexdigit()));
         assert!(source.is_file(), "the original image must remain untouched");
     }
 
@@ -379,6 +391,26 @@ fn prepares_resized_jpeg_and_removes_it_on_drop() {
         "the temporary JPEG must be deleted when processing ends"
     );
     assert!(source.is_file(), "the original image must still exist");
+    std::fs::remove_dir_all(root).expect("test directory should be removable");
+}
+
+#[test]
+fn preserves_the_json_sidecar_creation_date_across_schema_versions() {
+    let root = std::env::temp_dir().join(format!(
+        "nexfile-sidecar-created-at-{}",
+        uuid::Uuid::new_v4()
+    ));
+    std::fs::create_dir_all(&root).expect("test directory should be created");
+    let output_path = root.join("image.jpg.json");
+
+    std::fs::write(&output_path, r#"{"createdAtMs":41}"#)
+        .expect("current sidecar fixture should be written");
+    assert_eq!(existing_sidecar_created_at_ms(&output_path), Some(41));
+
+    std::fs::write(&output_path, r#"{"metadata":{"createdAtMs":42}}"#)
+        .expect("version 23 sidecar fixture should be written");
+    assert_eq!(existing_sidecar_created_at_ms(&output_path), Some(42));
+
     std::fs::remove_dir_all(root).expect("test directory should be removable");
 }
 
@@ -418,7 +450,7 @@ fn treats_previous_primary_label_version_as_stale() {
     let output_path = root.join("image.jpg.json");
     std::fs::write(
         &output_path,
-        r#"{"version":10,"caption":null,"ocr":{"text":"NexFile","rawTextWithRegions":"NexFile"},"tags":["nexfile"],"classification":{"primary":[{"label":"contains_readable_text","parentLabel":null,"score":0.9}],"secondary":[],"tertiary":[]}}"#,
+        r#"{"version":10,"caption":null,"ocr":{"text":"NexFile","rawTextWithRegions":"NexFile"},"searchKeywords":["nexfile"],"classification":{"primary":[{"label":"contains_readable_text","parentLabel":null,"score":0.9}],"secondary":[],"tertiary":[]}}"#,
     )
     .expect("old output should be written");
 
@@ -434,7 +466,7 @@ fn treats_an_empty_caption_as_stale() {
     std::fs::write(
         &output_path,
         format!(
-            r#"{{"version":{IMAGE_PROCESSING_OUTPUT_VERSION},"caption":"  ","ocr":null,"tags":["test"],"classification":{{"primary":[],"secondary":[],"tertiary":[]}}}}"#
+            r#"{{"version":{IMAGE_PROCESSING_OUTPUT_VERSION},"caption":"  ","ocr":null,"searchKeywords":["test"],"classification":{{"primary":[],"secondary":[],"tertiary":[]}}}}"#
         ),
     )
     .expect("empty caption output should be written");
@@ -451,7 +483,7 @@ fn accepts_a_current_ocr_output_without_a_caption() {
     std::fs::write(
         &output_path,
         format!(
-            r#"{{"version":{IMAGE_PROCESSING_OUTPUT_VERSION},"caption":null,"ocr":{{"text":"NexFile","rawTextWithRegions":"NexFile<loc_1><loc_2><loc_3><loc_4>"}},"tags":["nexfile"],"classification":{{"primary":[{{"label":"ocr","parentLabel":null,"score":0.9}}],"secondary":[],"tertiary":[]}}}}"#
+            r#"{{"version":{IMAGE_PROCESSING_OUTPUT_VERSION},"caption":null,"ocr":{{"text":"NexFile","rawTextWithRegions":"NexFile<loc_1><loc_2><loc_3><loc_4>"}},"searchKeywords":["nexfile"],"classification":{{"primary":[{{"label":"ocr","parentLabel":null,"score":0.9}}],"secondary":[],"tertiary":[]}}}}"#
         ),
     )
     .expect("OCR output should be written");
@@ -528,8 +560,8 @@ async fn bundled_models_write_binary_analysis_and_tags_for_real_images() {
         assert_eq!(output_path, classification_output_path(&image_path));
         assert_eq!(output.version, IMAGE_PROCESSING_OUTPUT_VERSION);
         assert!(
-            !output.tags.is_empty(),
-            "search tags should not be empty for {image_path:?}"
+            !output.search_keywords.is_empty(),
+            "search keywords should not be empty for {image_path:?}"
         );
         assert!(
             !output.classification.primary.is_empty(),

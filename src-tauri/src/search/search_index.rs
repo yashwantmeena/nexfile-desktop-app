@@ -6,7 +6,10 @@ use tantivy::Index;
 
 use crate::error::{AppError, AppResult};
 
-pub const SEARCH_INDEX_DIRECTORY: &str = "search-index";
+// Tantivy cannot open an existing index with a different schema. Keep the
+// schema generation in the directory name so upgrades create a fresh derived
+// index instead of preventing the application from starting.
+pub const SEARCH_INDEX_DIRECTORY: &str = "search-index-v2";
 
 #[derive(Clone, Copy, Debug)]
 pub struct SearchFields {
@@ -55,7 +58,7 @@ fn build_schema() -> (Schema, SearchFields) {
         drive_id: builder.add_text_field("drive_id", STRING | STORED),
         name: builder.add_text_field("name", TEXT | STORED),
         extension: builder.add_text_field("extension", STRING | STORED),
-        tags: builder.add_text_field("tags", TEXT | STORED),
+        tags: builder.add_text_field("tags", STRING | STORED),
         caption: builder.add_text_field("caption", TEXT | STORED),
         ocr: builder.add_text_field("ocr", TEXT | STORED),
         modified_at_ms: builder.add_i64_field("modified_at_ms", INDEXED | FAST | STORED),
@@ -64,3 +67,7 @@ fn build_schema() -> (Schema, SearchFields) {
 
     (builder.build(), fields)
 }
+
+#[cfg(test)]
+#[path = "../../tests/search/search_index.rs"]
+mod tests;

@@ -48,11 +48,36 @@ pub struct ImageClassificationOutput {
 #[serde(rename_all = "camelCase")]
 pub struct ImageProcessingOutput {
     pub version: u32,
+    #[serde(default)]
+    pub created_at_ms: u64,
+    #[serde(default)]
+    pub updated_at_ms: u64,
+    #[serde(default)]
+    pub metadata: ImageMetadata,
     pub caption: Option<String>,
     pub ocr: Option<ImageOcrOutput>,
     pub object_detection: Option<ImageObjectDetectionOutput>,
-    pub tags: Vec<String>,
+    pub search_keywords: Vec<String>,
     pub classification: ImageClassificationOutput,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageMetadata {
+    pub media_type: Option<String>,
+    pub size_bytes: u64,
+    pub width: u32,
+    pub height: u32,
+    pub location: Option<ImageLocation>,
+    /// A 64-bit DCT perceptual hash encoded as 16 lowercase hexadecimal digits.
+    pub perceptual_hash: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageLocation {
+    pub latitude: f64,
+    pub longitude: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

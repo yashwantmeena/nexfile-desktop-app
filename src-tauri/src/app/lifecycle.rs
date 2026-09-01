@@ -6,12 +6,14 @@ use crate::repositories::database_repository::SqliteDatabase;
 use crate::repositories::storage_repository::SqliteStorageRepository;
 use crate::search::SearchIndex;
 use crate::services::import_service::ImportService;
+use crate::services::indexing_service::IndexingService;
 use crate::services::storage_service::StorageService;
 use crate::utils::constants::{
     AI_CONFIGS_DIRECTORY, AI_MODELS_DIRECTORY, CLIP_MODEL_DIRECTORY, FLORENCE2_MODEL_DIRECTORY,
 };
 use crate::workers::image_processing_worker::ImageProcessingWorker;
 use crate::workers::import_worker::ImportWorker;
+use crate::workers::indexing_worker::IndexingWorker;
 
 use super::config::AppConfig;
 use super::state::AppState;
@@ -30,6 +32,7 @@ pub fn initialize<R: tauri::Runtime>(app: &tauri::App<R>) -> AppResult<()> {
         &database,
         system_metadata_root,
     ))?;
+    let indexing = IndexingService::new(&search)?;
     let import_worker = ImportWorker::start(&database, imports.clone());
     let image_processing_worker = ImageProcessingWorker::start(
         &database,
@@ -43,10 +46,12 @@ pub fn initialize<R: tauri::Runtime>(app: &tauri::App<R>) -> AppResult<()> {
             .join(FLORENCE2_MODEL_DIRECTORY),
         config.resources_dir.join(AI_CONFIGS_DIRECTORY),
     );
+    let indexing_worker = IndexingWorker::start(&database, indexing);
 
     app.manage(AppState {
         image_processing_worker,
         import_worker,
+        indexing_worker,
         imports,
         search,
         storage: StorageService::new(storage_repository, config.app_data_dir),

@@ -1,5 +1,6 @@
 pub(crate) mod constants;
 pub mod image_decoder;
+pub mod image_hash;
 pub(crate) mod operation_logger;
 pub(crate) mod search_tags;
 

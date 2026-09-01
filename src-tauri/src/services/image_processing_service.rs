@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::ffi::OsString;
 use std::fs::OpenOptions;
-use std::io::{BufWriter, Write};
+use std::io::{BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -14,14 +14,15 @@ use crate::error::{
 };
 use crate::models::image_processing_model::{
     ClassificationConfigDefinition, ClassificationPrediction, ImageBoundingBox,
-    ImageClassificationOutput, ImageObjectDetection, ImageObjectDetectionOutput, ImageOcrOutput,
-    ImageProcessingJob, ImageProcessingOutput,
+    ImageClassificationOutput, ImageLocation, ImageMetadata, ImageObjectDetection,
+    ImageObjectDetectionOutput, ImageOcrOutput, ImageProcessingJob, ImageProcessingOutput,
 };
 use crate::utils::constants::{
     CLIP_LOGIT_SCALE, IMAGE_PROCESSING_OUTPUT_VERSION, MAX_MODEL_IMAGE_DIMENSION,
     MODEL_IMAGE_TEMP_DIRECTORY, MODEL_JPEG_QUALITY, OCR_LABEL, VISUAL_LABEL,
 };
 use crate::utils::image_decoder::decode_image;
+use crate::utils::image_hash::{calculate_phash, format_phash};
 use crate::utils::operation_logger::OperationLogger;
 use crate::utils::search_tags::{extract_keyword_candidates, select_search_tags};
 
@@ -242,12 +243,17 @@ impl ImageProcessingService {
             ),
         );
 
+        let updated_at_ms = current_time_ms();
+        let created_at_ms = existing_sidecar_created_at_ms(&output_path).unwrap_or(updated_at_ms);
         let output = ImageProcessingOutput {
             version: IMAGE_PROCESSING_OUTPUT_VERSION,
+            created_at_ms,
+            updated_at_ms,
+            metadata: extract_image_metadata(&job.path, &prepared_image)?,
             caption,
             ocr,
             object_detection,
-            tags,
+            search_keywords: tags,
             classification,
         };
         let write_started = logger.stage("write JSON sidecar");
@@ -258,11 +264,120 @@ impl ImageProcessingService {
     }
 }
 
+fn extract_image_metadata(path: &Path, prepared: &PreparedModelImage) -> AppResult<ImageMetadata> {
+    let filesystem = std::fs::metadata(path)?;
+    let format = image::ImageFormat::from_path(path).ok();
+    let exif_metadata = OpenOptions::new()
+        .read(true)
+        .open(path)
+        .ok()
+        .and_then(|file| {
+            exif::Reader::new()
+                .read_from_container(&mut BufReader::new(file))
+                .ok()
+        });
+    let location = exif_metadata.as_ref().and_then(exif_location);
+
+    Ok(ImageMetadata {
+        media_type: format.map(|format| format.to_mime_type().to_owned()),
+        size_bytes: filesystem.len(),
+        width: prepared.original_width(),
+        height: prepared.original_height(),
+        location,
+        perceptual_hash: format_phash(prepared.perceptual_hash),
+    })
+}
+
+fn existing_sidecar_created_at_ms(path: &Path) -> Option<u64> {
+    if let Ok(bytes) = std::fs::read(path) {
+        if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+            if let Some(created_at_ms) =
+                value.get("createdAtMs").and_then(serde_json::Value::as_u64)
+            {
+                return Some(created_at_ms);
+            }
+            // Version 23 stored this sidecar timestamp inside metadata.
+            if let Some(created_at_ms) = value
+                .get("metadata")
+                .and_then(|metadata| metadata.get("createdAtMs"))
+                .and_then(serde_json::Value::as_u64)
+            {
+                return Some(created_at_ms);
+            }
+        }
+    }
+
+    std::fs::metadata(path)
+        .ok()?
+        .created()
+        .ok()
+        .and_then(system_time_ms)
+}
+
+fn current_time_ms() -> u64 {
+    system_time_ms(std::time::SystemTime::now()).unwrap_or_default()
+}
+
+fn exif_location(metadata: &exif::Exif) -> Option<ImageLocation> {
+    let latitude = gps_coordinate(metadata, exif::Tag::GPSLatitude)?;
+    let longitude = gps_coordinate(metadata, exif::Tag::GPSLongitude)?;
+    let latitude = apply_gps_direction(
+        latitude,
+        gps_direction(metadata, exif::Tag::GPSLatitudeRef)?,
+    )?;
+    let longitude = apply_gps_direction(
+        longitude,
+        gps_direction(metadata, exif::Tag::GPSLongitudeRef)?,
+    )?;
+
+    (latitude.abs() <= 90.0 && longitude.abs() <= 180.0).then_some(ImageLocation {
+        latitude,
+        longitude,
+    })
+}
+
+fn gps_coordinate(metadata: &exif::Exif, tag: exif::Tag) -> Option<f64> {
+    let field = metadata.fields().find(|field| field.tag == tag)?;
+    let exif::Value::Rational(parts) = &field.value else {
+        return None;
+    };
+    let [degrees, minutes, seconds, ..] = parts.as_slice() else {
+        return None;
+    };
+    let value = |part: &exif::Rational| {
+        (part.denom != 0).then(|| f64::from(part.num) / f64::from(part.denom))
+    };
+    Some(value(degrees)? + value(minutes)? / 60.0 + value(seconds)? / 3600.0)
+}
+
+fn gps_direction(metadata: &exif::Exif, tag: exif::Tag) -> Option<u8> {
+    let field = metadata.fields().find(|field| field.tag == tag)?;
+    let exif::Value::Ascii(values) = &field.value else {
+        return None;
+    };
+    values.first()?.first().map(u8::to_ascii_uppercase)
+}
+
+fn apply_gps_direction(coordinate: f64, direction: u8) -> Option<f64> {
+    match direction {
+        b'N' | b'E' => Some(coordinate),
+        b'S' | b'W' => Some(-coordinate),
+        _ => None,
+    }
+}
+
+fn system_time_ms(time: std::time::SystemTime) -> Option<u64> {
+    time.duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| u64::try_from(duration.as_millis()).ok())
+}
+
 /// A normalized JPEG that is deleted when the processing scope ends.
 struct PreparedModelImage {
     path: PathBuf,
     original_width: u32,
     original_height: u32,
+    perceptual_hash: u64,
 }
 
 impl PreparedModelImage {
@@ -275,6 +390,7 @@ impl PreparedModelImage {
         }
         let original_width = decoded.width();
         let original_height = decoded.height();
+        let perceptual_hash = calculate_phash(&decoded);
 
         let resized = if decoded.width().max(decoded.height()) > MAX_MODEL_IMAGE_DIMENSION {
             decoded.resize(
@@ -294,6 +410,7 @@ impl PreparedModelImage {
             path,
             original_width,
             original_height,
+            perceptual_hash,
         };
         if let Err(error) = write_jpeg(prepared.path(), &rgb) {
             drop(prepared);
