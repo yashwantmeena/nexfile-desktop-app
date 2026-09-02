@@ -18,6 +18,7 @@ pub(crate) const INDEX_WRITER_MEMORY_BUDGET_BYTES: usize = 32_000_000;
 pub(crate) const OCR_LABEL: &str = "ocr";
 pub(crate) const OBJECT_TAG_PREFIX: &str = "ob::";
 pub(crate) const SEARCH_TAG_PREFIX: &str = "tg::";
+pub(crate) const SEARCH_INDEX_DIRECTORY: &str = "search-index-v3";
 pub(crate) const VISUAL_LABEL: &str = "visual";
 pub(crate) const MAX_KEYWORD_CANDIDATES: usize = 64;
 pub(crate) const MAX_SEARCH_TAGS: usize = 10;

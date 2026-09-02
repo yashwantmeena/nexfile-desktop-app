@@ -5,7 +5,6 @@ mod error;
 mod mappers;
 mod models;
 mod repositories;
-mod search;
 mod services;
 mod system;
 pub mod utils;
@@ -26,14 +25,14 @@ pub use models::image_processing_model::{
     ImageProcessingJob, ImageProcessingOutput,
 };
 pub use models::import_model::ImportFileJob;
-pub use models::indexing_model::IndexingJob;
+pub use models::indexing_model::{IndexDocument, IndexingJob};
 pub use models::storage_model::{
     DriveConfigurationUpdate, DriveInfo, DriveMetadata, StorageData, StorageDrive,
 };
 pub use repositories::background_processing_repository::SqliteBackgroundProcessingRepository;
 pub use repositories::database_repository::SqliteDatabase;
+pub use repositories::indexing_repository::TantivyIndexingRepository;
 pub use repositories::storage_repository::SqliteStorageRepository;
-pub use search::{SearchFields, SearchIndex};
 pub use services::import_service::ImportService;
 pub use services::indexing_service::IndexingService;
 pub use services::storage_service::StorageService;

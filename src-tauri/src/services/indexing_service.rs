@@ -1,41 +1,21 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
-use std::time::UNIX_EPOCH;
-
-use tantivy::indexer::{IndexWriter, IndexWriterOptions};
-use tantivy::{TantivyDocument, Term};
 
 use crate::error::{AppError, AppResult};
-use crate::mappers::search_mapper::search_tags;
 use crate::models::image_processing_model::ImageProcessingOutput;
-use crate::models::indexing_model::IndexingJob;
+use crate::models::indexing_model::{IndexDocument, IndexingJob};
 use crate::models::storage_model::DriveMetadata;
-use crate::search::{SearchFields, SearchIndex};
-use crate::utils::constants::{
-    DRIVE_METADATA_FILE, IMPORTED_FILES_DIRECTORY, INDEX_WRITER_MEMORY_BUDGET_BYTES,
-};
+use crate::repositories::indexing_repository::TantivyIndexingRepository;
+use crate::utils::constants::{DRIVE_METADATA_FILE, IMPORTED_FILES_DIRECTORY};
 
 #[derive(Clone)]
 pub struct IndexingService {
-    writer: Arc<Mutex<IndexWriter>>,
-    fields: SearchFields,
+    repository: TantivyIndexingRepository,
 }
 
 impl IndexingService {
-    pub fn new(search: &SearchIndex) -> AppResult<Self> {
-        let options = IndexWriterOptions::builder()
-            .num_worker_threads(1)
-            .num_merge_threads(1)
-            .memory_budget_per_thread(INDEX_WRITER_MEMORY_BUDGET_BYTES)
-            .build();
-        let writer = search
-            .index()
-            .writer_with_options::<TantivyDocument>(options)
-            .map_err(AppError::internal)?;
-        Ok(Self {
-            writer: Arc::new(Mutex::new(writer)),
-            fields: search.fields(),
-        })
+    pub fn new(repository: TantivyIndexingRepository) -> Self {
+        Self { repository }
     }
 
     pub async fn process(&self, job: IndexingJob) -> AppResult<()> {
@@ -47,53 +27,62 @@ impl IndexingService {
 
     fn process_blocking(&self, job: IndexingJob) -> AppResult<()> {
         let source = IndexSource::read(&job.path)?;
-        let mut document = TantivyDocument::default();
-        document.add_text(self.fields.file_id, &source.file_id);
-        document.add_text(self.fields.drive_id, &source.drive_id);
-        document.add_text(self.fields.name, &source.name);
-        document.add_text(self.fields.extension, &source.extension);
-        for tag in search_tags(&source.output) {
-            document.add_text(self.fields.tags, tag);
-        }
-        if let Some(caption) = source
-            .output
-            .caption
-            .as_deref()
-            .filter(|caption| !caption.trim().is_empty())
-        {
-            document.add_text(self.fields.caption, caption);
-        }
-        if let Some(ocr) = source
-            .output
-            .ocr
-            .as_ref()
-            .map(|ocr| ocr.text.trim())
-            .filter(|ocr| !ocr.is_empty())
-        {
-            document.add_text(self.fields.ocr, ocr);
-        }
-        document.add_i64(self.fields.modified_at_ms, source.modified_at_ms);
-        document.add_u64(self.fields.size_bytes, source.size_bytes);
+        let media_type = normalized_value(source.output.metadata.media_type.as_deref());
+        let location = source.output.metadata.location.filter(valid_location);
 
-        let mut writer = self.writer.lock().map_err(|_| {
-            AppError::internal(std::io::Error::other(
-                "Tantivy index writer lock is poisoned.",
-            ))
-        })?;
-        writer.delete_term(Term::from_field_text(self.fields.file_id, &source.file_id));
-        writer.add_document(document).map_err(AppError::internal)?;
-        writer.commit().map_err(AppError::internal)?;
-        Ok(())
+        let mut object_labels = HashSet::new();
+        object_labels.extend(
+            source
+                .output
+                .object_detection
+                .iter()
+                .flat_map(|output| output.detections.iter())
+                .filter_map(|detection| normalized_value(Some(&detection.label))),
+        );
+
+        let mut search_keywords = HashSet::new();
+        search_keywords.extend(
+            source
+                .output
+                .search_keywords
+                .iter()
+                .filter_map(|keyword| normalized_value(Some(keyword))),
+        );
+
+        let mut secondary_labels = HashSet::new();
+        let mut categories = HashSet::new();
+        for prediction in &source.output.classification.secondary {
+            if let Some(label) = normalized_value(Some(&prediction.label)) {
+                secondary_labels.insert(label.clone());
+                categories.insert(label);
+            }
+        }
+        for prediction in &source.output.classification.primary {
+            if let Some(label) = normalized_value(Some(&prediction.label)) {
+                categories.insert(label);
+            }
+        }
+
+        self.repository.upsert(IndexDocument {
+            file_id: source.file_id,
+            drive_id: source.drive_id,
+            created_at_ms: source.output.created_at_ms,
+            updated_at_ms: source.output.updated_at_ms,
+            media_type,
+            size_bytes: source.output.metadata.size_bytes,
+            latitude: location.as_ref().map(|location| location.latitude),
+            longitude: location.as_ref().map(|location| location.longitude),
+            object_labels: object_labels.into_iter().collect(),
+            search_keywords: search_keywords.into_iter().collect(),
+            secondary_labels: secondary_labels.into_iter().collect(),
+            categories: categories.into_iter().collect(),
+        })
     }
 }
 
 struct IndexSource {
     file_id: String,
     drive_id: String,
-    name: String,
-    extension: String,
-    modified_at_ms: i64,
-    size_bytes: u64,
     output: ImageProcessingOutput,
 }
 
@@ -143,28 +132,9 @@ impl IndexSource {
             .map_err(AppError::serialization)?;
 
         let file_id = required_text(image_path.file_stem(), "The managed image has no file ID.")?;
-        let name = required_text(image_path.file_name(), "The managed image has no filename.")?;
-        let extension = required_text(
-            image_path.extension(),
-            "The managed image has no extension.",
-        )?
-        .to_lowercase();
-        let modified_at_ms = i64::try_from(
-            metadata
-                .modified()?
-                .duration_since(UNIX_EPOCH)
-                .map_err(AppError::system_time)?
-                .as_millis(),
-        )
-        .map_err(AppError::internal)?;
-
         Ok(Self {
             file_id,
             drive_id: drive_metadata.drive_id,
-            name,
-            extension,
-            modified_at_ms,
-            size_bytes: metadata.len(),
             output,
         })
     }
@@ -184,4 +154,20 @@ fn required_text(value: Option<&std::ffi::OsStr>, message: &str) -> AppResult<St
         .filter(|value| !value.is_empty())
         .map(str::to_owned)
         .ok_or_else(|| AppError::validation(message))
+}
+
+fn normalized_value(value: Option<&str>) -> Option<String> {
+    let normalized = value?
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
+    (!normalized.is_empty()).then_some(normalized)
+}
+
+fn valid_location(location: &crate::models::image_processing_model::ImageLocation) -> bool {
+    location.latitude.is_finite()
+        && location.longitude.is_finite()
+        && (-90.0..=90.0).contains(&location.latitude)
+        && (-180.0..=180.0).contains(&location.longitude)
 }

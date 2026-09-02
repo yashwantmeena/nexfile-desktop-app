@@ -1,4 +1,3 @@
-use crate::search::SearchIndex;
 use crate::services::import_service::ImportService;
 use crate::services::storage_service::StorageService;
 use crate::workers::image_processing_worker::ImageProcessingWorker;
@@ -10,6 +9,5 @@ pub struct AppState {
     pub import_worker: ImportWorker,
     pub indexing_worker: IndexingWorker,
     pub imports: ImportService,
-    pub search: SearchIndex,
     pub storage: StorageService,
 }
