@@ -1,9 +1,40 @@
-import { ChevronLeft, ChevronRight, ExternalLink, Folder, FolderPlus, Maximize2, MoreHorizontal, RefreshCw, Star, X } from "lucide-react";
+import { File, Star } from "lucide-react";
 import type { DashboardFile } from "../types/file";
-import { mountainImage } from "../data/dashboard-data";
 
 interface FileInspectorProps { file:DashboardFile; favorite:boolean; onFavorite:()=>void; }
 
-export function FileInspector({ file,favorite,onFavorite }:FileInspectorProps) {
-  return <aside className="inspector"><header className="inspector-header"><div><span>Preview</span><small>1 of 12</small></div><div className="inspector-tools"><button aria-label="Expand preview"><Maximize2/></button><button aria-label="Refresh preview"><RefreshCw/></button><button aria-label="Open file"><ExternalLink/></button></div></header><div className="preview-image" style={{backgroundImage:`url(${file.image??mountainImage})`}}><button aria-label="Previous file" className="preview-left"><ChevronLeft/></button><button aria-label="Next file" className="preview-right"><ChevronRight/></button><button aria-label="More preview options" className="preview-more"><MoreHorizontal/></button></div><div className="preview-title"><div><h2>{file.name}</h2><p>JPEG Image <i/> 2.4 MB</p></div><button aria-label={favorite?"Remove from favorites":"Add to favorites"} className={favorite?"favorite":""} onClick={onFavorite}><Star/></button></div><dl className="file-meta-grid"><div><dt>Added on</dt><dd>May 18, 2024</dd></div><div><dt>Modified on</dt><dd>Today, 10:24 AM</dd></div><div><dt>Size</dt><dd>2.4 MB</dd></div><div><dt>Dimensions</dt><dd>5472 × 3648</dd></div></dl><section className="tag-section"><h3>Tags</h3><div>{["nature","mountains","lake","travel"].map(tag=><span key={tag}>#{tag} <X/></span>)}<button><FolderPlus/> Add tag</button></div></section><section className="actions-section"><h3>Quick actions</h3><div className="quick-action-grid"><button className="primary"><span><ExternalLink/></span><strong>Open</strong></button><button><span><Folder/></span><strong>Show in Folder</strong></button><button><span><FolderPlus/></span><strong>Add to Collection</strong></button><button><span><MoreHorizontal/></span><strong>More actions</strong></button></div></section></aside>;
+function readable(value: string) { return value.replace(/[_-]/g, " "); }
+function formatSize(bytes?: number) {
+  if (bytes === undefined) return "Unknown";
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; }
+  return `${value >= 10 ? value.toFixed(0) : value.toFixed(1)} ${units[unit]}`;
+}
+
+export function FileInspector({ file, favorite, onFavorite }: FileInspectorProps) {
+  const categories = file.categories ?? [];
+  const tags = file.tags ?? [];
+  return <aside className="inspector">
+    <header className="inspector-header"><span>File details</span></header>
+    <div className="preview-image" style={file.image && file.fileType !== "video" ? { backgroundImage: `url(${file.image})` } : undefined}>
+      {file.image && file.fileType === "video" && file.kind !== "WEBM" && <video src={file.image} controls preload="metadata" playsInline />}
+      {(!file.image || file.kind === "WEBM") && <File aria-label="No preview available" />}
+    </div>
+    <div className="preview-title"><div><h2 title={file.name}>{file.name}</h2><p>{file.kind} <i/> {formatSize(file.sizeBytes)}</p></div>
+      <button aria-label={favorite ? "Remove from favorites" : "Add to favorites"} className={favorite ? "favorite" : ""} onClick={onFavorite}><Star/></button>
+    </div>
+    <dl className="file-meta-grid">
+      <div><dt>Category</dt><dd className="capitalize">{categories[0] ? readable(categories[0]) : "Uncategorized"}</dd></div>
+      <div><dt>Collection</dt><dd>{file.collection ?? "No collection"}</dd></div>
+      <div><dt>Modified on</dt><dd>{file.time}</dd></div>
+      <div><dt>Type</dt><dd className="capitalize">{file.fileType ?? file.kind}</dd></div>
+    </dl>
+    <section className="tag-section"><h3>Tags</h3><div>
+      {tags.length ? tags.map(tag => <span key={tag}>#{readable(tag)}</span>) : <span>No tags</span>}
+    </div></section>
+    <section className="tag-section file-path-section"><h3>Path</h3><p>{file.path}</p></section>
+  </aside>;
 }

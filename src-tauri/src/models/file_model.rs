@@ -1,6 +1,36 @@
 use crate::types::file_type::FileType;
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagedFileMetadata {
+    pub version: u32,
+    pub original_name: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FetchedFile {
+    pub id: String,
+    pub drive_id: String,
+    pub name: String,
+    pub path: std::path::PathBuf,
+    pub file_type: FileType,
+    pub size_bytes: u64,
+    pub modified_at_ms: Option<i64>,
+    pub categories: Vec<String>,
+    pub tags: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FilePage {
+    pub files: Vec<FetchedFile>,
+    pub total_count: usize,
+    pub next_offset: Option<usize>,
+    pub issues: Vec<FileCountIssue>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::FromRow)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FileTypeCount {

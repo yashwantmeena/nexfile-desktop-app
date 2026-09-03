@@ -10,7 +10,6 @@ use crate::models::storage_model::{
 use crate::repositories::storage_repository::SqliteStorageRepository;
 use crate::system::filesystem::{get_drives, read_file, write_file};
 use crate::utils::constants::{DRIVE_METADATA_FILE, IMPORTED_FILES_DIRECTORY, NEXFILE_DIRECTORY};
-use crate::utils::image_decoder::is_supported_image;
 
 pub struct StorageService {
     repository: SqliteStorageRepository,
@@ -18,6 +17,31 @@ pub struct StorageService {
 }
 
 impl StorageService {
+    pub async fn fetch_files(
+        &self,
+        offset: usize,
+        limit: usize,
+    ) -> AppResult<crate::models::file_model::FilePage> {
+        if !(1..=200).contains(&limit) {
+            return Err(AppError::validation(
+                "The file page size must be between 1 and 200.",
+            ));
+        }
+        let snapshots = self.repository.list().await?;
+        let root = self.system_metadata_root.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            crate::services::file_service::fetch_files(
+                snapshots,
+                get_drives(),
+                &root,
+                offset,
+                limit,
+            )
+        })
+        .await
+        .map_err(AppError::internal)
+    }
+
     pub async fn get_file_count(&self) -> AppResult<crate::models::file_model::FileCountSummary> {
         let snapshot = self.repository.list().await?;
         let root = self.system_metadata_root.clone();
@@ -447,7 +471,7 @@ pub(crate) fn calculate_managed_statistics(
     Ok((file_count, app_used_bytes, counts))
 }
 
-fn is_generated_image_sidecar(path: &Path) -> bool {
+pub(crate) fn is_generated_image_sidecar(path: &Path) -> bool {
     if !path
         .extension()
         .and_then(|extension| extension.to_str())
@@ -458,7 +482,7 @@ fn is_generated_image_sidecar(path: &Path) -> bool {
 
     path.file_stem()
         .map(|original_name| path.with_file_name(original_name))
-        .is_some_and(|original_path| original_path.is_file() && is_supported_image(&original_path))
+        .is_some_and(|original_path| original_path.is_file())
 }
 
 fn metadata_path(drive: &DriveInfo, system_metadata_root: &Path) -> PathBuf {

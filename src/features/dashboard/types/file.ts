@@ -1,5 +1,8 @@
 export interface DashboardFile {
-  id:number; name:string; path:string; kind:string; time:string;
+  id:string | number; name:string; path:string; kind:string; time:string;
+  sizeBytes?:number; fileType?:string;
+  categories?:string[];
+  tags?:string[]; collection?:string;
   image?:string; duration?:string;
 }
 

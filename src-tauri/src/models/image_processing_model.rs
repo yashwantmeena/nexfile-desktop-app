@@ -51,6 +51,8 @@ pub struct ImageClassificationOutput {
 pub struct ImageProcessingOutput {
     pub version: u32,
     #[serde(default)]
+    pub original_name: String,
+    #[serde(default)]
     pub created_at_ms: u64,
     #[serde(default)]
     pub updated_at_ms: u64,

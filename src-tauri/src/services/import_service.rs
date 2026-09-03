@@ -11,12 +11,14 @@ use tauri::async_runtime::Mutex;
 use crate::error::{AppError, AppResult, CounterOverflow};
 use crate::mappers::file_mapper::file_type_from_path;
 use crate::models::background_process_model::BackgroundProcess;
+use crate::models::file_model::ManagedFileMetadata;
 use crate::models::image_processing_model::ImageProcessingJob;
 use crate::models::import_model::ImportFileJob;
 use crate::models::storage_model::{DriveInfo, DriveMetadata};
 use crate::repositories::background_processing_repository::SqliteBackgroundProcessingRepository;
 use crate::repositories::database_repository::SqliteDatabase;
 use crate::repositories::storage_repository::SqliteStorageRepository;
+use crate::services::image_processing_service::classification_output_path;
 use crate::services::storage_service::{
     calculate_managed_statistics, drive_storage_root, read_drive_metadata, write_drive_metadata,
 };
@@ -170,6 +172,7 @@ impl ImportService {
                         "the import destination already exists with a different size",
                     )));
                 }
+                write_import_sidecar(&job, &destination)?;
                 self.publish_for_image_processing(&destination).await?;
                 let (file_count, app_used_bytes, counts) =
                     calculate_managed_statistics(&files_directory)?;
@@ -200,6 +203,7 @@ impl ImportService {
                 Err(error) => return Err(error.into()),
             }
 
+            write_import_sidecar(&job, &destination)?;
             self.publish_for_image_processing(&destination).await?;
             let mut counts = saved.file_type_counts.clone();
             let category = counts
@@ -339,6 +343,36 @@ fn destination_name(job: &ImportFileJob) -> OsString {
         name.push(extension);
     }
     name
+}
+
+fn write_import_sidecar(job: &ImportFileJob, destination: &Path) -> AppResult<()> {
+    let original_name = job
+        .path
+        .file_name()
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| AppError::validation("The imported file has no filename."))?
+        .to_string_lossy()
+        .into_owned();
+    let path = classification_output_path(destination);
+    if path.try_exists()? {
+        return Ok(());
+    }
+    let temporary = path.with_file_name(format!(".{}.sidecar.tmp", job.file_id));
+    let bytes = serde_json::to_vec(&ManagedFileMetadata {
+        version: 1,
+        original_name,
+    })
+    .map_err(AppError::serialization)?;
+    std::fs::write(&temporary, bytes)?;
+    if let Err(error) = std::fs::rename(&temporary, &path) {
+        if path.try_exists()? {
+            let _ = std::fs::remove_file(&temporary);
+            return Ok(());
+        }
+        let _ = std::fs::remove_file(&temporary);
+        return Err(error.into());
+    }
+    Ok(())
 }
 
 fn copy_atomically(

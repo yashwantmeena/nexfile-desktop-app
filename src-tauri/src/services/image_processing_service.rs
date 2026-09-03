@@ -246,8 +246,15 @@ impl ImageProcessingService {
 
         let updated_at_ms = current_time_ms();
         let created_at_ms = existing_sidecar_created_at_ms(&output_path).unwrap_or(updated_at_ms);
+        let original_name = existing_sidecar_original_name(&output_path).unwrap_or_else(|| {
+            job.path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        });
         let output = ImageProcessingOutput {
             version: IMAGE_PROCESSING_OUTPUT_VERSION,
+            original_name,
             created_at_ms,
             updated_at_ms,
             metadata: extract_image_metadata(&job.path, &prepared_image)?,
@@ -316,6 +323,14 @@ pub(crate) fn existing_sidecar_created_at_ms(path: &Path) -> Option<u64> {
         .created()
         .ok()
         .and_then(system_time_ms)
+}
+
+fn existing_sidecar_original_name(path: &Path) -> Option<String> {
+    let bytes = std::fs::read(path).ok()?;
+    let metadata =
+        serde_json::from_slice::<crate::models::file_model::ManagedFileMetadata>(&bytes).ok()?;
+    let name = metadata.original_name.trim();
+    (!name.is_empty()).then(|| name.to_owned())
 }
 
 fn current_time_ms() -> u64 {

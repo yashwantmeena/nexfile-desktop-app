@@ -111,6 +111,84 @@ fn no_saved_drives_returns_verified_zero() {
 }
 
 #[test]
+fn fetches_all_types_by_filesystem_modified_time_with_pagination() {
+    use std::time::{Duration, UNIX_EPOCH};
+    let root = std::env::temp_dir().join(format!("nexfile-fetch-{}", uuid::Uuid::new_v4()));
+    let directory = root.join("nexfile/files");
+    std::fs::create_dir_all(&directory).unwrap();
+    let saved = metadata();
+    std::fs::write(
+        root.join("nexfile").join(DRIVE_METADATA_FILE),
+        serde_json::to_vec(&saved).unwrap(),
+    )
+    .unwrap();
+    for (name, seconds) in [
+        ("old.jpg", 100),
+        ("new.pdf", 300),
+        ("middle.json", 200),
+        ("tie.txt", 200),
+    ] {
+        let file = std::fs::File::create(directory.join(name)).unwrap();
+        file.set_modified(UNIX_EPOCH + Duration::from_secs(seconds))
+            .unwrap();
+    }
+    // A newer AI timestamp must not affect ordering, and sidecars are not files in the result.
+    std::fs::write(
+        directory.join("old.jpg.json"),
+        br#"{"updated_at_ms":9999999999}"#,
+    )
+    .unwrap();
+    std::fs::write(directory.join(".pending.importing"), b"pending").unwrap();
+    std::fs::write(
+        directory.join("new.pdf.json"),
+        br#"{"version":1,"originalName":"Quarterly report.pdf"}"#,
+    )
+    .unwrap();
+    std::fs::create_dir(directory.join("folder")).unwrap();
+    let drive = DriveInfo {
+        device_id: "test".into(),
+        drive_name: "Test drive".into(),
+        partition_name: "Test".into(),
+        file_system: "test".into(),
+        total_bytes: 100,
+        system_used_bytes: 10,
+        is_system: true,
+        mount_point: root.clone(),
+    };
+    let first = fetch_files(vec![saved.clone()], vec![drive.clone()], &root, 0, 2);
+    assert!(first.issues.is_empty());
+    assert_eq!(first.total_count, 4);
+    assert_eq!(first.next_offset, Some(2));
+    assert_eq!(
+        first
+            .files
+            .iter()
+            .map(|file| file.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Quarterly report.pdf", "middle.json"]
+    );
+    assert_eq!(first.files[0].modified_at_ms, Some(300_000));
+    let second = fetch_files(vec![saved.clone()], vec![drive.clone()], &root, 2, 2);
+    assert_eq!(
+        second
+            .files
+            .iter()
+            .map(|file| file.name.as_str())
+            .collect::<Vec<_>>(),
+        ["tie.txt", "old.jpg"]
+    );
+    assert_eq!(second.next_offset, None);
+    assert_eq!(second.files[1].file_type, FileType::Image);
+    let beyond = fetch_files(vec![saved.clone()], vec![drive], &root, usize::MAX, 60);
+    assert!(beyond.files.is_empty());
+    assert_eq!(beyond.next_offset, None);
+    let offline = fetch_files(vec![saved], vec![], &root, 0, 60);
+    assert!(offline.files.is_empty());
+    assert_eq!(offline.issues.len(), 1);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn reads_drive_metadata_without_modifying_it() {
     let root = std::env::temp_dir().join(format!("nexfile-file-counts-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(root.join("nexfile")).unwrap();

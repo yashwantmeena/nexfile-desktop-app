@@ -55,6 +55,7 @@ async fn stores_searchable_image_fields_in_tantivy() {
     std::fs::write(&image_path, b"image").expect("managed image should be written");
     let output = ImageProcessingOutput {
         version: 18,
+        original_name: "photo.jpg".to_owned(),
         created_at_ms: 1_788_331_200_000,
         updated_at_ms: 1_788_331_300_000,
         metadata: ImageMetadata {

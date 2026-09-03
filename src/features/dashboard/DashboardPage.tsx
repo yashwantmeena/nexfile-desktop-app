@@ -9,7 +9,8 @@ import { CategoryFilters } from "./components/CategoryFilters";
 import { FileGrid } from "./components/FileGrid";
 import { FileInspector } from "./components/FileInspector";
 import { FilterBar } from "./components/FilterBar";
-import { dashboardFiles } from "./data/dashboard-data";
+import { useFiles } from "./hooks/useFiles";
+import type { DashboardFile } from "./types/file";
 import type { HomeCounts } from "./types/home";
 import "./dashboard.css";
 
@@ -20,6 +21,7 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
   const [countsError, setCountsError] = useState<string | null>(null);
   const [countsLoading, setCountsLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+  const fetched = useFiles(refreshKey);
   useEffect(() => {
     let cancelled = false;
     let pending = false;
@@ -48,10 +50,20 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
     { label: "All", count: homeCounts?.totalCount },
     ...(counts ?? []).map(({ fileType, count }) => ({ label: fileType, count })),
   ].map(({ label, count }) => ({ label, count: count == null ? "—" : count.toLocaleString() }));
-  const [query,setQuery]=useState(""); const [activeCategory,setActiveCategory]=useState("All"); const [selectedId,setSelectedId]=useState(1); const [favorites,setFavorites]=useState([1,7]); const [tags,setTags]=useState(["work","project-nexfile","design"]); const [dateFilter,setDateFilter]=useState<DateFilter>("any"); const [gridMode,setGridMode]=useState(true);
-  const files=useMemo(()=>dashboardFiles.filter(file=>file.name.toLowerCase().includes(query.toLowerCase())),[query]);
-  const selectedFile=dashboardFiles.find(file=>file.id===selectedId)??dashboardFiles[0];
-  const toggleFavorite=(id:number)=>setFavorites(items=>items.includes(id)?items.filter(item=>item!==id):[...items,id]);
+  const [query,setQuery]=useState(""); const [activeCategory,setActiveCategory]=useState("All"); const [selectedId,setSelectedId]=useState<DashboardFile["id"] | null>(null); const [favorites,setFavorites]=useState<DashboardFile["id"][]>([]); const [tags,setTags]=useState<string[]>([]); const [dateFilter,setDateFilter]=useState<DateFilter>("any"); const [gridMode,setGridMode]=useState(true);
+  const loadedFiles = useMemo<DashboardFile[]>(() => fetched.files.map(file => ({
+    id: file.id, name: file.name, path: file.path, fileType: file.fileType,
+    kind: file.name.includes(".") ? file.name.split(".").pop()!.toUpperCase() : file.fileType.toUpperCase(),
+    time: file.modifiedAtMs === null ? "Unknown" : new Date(file.modifiedAtMs).toLocaleString(),
+    image: file.imageUrl, sizeBytes: file.sizeBytes, categories: file.categories, tags: file.tags,
+  })), [fetched.files]);
+  useEffect(() => {
+    if (!loadedFiles.length) return;
+    setSelectedId(current => loadedFiles.some(file => file.id === current) ? current : loadedFiles[0].id);
+  }, [loadedFiles]);
+  const files=useMemo(()=>loadedFiles.filter(file=>file.name.toLowerCase().includes(query.toLowerCase())),[loadedFiles, query]);
+  const selectedFile=loadedFiles.find(file=>file.id===selectedId);
+  const toggleFavorite=(id:DashboardFile["id"])=>setFavorites(items=>items.includes(id)?items.filter(item=>item!==id):[...items,id]);
   return (
     <div className="nexfile-app">
       <AppSidebar activeItem={activeNavigation} onActiveItemChange={onNavigationChange}/>
@@ -71,13 +83,13 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
                 </div>
               </div>
               <div className="results-controls">
-                <button className="results-sort" disabled={countsLoading} onClick={() => setRefreshKey(key => key + 1)}>Refresh counts</button>
+                <button className="results-sort" disabled={countsLoading || fetched.loading} onClick={() => setRefreshKey(key => key + 1)}>Refresh files</button>
                 <div className="view-switch result-view-switch">
                   <button className={gridMode ? "active" : ""} onClick={() => setGridMode(true)} aria-label="Grid view"><LayoutGrid /></button>
                   <button className={gridMode ? "" : "active"} onClick={() => setGridMode(false)} aria-label="List view"><List /></button>
                   <button aria-label="Compact grid"><Grid2X2 /></button>
                 </div>
-                <button className="results-sort">Newest <ChevronDown /></button>
+                <button className="results-sort" title="Filesystem modified time, descending">Modified: newest <ChevronDown /></button>
               </div>
             </header>
             {(countsError || !!homeCounts?.issues.length) && <div className="count-warning" role="alert">
@@ -86,9 +98,16 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
               {homeCounts?.issues.map(issue => <p key={issue.driveId}><strong>{issue.driveName || issue.driveId}:</strong> {issue.message}</p>)}
             </div>}
             <CategoryFilters categories={categories} activeCategory={activeCategory} onCategoryChange={setActiveCategory}/>
-            <FileGrid files={files} gridMode={gridMode} selectedId={selectedId} favorites={favorites} onSelect={setSelectedId} onFavorite={toggleFavorite}/>
+            {(fetched.error || fetched.issues.length > 0) && <div className="count-warning" role="alert">
+              {fetched.error && <p>{fetched.error}</p>}
+              {fetched.issues.map(issue => <p key={issue.driveId}><strong>{issue.driveName || issue.driveId}:</strong> {issue.message}</p>)}
+            </div>}
+            {fetched.loading && !loadedFiles.length ? <div className="empty-state" role="status">Loading files…</div>
+              : fetched.error && !loadedFiles.length ? null
+              : <FileGrid files={files} gridMode={gridMode} selectedId={selectedId} favorites={favorites} onSelect={setSelectedId} onFavorite={toggleFavorite}/>}
+            {fetched.nextOffset !== null && <button className="results-sort" disabled={fetched.loading} onClick={fetched.loadMore}>{fetched.loading ? "Loading…" : "Load more files"}</button>}
           </div>
-          <FileInspector file={selectedFile} favorite={favorites.includes(selectedFile.id)} onFavorite={()=>toggleFavorite(selectedFile.id)}/>
+          {selectedFile && <FileInspector file={selectedFile} favorite={favorites.includes(selectedFile.id)} onFavorite={()=>toggleFavorite(selectedFile.id)}/>}
         </section>
       </main>
     </div>

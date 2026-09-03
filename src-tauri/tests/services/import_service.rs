@@ -283,6 +283,17 @@ async fn consumes_an_image_into_the_mounted_system_drive_and_queues_processing()
         std::fs::read(&destination).expect("destination should be readable"),
         b"image-content"
     );
+    let file_metadata = serde_json::from_slice::<serde_json::Value>(
+        &std::fs::read(
+            root.join("nexfile")
+                .join("files")
+                .join("abcdefghijklmn.avip.json"),
+        )
+        .expect("file metadata should be readable"),
+    )
+    .expect("file metadata should be valid JSON");
+    assert_eq!(file_metadata["version"], 1);
+    assert_eq!(file_metadata["originalName"], "photo.avip");
     let storage_data = storage
         .get_storage_data()
         .await
