@@ -16,6 +16,7 @@ use crate::models::image_processing_model::{
     ClassificationConfigDefinition, ClassificationPrediction, ImageBoundingBox,
     ImageClassificationOutput, ImageLocation, ImageMetadata, ImageObjectDetection,
     ImageObjectDetectionOutput, ImageOcrOutput, ImageProcessingJob, ImageProcessingOutput,
+    PreparedClassificationConfig, PreparedLabel,
 };
 use crate::utils::constants::{
     CLIP_LOGIT_SCALE, IMAGE_PROCESSING_OUTPUT_VERSION, MAX_MODEL_IMAGE_DIMENSION,
@@ -264,7 +265,10 @@ impl ImageProcessingService {
     }
 }
 
-fn extract_image_metadata(path: &Path, prepared: &PreparedModelImage) -> AppResult<ImageMetadata> {
+pub(crate) fn extract_image_metadata(
+    path: &Path,
+    prepared: &PreparedModelImage,
+) -> AppResult<ImageMetadata> {
     let filesystem = std::fs::metadata(path)?;
     let format = image::ImageFormat::from_path(path).ok();
     let exif_metadata = OpenOptions::new()
@@ -288,7 +292,7 @@ fn extract_image_metadata(path: &Path, prepared: &PreparedModelImage) -> AppResu
     })
 }
 
-fn existing_sidecar_created_at_ms(path: &Path) -> Option<u64> {
+pub(crate) fn existing_sidecar_created_at_ms(path: &Path) -> Option<u64> {
     if let Ok(bytes) = std::fs::read(path) {
         if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) {
             if let Some(created_at_ms) =
@@ -373,15 +377,15 @@ fn system_time_ms(time: std::time::SystemTime) -> Option<u64> {
 }
 
 /// A normalized JPEG that is deleted when the processing scope ends.
-struct PreparedModelImage {
-    path: PathBuf,
-    original_width: u32,
-    original_height: u32,
-    perceptual_hash: u64,
+pub(crate) struct PreparedModelImage {
+    pub(crate) path: PathBuf,
+    pub(crate) original_width: u32,
+    pub(crate) original_height: u32,
+    pub(crate) perceptual_hash: u64,
 }
 
 impl PreparedModelImage {
-    fn prepare(source: &Path) -> Result<Self, ImagePreparationError> {
+    pub(crate) fn prepare(source: &Path) -> Result<Self, ImagePreparationError> {
         let decoded = decode_image(source)?;
         if decoded.width() == 0 || decoded.height() == 0 {
             return Err(ImagePreparationError::Encode(image::ImageError::Limits(
@@ -419,15 +423,15 @@ impl PreparedModelImage {
         Ok(prepared)
     }
 
-    fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         &self.path
     }
 
-    const fn original_width(&self) -> u32 {
+    pub(crate) const fn original_width(&self) -> u32 {
         self.original_width
     }
 
-    const fn original_height(&self) -> u32 {
+    pub(crate) const fn original_height(&self) -> u32 {
         self.original_height
     }
 }
@@ -460,13 +464,13 @@ fn write_jpeg(path: &Path, image: &image::RgbImage) -> Result<(), ImagePreparati
     Ok(())
 }
 
-struct PreparedImageClassifier {
-    model: ClipModel,
-    configs: Vec<PreparedClassificationConfig>,
+pub(crate) struct PreparedImageClassifier {
+    pub(crate) model: ClipModel,
+    pub(crate) configs: Vec<PreparedClassificationConfig>,
 }
 
 impl PreparedImageClassifier {
-    fn load(model_directory: &Path, configs_directory: &Path) -> AppResult<Self> {
+    pub(crate) fn load(model_directory: &Path, configs_directory: &Path) -> AppResult<Self> {
         let mut model = ClipModel::load(ClipModelPaths::from_dir(model_directory))
             .map_err(AppError::internal)?;
         let definitions = load_config_definitions(configs_directory)?;
@@ -563,7 +567,7 @@ fn classification_summary(classification: &ImageClassificationOutput) -> String 
     )
 }
 
-fn strip_florence_location_tokens(text: &str) -> String {
+pub(crate) fn strip_florence_location_tokens(text: &str) -> String {
     let mut remaining = text;
     let mut cleaned = String::with_capacity(text.len());
     while let Some(start) = remaining.find("<loc_") {
@@ -690,22 +694,9 @@ fn prediction_labels(predictions: &[ClassificationPrediction]) -> String {
         .join(",")
 }
 
-struct PreparedClassificationConfig {
-    label: String,
-    parent_label: Option<String>,
-    level: String,
-    threshold: f32,
-    multilabel: bool,
-    normalize_scores: bool,
-    labels: Vec<PreparedLabel>,
-}
-
-struct PreparedLabel {
-    label: String,
-    embedding: Embedding,
-}
-
-fn load_config_definitions(directory: &Path) -> AppResult<Vec<ClassificationConfigDefinition>> {
+pub(crate) fn load_config_definitions(
+    directory: &Path,
+) -> AppResult<Vec<ClassificationConfigDefinition>> {
     if !directory.is_dir() {
         return Err(AppError::validation(format!(
             "The image-classification configuration directory does not exist: {}",
@@ -790,7 +781,7 @@ fn classify_with_config(
     Ok(select_predictions(config, raw_scores))
 }
 
-fn select_predictions(
+pub(crate) fn select_predictions(
     config: &PreparedClassificationConfig,
     raw_scores: Vec<f32>,
 ) -> Vec<ClassificationPrediction> {
@@ -823,7 +814,7 @@ fn select_predictions(
     predictions
 }
 
-fn softmax(scores: &[f32], scale: f32) -> Vec<f32> {
+pub(crate) fn softmax(scores: &[f32], scale: f32) -> Vec<f32> {
     if scores.is_empty() {
         return Vec::new();
     }
@@ -851,7 +842,7 @@ pub fn classification_output_path(image_path: &Path) -> PathBuf {
     image_path.with_file_name(file_name)
 }
 
-fn valid_existing_output(path: &Path) -> AppResult<bool> {
+pub(crate) fn valid_existing_output(path: &Path) -> AppResult<bool> {
     if !path.try_exists()? {
         return Ok(false);
     }
@@ -887,7 +878,3 @@ fn write_output(path: &Path, output: &ImageProcessingOutput) -> AppResult<()> {
     }
     Ok(())
 }
-
-#[cfg(test)]
-#[path = "../../tests/services/image_processing_service.rs"]
-mod tests;

@@ -9,7 +9,8 @@ use sqlx::SqlitePool;
 use tauri::async_runtime::Mutex;
 
 use crate::error::{AppError, AppResult, CounterOverflow};
-use crate::models::background_process_model::{BackgroundProcess, BackgroundProcessStatus};
+use crate::mappers::file_mapper::file_type_from_path;
+use crate::models::background_process_model::BackgroundProcess;
 use crate::models::image_processing_model::ImageProcessingJob;
 use crate::models::import_model::ImportFileJob;
 use crate::models::storage_model::{DriveInfo, DriveMetadata};
@@ -17,9 +18,10 @@ use crate::repositories::background_processing_repository::SqliteBackgroundProce
 use crate::repositories::database_repository::SqliteDatabase;
 use crate::repositories::storage_repository::SqliteStorageRepository;
 use crate::services::storage_service::{
-    calculate_managed_usage, drive_storage_root, read_drive_metadata, write_drive_metadata,
+    calculate_managed_statistics, drive_storage_root, read_drive_metadata, write_drive_metadata,
 };
 use crate::system::filesystem::get_drives;
+use crate::types::background_process_status::BackgroundProcessStatus;
 use crate::utils::constants::{
     APALIS_MIGRATION_TABLE, IMAGE_PROCESSING_QUEUE, IMPORTED_FILES_DIRECTORY,
     IMPORT_FILE_ID_ALPHABET, IMPORT_FILE_ID_LENGTH, IMPORT_FILE_PROCESS_TYPE, IMPORT_FILE_QUEUE,
@@ -37,6 +39,10 @@ pub struct ImportService {
 }
 
 impl ImportService {
+    pub(crate) fn metadata_lock(&self) -> &Mutex<()> {
+        &self.copy_lock
+    }
+
     pub async fn new(
         repository: SqliteBackgroundProcessingRepository,
         storage_repository: SqliteStorageRepository,
@@ -138,6 +144,7 @@ impl ImportService {
             ));
         }
         let file_size = i64::try_from(source_metadata.len()).map_err(AppError::internal)?;
+        let file_type = file_type_from_path(&job.path);
         let saved_drives = self.storage_repository.list().await?;
         let mut candidates = connected_drives
             .into_iter()
@@ -152,10 +159,6 @@ impl ImportService {
         candidates.sort_by_key(|(_, metadata)| metadata.priority);
 
         for (drive, mut saved) in candidates {
-            if !can_fit(&drive, &saved, file_size) {
-                continue;
-            }
-
             let files_directory = drive_storage_root(&drive, &self.system_metadata_root)
                 .join(IMPORTED_FILES_DIRECTORY);
             let destination = files_directory.join(destination_name(&job));
@@ -167,13 +170,23 @@ impl ImportService {
                         "the import destination already exists with a different size",
                     )));
                 }
-                let (file_count, app_used_bytes) = calculate_managed_usage(&files_directory)?;
+                self.publish_for_image_processing(&destination).await?;
+                let (file_count, app_used_bytes, counts) =
+                    calculate_managed_statistics(&files_directory)?;
                 saved.file_count = file_count;
                 saved.app_used_bytes = app_used_bytes;
-                let updated = self.storage_repository.update(&saved).await?;
-                write_drive_metadata(&drive, &self.system_metadata_root, &updated)?;
-                self.publish_for_image_processing(&destination).await?;
+                saved.file_type_counts = counts;
+
+                self.storage_repository
+                    .update(&saved, |updated| {
+                        write_drive_metadata(&drive, &self.system_metadata_root, updated)
+                    })
+                    .await?;
                 return Ok(());
+            }
+
+            if !can_fit(&drive, &saved, file_size) {
+                continue;
             }
 
             std::fs::create_dir_all(&files_directory)?;
@@ -187,6 +200,16 @@ impl ImportService {
                 Err(error) => return Err(error.into()),
             }
 
+            self.publish_for_image_processing(&destination).await?;
+            let mut counts = saved.file_type_counts.clone();
+            let category = counts
+                .iter_mut()
+                .find(|entry| entry.file_type == file_type)
+                .expect("all file types are represented");
+            category.count = category
+                .count
+                .checked_add(1)
+                .ok_or_else(|| AppError::internal(CounterOverflow))?;
             saved.file_count = saved
                 .file_count
                 .checked_add(1)
@@ -195,9 +218,13 @@ impl ImportService {
                 .app_used_bytes
                 .checked_add(file_size)
                 .ok_or_else(|| AppError::internal(CounterOverflow))?;
-            let updated = self.storage_repository.update(&saved).await?;
-            write_drive_metadata(&drive, &self.system_metadata_root, &updated)?;
-            self.publish_for_image_processing(&destination).await?;
+            saved.file_type_counts = counts;
+
+            self.storage_repository
+                .update(&saved, |updated| {
+                    write_drive_metadata(&drive, &self.system_metadata_root, updated)
+                })
+                .await?;
             return Ok(());
         }
 
@@ -330,7 +357,3 @@ fn copy_atomically(
     }
     std::fs::rename(temporary, destination)
 }
-
-#[cfg(test)]
-#[path = "../../tests/services/import_service_unit.rs"]
-mod tests;

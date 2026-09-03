@@ -4,6 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "test": "cargo test --manifest-path src-tauri/Cargo.toml --no-fail-fast",
+    "test:all": "cargo test --manifest-path src-tauri/Cargo.toml --no-fail-fast -- --include-ignored",
     "prepare:models": "node scripts/download-models.mjs",
     "dev": "vite",
     "build": "tsc && vite build",

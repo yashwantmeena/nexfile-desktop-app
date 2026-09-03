@@ -1,4 +1,4 @@
-import type { DashboardFile, FileCategory } from "../types/file";
+import type { DashboardFile } from "../types/file";
 
 export const mountainImage="https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=900&q=84";
 const interiorImage="https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=900&q=84";
@@ -17,9 +17,4 @@ export const dashboardFiles:DashboardFile[]=[
   {id:10,name:"readme.md",path:"/Docs",kind:"MD",time:"1d ago"},
   {id:11,name:"search_service.ts",path:"/Projects/NexFile/src",kind:"TS",time:"1d ago"},
   {id:12,name:"Product_Update.pptx",path:"/Work/Presentations",kind:"PPTX",time:"2d ago"},
-];
-
-export const categories:FileCategory[]=[
-  {label:"All",count:"12,700"},{label:"Images",count:"4,219"},{label:"PDFs",count:"1,843"},{label:"Documents",count:"2,306"},
-  {label:"Videos",count:"812"},{label:"Audio",count:"342"},{label:"Archives",count:"556"},{label:"Others",count:"622"},
 ];

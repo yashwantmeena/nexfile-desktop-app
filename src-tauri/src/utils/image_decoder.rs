@@ -176,7 +176,3 @@ fn decode_avif(path: &Path) -> Result<DynamicImage, ImageDecoderError> {
 
     Ok(image)
 }
-
-#[cfg(test)]
-#[path = "../../tests/utils/image_decoder.rs"]
-mod tests;

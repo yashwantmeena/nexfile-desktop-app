@@ -1,4 +1,5 @@
-use nexfile_desktop_app_lib::{DriveInfo, DriveMetadata, StorageData, StorageDrive};
+use nexfile_desktop_app_lib::FileType;
+use nexfile_desktop_app_lib::{DriveInfo, DriveMetadata, FileTypeCount, StorageData, StorageDrive};
 
 #[test]
 fn metadata_defaults_to_unmounted() {
@@ -9,6 +10,7 @@ fn metadata_defaults_to_unmounted() {
         "partitionName": "Test (T:)",
         "appLimitBytes": 1_000,
         "fileCount": 25,
+        "fileTypeCounts": [{"fileType": "image", "count": 25}],
         "appUsedBytes": 400,
         "createdAtMs": 10,
         "updatedAtMs": 20,
@@ -29,6 +31,7 @@ fn rejects_drive_metadata_without_timestamps() {
         "partitionName": "Test (T:)",
         "appLimitBytes": 1_000,
         "fileCount": 25,
+        "fileTypeCounts": [{"fileType": "image", "count": 25}],
         "appUsedBytes": 400,
         "priority": 1,
         "isMounted": true,
@@ -131,6 +134,32 @@ fn serializes_the_storage_summary_contract() {
         file_indexed: 35,
         app_limit_bytes: 400,
         app_used_bytes: 150,
+        file_type_counts: vec![
+            FileTypeCount {
+                file_type: FileType::Image,
+                count: 12,
+            },
+            FileTypeCount {
+                file_type: FileType::Video,
+                count: 5,
+            },
+            FileTypeCount {
+                file_type: FileType::Audio,
+                count: 4,
+            },
+            FileTypeCount {
+                file_type: FileType::Document,
+                count: 8,
+            },
+            FileTypeCount {
+                file_type: FileType::Archive,
+                count: 2,
+            },
+            FileTypeCount {
+                file_type: FileType::Other,
+                count: 4,
+            },
+        ],
         drives: vec![connected, unavailable],
     })
     .expect("storage data should serialize");
@@ -141,12 +170,23 @@ fn serializes_the_storage_summary_contract() {
     assert_eq!(value["fileIndexed"], 35);
     assert_eq!(value["appLimitBytes"], 400);
     assert_eq!(value["appUsedBytes"], 150);
+    assert_eq!(
+        value["fileTypeCounts"][0],
+        serde_json::json!({"fileType": "image", "count": 12})
+    );
     assert_eq!(value["drives"].as_array().map(Vec::len), Some(2));
 }
 
 #[test]
 fn serializes_and_deserializes_a_saved_drive() {
     let drive = DriveMetadata {
+        file_type_counts: nexfile_desktop_app_lib::FileType::ALL
+            .into_iter()
+            .map(|file_type| nexfile_desktop_app_lib::FileTypeCount {
+                file_type,
+                count: 0,
+            })
+            .collect(),
         drive_id: "c".to_owned(),
         drive_name: "Test SSD".to_owned(),
         partition_name: "System (C:)".to_owned(),

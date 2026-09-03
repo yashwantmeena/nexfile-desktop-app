@@ -1,4 +1,6 @@
-use super::*;
+use crate::utils::image_hash::*;
+use image::imageops::FilterType;
+use image::DynamicImage;
 
 fn patterned_image(width: u32, height: u32, inverted: bool) -> DynamicImage {
     DynamicImage::ImageLuma8(image::GrayImage::from_fn(width, height, |x, y| {

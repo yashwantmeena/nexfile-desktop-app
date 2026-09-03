@@ -1,4 +1,6 @@
-use super::*;
+use crate::utils::image_decoder::*;
+use image::DynamicImage;
+use std::path::Path;
 
 fn test_root() -> std::path::PathBuf {
     std::env::temp_dir().join(format!("nexfile-image-decoder-{}", uuid::Uuid::new_v4()))

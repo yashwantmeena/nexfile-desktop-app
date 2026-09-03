@@ -7,8 +7,13 @@ mod models;
 mod repositories;
 mod services;
 mod system;
+mod types;
 pub mod utils;
 mod workers;
+
+#[cfg(test)]
+#[path = "../tests/unit/mod.rs"]
+mod tests;
 
 use tauri::Manager;
 
@@ -17,8 +22,10 @@ pub use ai_models::florence2::{
     Florence2Config, Florence2Model, Florence2ModelPaths, Florence2Output, Florence2Task,
 };
 pub use error::{AppError, ClipError, Florence2Error};
+pub use mappers::file_mapper::file_type_from_path;
 pub use mappers::search_mapper::search_tags;
-pub use models::background_process_model::{BackgroundProcess, BackgroundProcessStatus};
+pub use models::background_process_model::BackgroundProcess;
+pub use models::file_model::FileTypeCount;
 pub use models::image_processing_model::{
     ClassificationPrediction, ImageBoundingBox, ImageClassificationOutput, ImageLocation,
     ImageMetadata, ImageObjectDetection, ImageObjectDetectionOutput, ImageOcrOutput,
@@ -37,6 +44,8 @@ pub use services::import_service::ImportService;
 pub use services::indexing_service::IndexingService;
 pub use services::storage_service::StorageService;
 pub use system::filesystem::read_file;
+pub use types::background_process_status::BackgroundProcessStatus;
+pub use types::file_type::FileType;
 pub use utils::image_hash::{calculate_phash, calculate_phash_path, format_phash, phash_distance};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -55,6 +64,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::import_command::import_file,
+            commands::file_command::get_file_count,
             commands::import_command::import_folder,
             commands::storage_command::get_storage_data,
             commands::storage_command::mount_drive,

@@ -1,3 +1,4 @@
+use nexfile_desktop_app_lib::FileType;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use nexfile_desktop_app_lib::{
@@ -282,16 +283,39 @@ async fn consumes_an_image_into_the_mounted_system_drive_and_queues_processing()
         std::fs::read(&destination).expect("destination should be readable"),
         b"image-content"
     );
-    let mounted = storage
+    let storage_data = storage
         .get_storage_data()
         .await
-        .expect("storage metadata should load")
+        .expect("storage metadata should load");
+    assert_eq!(
+        storage_data
+            .file_type_counts
+            .iter()
+            .find(|entry| entry.file_type == FileType::Image)
+            .unwrap()
+            .count,
+        1
+    );
+    let mounted = storage_data
         .drives
         .into_iter()
         .find(|drive| drive.is_system && drive.is_mounted)
         .expect("system drive should remain mounted");
     assert_eq!(mounted.file_count, 1);
     assert_eq!(mounted.app_used_bytes, Some(13));
+    let drive_metadata = serde_json::from_slice::<serde_json::Value>(
+        &std::fs::read(root.join("nexfile").join("drive_metadata.json"))
+            .expect("drive metadata should be readable"),
+    )
+    .expect("drive metadata should be valid JSON");
+    assert_eq!(
+        drive_metadata["fileTypeCounts"][0],
+        serde_json::json!({"fileType": "image", "count": 1})
+    );
+    assert_eq!(
+        drive_metadata["fileTypeCounts"][1],
+        serde_json::json!({"fileType": "video", "count": 0})
+    );
 
     let verification_pool = SqlitePoolOptions::new()
         .connect_with(SqliteConnectOptions::new().filename(&database_path))

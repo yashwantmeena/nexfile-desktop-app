@@ -32,6 +32,13 @@ async fn creates_background_processing_and_drives_tables_in_one_database() {
 
         storage
             .insert(&DriveMetadata {
+                file_type_counts: nexfile_desktop_app_lib::FileType::ALL
+                    .into_iter()
+                    .map(|file_type| nexfile_desktop_app_lib::FileTypeCount {
+                        file_type,
+                        count: 0,
+                    })
+                    .collect(),
                 drive_id: "drive-1".to_owned(),
                 drive_name: "Test drive".to_owned(),
                 partition_name: "Test".to_owned(),

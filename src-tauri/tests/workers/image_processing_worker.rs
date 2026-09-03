@@ -1,5 +1,10 @@
-use super::*;
+use crate::models::{image_processing_model::ImageProcessingJob, indexing_model::IndexingJob};
+use crate::repositories::database_repository::SqliteDatabase;
+use crate::services::image_processing_service::ImageProcessingService;
+use crate::utils::constants::INDEXING_QUEUE;
 use crate::utils::constants::{APALIS_MIGRATION_TABLE, IMAGE_PROCESSING_OUTPUT_VERSION};
+use crate::workers::image_processing_worker::*;
+use apalis_sqlite::SqliteStorage;
 
 fn test_service(root: &std::path::Path) -> ImageProcessingService {
     ImageProcessingService::new(

@@ -1,4 +1,10 @@
-use super::calculate_managed_usage;
+use crate::models::file_model::FileTypeCount;
+use crate::models::storage_model::DriveMetadata;
+use crate::types::file_type::FileType;
+
+use crate::services::storage_service::{
+    calculate_managed_statistics, read_metadata, write_metadata,
+};
 
 #[test]
 fn managed_usage_excludes_generated_sidecars_but_counts_imported_json() {
@@ -16,10 +22,78 @@ fn managed_usage_excludes_generated_sidecars_but_counts_imported_json() {
     std::fs::write(directory.join(".pending.importing"), [0_u8; 30])
         .expect("temporary file should be written");
 
-    assert_eq!(
-        calculate_managed_usage(&directory).expect("usage should be calculated"),
-        (4, 10)
-    );
+    let (files, bytes, counts) =
+        calculate_managed_statistics(&directory).expect("usage should be calculated");
+    assert_eq!((files, bytes), (4, 10));
+    assert_eq!(counts.iter().map(|entry| entry.count).sum::<i64>(), files);
 
     std::fs::remove_dir_all(&directory).expect("test directory should be removed");
+}
+
+#[test]
+fn writes_and_reads_file_type_counts_in_drive_metadata() {
+    let directory =
+        std::env::temp_dir().join(format!("nexfile-metadata-counts-{}", uuid::Uuid::new_v4()));
+    let path = directory.join("drive_metadata.json");
+    let mut metadata = DriveMetadata {
+        file_type_counts: crate::FileType::ALL
+            .into_iter()
+            .map(|file_type| crate::FileTypeCount {
+                file_type,
+                count: 0,
+            })
+            .collect(),
+        drive_id: "drive-1".to_owned(),
+        drive_name: "Test".to_owned(),
+        partition_name: "Test".to_owned(),
+        app_limit_bytes: None,
+        file_count: 3,
+        app_used_bytes: 30,
+        priority: 1,
+        is_mounted: true,
+        created_at_ms: 1,
+        updated_at_ms: 2,
+    };
+    let counts = vec![
+        FileTypeCount {
+            file_type: FileType::Image,
+            count: 1,
+        },
+        FileTypeCount {
+            file_type: FileType::Video,
+            count: 1,
+        },
+        FileTypeCount {
+            file_type: FileType::Audio,
+            count: 0,
+        },
+        FileTypeCount {
+            file_type: FileType::Document,
+            count: 1,
+        },
+        FileTypeCount {
+            file_type: FileType::Archive,
+            count: 0,
+        },
+        FileTypeCount {
+            file_type: FileType::Other,
+            count: 0,
+        },
+    ];
+
+    metadata.file_type_counts = counts.clone();
+    write_metadata(&path, &metadata).expect("drive metadata should be written");
+
+    assert_eq!(read_metadata(&path).unwrap(), metadata);
+    let value = serde_json::from_slice::<serde_json::Value>(
+        &std::fs::read(&path).expect("drive metadata should be readable"),
+    )
+    .expect("drive metadata should be valid JSON");
+    assert_eq!(
+        value["fileTypeCounts"][0],
+        serde_json::json!({"fileType": "image", "count": 1})
+    );
+    assert_eq!(value["fileCount"], 3);
+
+    std::fs::remove_dir_all(directory).expect("test directory should be removed");
 }

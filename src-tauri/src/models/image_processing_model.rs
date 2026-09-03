@@ -3,6 +3,8 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::ai_models::clip::Embedding;
+
 #[derive(Debug, Deserialize)]
 pub(crate) struct ClassificationConfigDefinition {
     pub(crate) modality: String,
@@ -110,4 +112,19 @@ pub struct ImageBoundingBox {
     pub y_min: u32,
     pub x_max: u32,
     pub y_max: u32,
+}
+
+pub(crate) struct PreparedClassificationConfig {
+    pub(crate) label: String,
+    pub(crate) parent_label: Option<String>,
+    pub(crate) level: String,
+    pub(crate) threshold: f32,
+    pub(crate) multilabel: bool,
+    pub(crate) normalize_scores: bool,
+    pub(crate) labels: Vec<PreparedLabel>,
+}
+
+pub(crate) struct PreparedLabel {
+    pub(crate) label: String,
+    pub(crate) embedding: Embedding,
 }

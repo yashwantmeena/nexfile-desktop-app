@@ -1,4 +1,4 @@
-use super::*;
+use crate::mappers::search_mapper::*;
 use crate::models::image_processing_model::{
     ClassificationPrediction, ImageBoundingBox, ImageClassificationOutput, ImageObjectDetection,
     ImageObjectDetectionOutput, ImageProcessingOutput,

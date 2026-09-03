@@ -51,7 +51,3 @@ fn namespaced_tag(prefix: &str, value: &str) -> Option<String> {
 
     (!normalized.is_empty()).then(|| format!("{prefix}{normalized}"))
 }
-
-#[cfg(test)]
-#[path = "../../tests/mappers/search_mapper.rs"]
-mod tests;

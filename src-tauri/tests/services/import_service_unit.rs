@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use super::is_supported_image;
+use crate::utils::image_decoder::is_supported_image;
 
 #[test]
 fn recognizes_every_classifiable_image_extension() {

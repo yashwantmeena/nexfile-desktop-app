@@ -70,7 +70,7 @@ impl ImageProcessingWorker {
     }
 }
 
-async fn consume_image_processing_job(
+pub(crate) async fn consume_image_processing_job(
     job: ImageProcessingJob,
     service: ImageProcessingService,
     queue_pool: SqlitePool,
@@ -118,7 +118,3 @@ async fn publish_for_indexing(queue_pool: &SqlitePool, path: &PathBuf) -> AppRes
         .await
         .map_err(AppError::database)
 }
-
-#[cfg(test)]
-#[path = "../../tests/workers/image_processing_worker.rs"]
-mod tests;

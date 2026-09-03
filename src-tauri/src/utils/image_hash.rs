@@ -75,7 +75,3 @@ pub const fn phash_distance(left: u64, right: u64) -> u32 {
 pub fn format_phash(hash: u64) -> String {
     format!("{hash:016x}")
 }
-
-#[cfg(test)]
-#[path = "../../tests/utils/image_hash.rs"]
-mod tests;

@@ -37,6 +37,17 @@ async fn merges_database_os_and_drive_metadata() {
     std::fs::create_dir_all(&metadata_directory).expect("metadata directory should be created");
 
     let metadata = DriveMetadata {
+        file_type_counts: nexfile_desktop_app_lib::FileType::ALL
+            .into_iter()
+            .map(|file_type| nexfile_desktop_app_lib::FileTypeCount {
+                file_type,
+                count: if file_type == nexfile_desktop_app_lib::FileType::Image {
+                    25
+                } else {
+                    0
+                },
+            })
+            .collect(),
         drive_id: "system-drive".to_owned(),
         drive_name: "Test SSD".to_owned(),
         partition_name: "System (C:)".to_owned(),
@@ -60,6 +71,17 @@ async fn merges_database_os_and_drive_metadata() {
             .expect("repository should open");
         repository
             .insert(&DriveMetadata {
+                file_type_counts: nexfile_desktop_app_lib::FileType::ALL
+                    .into_iter()
+                    .map(|file_type| nexfile_desktop_app_lib::FileTypeCount {
+                        file_type,
+                        count: if file_type == nexfile_desktop_app_lib::FileType::Image {
+                            metadata.file_count
+                        } else {
+                            0
+                        },
+                    })
+                    .collect(),
                 drive_id: metadata.drive_id.clone(),
                 drive_name: metadata.drive_name.clone(),
                 partition_name: metadata.partition_name.clone(),
@@ -75,6 +97,17 @@ async fn merges_database_os_and_drive_metadata() {
             .expect("drive should save");
         repository
             .insert(&DriveMetadata {
+                file_type_counts: nexfile_desktop_app_lib::FileType::ALL
+                    .into_iter()
+                    .map(|file_type| nexfile_desktop_app_lib::FileTypeCount {
+                        file_type,
+                        count: if file_type == nexfile_desktop_app_lib::FileType::Image {
+                            10
+                        } else {
+                            0
+                        },
+                    })
+                    .collect(),
                 drive_id: "missing-drive".to_owned(),
                 drive_name: "Disconnected SSD".to_owned(),
                 partition_name: "Archive".to_owned(),
@@ -198,6 +231,17 @@ async fn mounts_matching_saved_and_file_metadata_without_changing_usage() {
     let root = test_root("mount-matching");
     let database_path = root.join("test.sqlite3");
     let metadata = DriveMetadata {
+        file_type_counts: nexfile_desktop_app_lib::FileType::ALL
+            .into_iter()
+            .map(|file_type| nexfile_desktop_app_lib::FileTypeCount {
+                file_type,
+                count: if file_type == nexfile_desktop_app_lib::FileType::Image {
+                    25
+                } else {
+                    0
+                },
+            })
+            .collect(),
         drive_id: "matching-drive".to_owned(),
         drive_name: "Saved SSD".to_owned(),
         partition_name: "Saved partition".to_owned(),
@@ -275,6 +319,17 @@ async fn saves_file_metadata_without_replacing_a_different_drive_id() {
         partition_name
     };
     let file_metadata = DriveMetadata {
+        file_type_counts: nexfile_desktop_app_lib::FileType::ALL
+            .into_iter()
+            .map(|file_type| nexfile_desktop_app_lib::FileTypeCount {
+                file_type,
+                count: if file_type == nexfile_desktop_app_lib::FileType::Image {
+                    30
+                } else {
+                    0
+                },
+            })
+            .collect(),
         drive_id: uuid::Uuid::new_v4().to_string(),
         drive_name: "Metadata SSD".to_owned(),
         partition_name: "Metadata partition".to_owned(),
@@ -294,6 +349,17 @@ async fn saves_file_metadata_without_replacing_a_different_drive_id() {
             .expect("repository should reopen");
         repository
             .insert(&DriveMetadata {
+                file_type_counts: nexfile_desktop_app_lib::FileType::ALL
+                    .into_iter()
+                    .map(|file_type| nexfile_desktop_app_lib::FileTypeCount {
+                        file_type,
+                        count: if file_type == nexfile_desktop_app_lib::FileType::Image {
+                            file_metadata.file_count
+                        } else {
+                            0
+                        },
+                    })
+                    .collect(),
                 drive_id: "old-drive-id".to_owned(),
                 drive_name: "Old SSD".to_owned(),
                 partition_name: file_metadata.partition_name.clone(),
@@ -345,6 +411,17 @@ async fn saves_existing_file_metadata_when_the_database_has_no_entry() {
     let root = test_root("mount-file-only");
     let database_path = root.join("test.sqlite3");
     let metadata = DriveMetadata {
+        file_type_counts: nexfile_desktop_app_lib::FileType::ALL
+            .into_iter()
+            .map(|file_type| nexfile_desktop_app_lib::FileTypeCount {
+                file_type,
+                count: if file_type == nexfile_desktop_app_lib::FileType::Image {
+                    40
+                } else {
+                    0
+                },
+            })
+            .collect(),
         drive_id: uuid::Uuid::new_v4().to_string(),
         drive_name: "Portable SSD".to_owned(),
         partition_name: "Portable partition".to_owned(),
@@ -397,6 +474,17 @@ async fn unmounts_a_saved_drive_by_changing_only_its_mounted_flag() {
     let root = test_root("unmount-drive");
     let database_path = root.join("test.sqlite3");
     let metadata = DriveMetadata {
+        file_type_counts: nexfile_desktop_app_lib::FileType::ALL
+            .into_iter()
+            .map(|file_type| nexfile_desktop_app_lib::FileTypeCount {
+                file_type,
+                count: if file_type == nexfile_desktop_app_lib::FileType::Image {
+                    50
+                } else {
+                    0
+                },
+            })
+            .collect(),
         drive_id: uuid::Uuid::new_v4().to_string(),
         drive_name: "Mounted SSD".to_owned(),
         partition_name: "Mounted partition".to_owned(),
@@ -463,6 +551,17 @@ async fn updates_mounted_drive_configuration_in_requested_order() {
     std::fs::create_dir_all(&root).expect("test directory should be created");
 
     let first = DriveMetadata {
+        file_type_counts: nexfile_desktop_app_lib::FileType::ALL
+            .into_iter()
+            .map(|file_type| nexfile_desktop_app_lib::FileTypeCount {
+                file_type,
+                count: if file_type == nexfile_desktop_app_lib::FileType::Image {
+                    0
+                } else {
+                    0
+                },
+            })
+            .collect(),
         drive_id: "first-drive".to_owned(),
         drive_name: "First SSD".to_owned(),
         partition_name: "First partition".to_owned(),
@@ -475,6 +574,17 @@ async fn updates_mounted_drive_configuration_in_requested_order() {
         updated_at_ms: 0,
     };
     let second = DriveMetadata {
+        file_type_counts: nexfile_desktop_app_lib::FileType::ALL
+            .into_iter()
+            .map(|file_type| nexfile_desktop_app_lib::FileTypeCount {
+                file_type,
+                count: if file_type == nexfile_desktop_app_lib::FileType::Image {
+                    0
+                } else {
+                    0
+                },
+            })
+            .collect(),
         drive_id: "second-drive".to_owned(),
         drive_name: "Second SSD".to_owned(),
         partition_name: "Second partition".to_owned(),
@@ -559,6 +669,17 @@ async fn removes_a_saved_drive_from_the_database_only() {
     let root = test_root("remove-drive");
     let database_path = root.join("test.sqlite3");
     let metadata = DriveMetadata {
+        file_type_counts: nexfile_desktop_app_lib::FileType::ALL
+            .into_iter()
+            .map(|file_type| nexfile_desktop_app_lib::FileTypeCount {
+                file_type,
+                count: if file_type == nexfile_desktop_app_lib::FileType::Image {
+                    60
+                } else {
+                    0
+                },
+            })
+            .collect(),
         drive_id: uuid::Uuid::new_v4().to_string(),
         drive_name: "Removable SSD".to_owned(),
         partition_name: "Removable partition".to_owned(),

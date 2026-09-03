@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{AppError, AppResult, CounterOverflow};
 use crate::mappers::storage_mapper::{disconnected_drive, merge_connected_drive, storage_data};
+use crate::models::file_model::FileTypeCount;
 use crate::models::storage_model::{
     DriveConfigurationUpdate, DriveInfo, DriveMetadata, StorageData,
 };
@@ -17,6 +18,16 @@ pub struct StorageService {
 }
 
 impl StorageService {
+    pub async fn get_file_count(&self) -> AppResult<crate::models::file_model::FileCountSummary> {
+        let snapshot = self.repository.list().await?;
+        let root = self.system_metadata_root.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            crate::services::file_service::verify_file_counts(snapshot, get_drives(), &root)
+        })
+        .await
+        .map_err(AppError::internal)
+    }
+
     pub fn new(repository: SqliteStorageRepository, system_metadata_root: PathBuf) -> Self {
         Self {
             repository,
@@ -46,8 +57,8 @@ impl StorageService {
                         let files_directory =
                             drive_storage_root(&drive, &self.system_metadata_root)
                                 .join(IMPORTED_FILES_DIRECTORY);
-                        let (file_count, app_used_bytes) =
-                            calculate_managed_usage(&files_directory)?;
+                        let (file_count, app_used_bytes, file_type_counts) =
+                            calculate_managed_statistics(&files_directory)?;
                         if saved.file_count != file_count
                             || saved.app_used_bytes != app_used_bytes
                             || on_drive.file_count != file_count
@@ -56,13 +67,19 @@ impl StorageService {
                             let mut reconciled = saved.clone();
                             reconciled.file_count = file_count;
                             reconciled.app_used_bytes = app_used_bytes;
-                            let persisted = self.repository.update(&reconciled).await?;
+                            reconciled.file_type_counts = file_type_counts;
+                            let persisted = self
+                                .repository
+                                .update(&reconciled, |updated| {
+                                    write_drive_metadata(
+                                        &drive,
+                                        &self.system_metadata_root,
+                                        updated,
+                                    )
+                                })
+                                .await?;
                             *saved = persisted.clone();
-
-                            on_drive.file_count = file_count;
-                            on_drive.app_used_bytes = app_used_bytes;
-                            on_drive.updated_at_ms = persisted.updated_at_ms;
-                            write_drive_metadata(&drive, &self.system_metadata_root, on_drive)?;
+                            *on_drive = persisted;
                         }
                     }
                 }
@@ -84,6 +101,14 @@ impl StorageService {
             ));
         }
 
+        let file_type_counts = saved_drives.values().try_fold(
+            crate::mappers::file_mapper::normalize_counts(Vec::new())
+                .expect("empty counts are valid"),
+            |counts, drive| {
+                crate::services::file_service::add_counts(&counts, &drive.file_type_counts)
+                    .ok_or_else(|| AppError::internal(CounterOverflow))
+            },
+        )?;
         drives.extend(
             saved_drives
                 .into_values()
@@ -91,7 +116,7 @@ impl StorageService {
                 .map(disconnected_drive),
         );
 
-        Ok(storage_data(drives))
+        Ok(storage_data(drives, file_type_counts))
     }
 
     pub async fn mount_drive(
@@ -135,12 +160,16 @@ impl StorageService {
         let metadata = metadata_for_mount(&drive, saved, metadata, next_priority);
         let metadata_file_path = metadata_path(&drive, &self.system_metadata_root);
 
-        let metadata = if was_saved {
-            self.repository.update(&metadata).await?
+        if was_saved {
+            self.repository
+                .update(&metadata, |updated| {
+                    write_metadata(&metadata_file_path, updated)
+                })
+                .await?;
         } else {
-            self.repository.insert(&metadata).await?
-        };
-        write_metadata(&metadata_file_path, &metadata)?;
+            let inserted = self.repository.insert(&metadata).await?;
+            write_metadata(&metadata_file_path, &inserted)?;
+        }
 
         self.get_storage_data().await
     }
@@ -158,7 +187,8 @@ impl StorageService {
             .ok_or_else(|| AppError::validation("The selected drive is not saved."))?;
 
         drive.is_mounted = false;
-        self.repository.update(&drive).await?;
+        // Unmounting is a local database preference, including for offline drives.
+        self.repository.update(&drive, |_| Ok(())).await?;
         self.get_storage_data().await
     }
 
@@ -244,18 +274,20 @@ impl StorageService {
             ));
         }
 
-        let mut persisted_by_id = HashMap::new();
         for drive in &updated_drives {
-            let persisted = self.repository.update(drive).await?;
-            persisted_by_id.insert(persisted.drive_id.clone(), persisted);
-        }
-
-        for (path, mut metadata) in metadata_updates {
-            if let Some(persisted) = persisted_by_id.get(&metadata.drive_id) {
-                metadata.created_at_ms = persisted.created_at_ms;
-                metadata.updated_at_ms = persisted.updated_at_ms;
-            }
-            write_metadata(&path, &metadata)?;
+            self.repository
+                .update(drive, |persisted| {
+                    for (path, metadata) in &metadata_updates {
+                        if metadata.drive_id == persisted.drive_id {
+                            let mut metadata = metadata.clone();
+                            metadata.created_at_ms = persisted.created_at_ms;
+                            metadata.updated_at_ms = persisted.updated_at_ms;
+                            write_metadata(path, &metadata)?;
+                        }
+                    }
+                    Ok(())
+                })
+                .await?;
         }
         self.get_storage_data().await
     }
@@ -312,6 +344,7 @@ fn metadata_for_mount(
             .is_some_and(|(saved, metadata)| {
                 saved.drive_id == metadata.drive_id
                     && saved.file_count == metadata.file_count
+                    && saved.file_type_counts == metadata.file_type_counts
                     && saved.app_used_bytes == metadata.app_used_bytes
             });
 
@@ -327,6 +360,8 @@ fn metadata_for_mount(
             metadata
         }
         _ => DriveMetadata {
+            file_type_counts: crate::mappers::file_mapper::normalize_counts(Vec::new())
+                .expect("empty counts are valid"),
             // A drive with no metadata is new to NexFile.
             drive_id: uuid::Uuid::new_v4().to_string(),
             drive_name: drive.drive_name.clone(),
@@ -371,9 +406,13 @@ pub(crate) fn drive_storage_root(drive: &DriveInfo, system_metadata_root: &Path)
     root.join(NEXFILE_DIRECTORY)
 }
 
-pub(crate) fn calculate_managed_usage(files_directory: &Path) -> AppResult<(i64, i64)> {
+pub(crate) fn calculate_managed_statistics(
+    files_directory: &Path,
+) -> AppResult<(i64, i64, Vec<FileTypeCount>)> {
+    let mut counts =
+        crate::mappers::file_mapper::normalize_counts(Vec::new()).map_err(AppError::validation)?;
     if !files_directory.try_exists()? {
-        return Ok((0, 0));
+        return Ok((0, 0, counts));
     }
 
     let mut file_count = 0_i64;
@@ -391,12 +430,21 @@ pub(crate) fn calculate_managed_usage(files_directory: &Path) -> AppResult<(i64,
         file_count = file_count
             .checked_add(1)
             .ok_or_else(|| AppError::internal(CounterOverflow))?;
+        let file_type = crate::mappers::file_mapper::file_type_from_path(&path);
+        let entry_count = counts
+            .iter_mut()
+            .find(|entry| entry.file_type == file_type)
+            .expect("all file types are represented");
+        entry_count.count = entry_count
+            .count
+            .checked_add(1)
+            .ok_or_else(|| AppError::internal(CounterOverflow))?;
         let size = i64::try_from(metadata.len()).map_err(AppError::internal)?;
         app_used_bytes = app_used_bytes
             .checked_add(size)
             .ok_or_else(|| AppError::internal(CounterOverflow))?;
     }
-    Ok((file_count, app_used_bytes))
+    Ok((file_count, app_used_bytes, counts))
 }
 
 fn is_generated_image_sidecar(path: &Path) -> bool {
@@ -417,7 +465,7 @@ fn metadata_path(drive: &DriveInfo, system_metadata_root: &Path) -> PathBuf {
     drive_storage_root(drive, system_metadata_root).join(DRIVE_METADATA_FILE)
 }
 
-fn read_metadata(path: &Path) -> Option<DriveMetadata> {
+pub(crate) fn read_metadata(path: &Path) -> Option<DriveMetadata> {
     let encoded = read_file(path).ok()?;
     serde_json::from_slice(&encoded).ok()
 }
@@ -437,11 +485,7 @@ pub(crate) fn write_drive_metadata(
     write_metadata(&metadata_path(drive, system_metadata_root), metadata)
 }
 
-fn write_metadata(path: &Path, metadata: &DriveMetadata) -> AppResult<()> {
+pub(crate) fn write_metadata(path: &Path, metadata: &DriveMetadata) -> AppResult<()> {
     let encoded = serde_json::to_vec_pretty(metadata).map_err(AppError::serialization)?;
     write_file(path, encoded).map_err(Into::into)
 }
-
-#[cfg(test)]
-#[path = "../../tests/services/storage_service_unit.rs"]
-mod tests;

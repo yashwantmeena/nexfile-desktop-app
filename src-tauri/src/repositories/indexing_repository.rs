@@ -120,7 +120,3 @@ fn build_schema() -> (Schema, IndexFields) {
     };
     (builder.build(), fields)
 }
-
-#[cfg(test)]
-#[path = "../../tests/repositories/indexing_repository.rs"]
-mod tests;

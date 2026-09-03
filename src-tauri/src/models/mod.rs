@@ -1,4 +1,5 @@
 pub mod background_process_model;
+pub mod file_model;
 pub mod image_processing_model;
 pub mod import_model;
 pub mod indexing_model;
