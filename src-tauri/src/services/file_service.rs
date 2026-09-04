@@ -12,6 +12,7 @@ pub(crate) fn fetch_files(
     snapshots: Vec<DriveMetadata>,
     connected: Vec<DriveInfo>,
     system_metadata_root: &Path,
+    media_type: Option<crate::types::file_type::FileType>,
     offset: usize,
     limit: usize,
 ) -> crate::models::file_model::FilePage {
@@ -108,6 +109,9 @@ pub(crate) fn fetch_files(
         if incomplete {
             issues.push(issue("Some files could not be read. Refresh to try again."));
         }
+    }
+    if let Some(media_type) = media_type {
+        files.retain(|file| file.file_type == media_type);
     }
     files.sort_by(|a, b| {
         b.modified_at_ms

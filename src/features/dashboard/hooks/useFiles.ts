@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchFiles, type FilePage, type FetchedFile } from "../api/files";
 
-export function useFiles(refreshKey: number) {
+export function useFiles(refreshKey: number, mediaType?: string) {
   const [files, setFiles] = useState<FetchedFile[]>([]);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [issues, setIssues] = useState<FilePage["issues"]>([]);
@@ -22,7 +22,7 @@ export function useFiles(refreshKey: number) {
     setLoading(true);
     setError(null);
     try {
-      const page = await fetchFiles(offset);
+      const page = await fetchFiles(offset, 60, mediaType);
       if (request !== generation.current) return;
       setFiles(previous => reset ? page.files : [...new Map([...previous, ...page.files].map(file => [file.id, file])).values()]);
       setNextOffset(page.nextOffset);
@@ -35,7 +35,7 @@ export function useFiles(refreshKey: number) {
         setLoading(false);
       }
     }
-  }, []);
+  }, [mediaType]);
   useEffect(() => {
     const refresh = () => { void load(0, true); };
     refresh();

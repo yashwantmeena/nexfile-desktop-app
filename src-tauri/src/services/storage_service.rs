@@ -21,6 +21,7 @@ impl StorageService {
         &self,
         offset: usize,
         limit: usize,
+        media_type: Option<crate::types::file_type::FileType>,
     ) -> AppResult<crate::models::file_model::FilePage> {
         if !(1..=200).contains(&limit) {
             return Err(AppError::validation(
@@ -34,6 +35,7 @@ impl StorageService {
                 snapshots,
                 get_drives(),
                 &root,
+                media_type,
                 offset,
                 limit,
             )

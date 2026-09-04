@@ -21,7 +21,8 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
   const [countsError, setCountsError] = useState<string | null>(null);
   const [countsLoading, setCountsLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
-  const fetched = useFiles(refreshKey);
+  const [activeCategory,setActiveCategory]=useState("All");
+  const fetched = useFiles(refreshKey, activeCategory === "All" ? undefined : activeCategory.toLowerCase());
   useEffect(() => {
     let cancelled = false;
     let pending = false;
@@ -50,7 +51,7 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
     { label: "All", count: homeCounts?.totalCount },
     ...(counts ?? []).map(({ fileType, count }) => ({ label: fileType, count })),
   ].map(({ label, count }) => ({ label, count: count == null ? "—" : count.toLocaleString() }));
-  const [query,setQuery]=useState(""); const [activeCategory,setActiveCategory]=useState("All"); const [selectedId,setSelectedId]=useState<DashboardFile["id"] | null>(null); const [favorites,setFavorites]=useState<DashboardFile["id"][]>([]); const [tags,setTags]=useState<string[]>([]); const [dateFilter,setDateFilter]=useState<DateFilter>("any"); const [gridMode,setGridMode]=useState(true);
+  const [query,setQuery]=useState(""); const [selectedId,setSelectedId]=useState<DashboardFile["id"] | null>(null); const [favorites,setFavorites]=useState<DashboardFile["id"][]>([]); const [tags,setTags]=useState<string[]>([]); const [dateFilter,setDateFilter]=useState<DateFilter>("any"); const [gridMode,setGridMode]=useState(true);
   const loadedFiles = useMemo<DashboardFile[]>(() => fetched.files.map(file => ({
     id: file.id, name: file.name, path: file.path, fileType: file.fileType,
     kind: file.name.includes(".") ? file.name.split(".").pop()!.toUpperCase() : file.fileType.toUpperCase(),

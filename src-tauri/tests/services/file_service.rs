@@ -155,7 +155,7 @@ fn fetches_all_types_by_filesystem_modified_time_with_pagination() {
         is_system: true,
         mount_point: root.clone(),
     };
-    let first = fetch_files(vec![saved.clone()], vec![drive.clone()], &root, 0, 2);
+    let first = fetch_files(vec![saved.clone()], vec![drive.clone()], &root, None, 0, 2);
     assert!(first.issues.is_empty());
     assert_eq!(first.total_count, 4);
     assert_eq!(first.next_offset, Some(2));
@@ -168,7 +168,7 @@ fn fetches_all_types_by_filesystem_modified_time_with_pagination() {
         ["Quarterly report.pdf", "middle.json"]
     );
     assert_eq!(first.files[0].modified_at_ms, Some(300_000));
-    let second = fetch_files(vec![saved.clone()], vec![drive.clone()], &root, 2, 2);
+    let second = fetch_files(vec![saved.clone()], vec![drive.clone()], &root, None, 2, 2);
     assert_eq!(
         second
             .files
@@ -179,10 +179,27 @@ fn fetches_all_types_by_filesystem_modified_time_with_pagination() {
     );
     assert_eq!(second.next_offset, None);
     assert_eq!(second.files[1].file_type, FileType::Image);
-    let beyond = fetch_files(vec![saved.clone()], vec![drive], &root, usize::MAX, 60);
+    let images = fetch_files(
+        vec![saved.clone()],
+        vec![drive.clone()],
+        &root,
+        Some(FileType::Image),
+        0,
+        60,
+    );
+    assert_eq!(images.total_count, 1);
+    assert_eq!(images.files[0].name, "old.jpg");
+    let beyond = fetch_files(
+        vec![saved.clone()],
+        vec![drive],
+        &root,
+        None,
+        usize::MAX,
+        60,
+    );
     assert!(beyond.files.is_empty());
     assert_eq!(beyond.next_offset, None);
-    let offline = fetch_files(vec![saved], vec![], &root, 0, 60);
+    let offline = fetch_files(vec![saved], vec![], &root, None, 0, 60);
     assert!(offline.files.is_empty());
     assert_eq!(offline.issues.len(), 1);
     std::fs::remove_dir_all(root).unwrap();

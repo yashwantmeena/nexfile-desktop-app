@@ -17,11 +17,12 @@ pub async fn fetch_files(
     state: State<'_, AppState>,
     offset: Option<usize>,
     limit: Option<usize>,
+    media_type: Option<crate::types::file_type::FileType>,
 ) -> AppResult<crate::models::file_model::FilePage> {
     let _guard = state.imports.metadata_lock().lock().await;
     let page = state
         .storage
-        .fetch_files(offset.unwrap_or(0), limit.unwrap_or(60))
+        .fetch_files(offset.unwrap_or(0), limit.unwrap_or(60), media_type)
         .await?;
     // Grant access only to the image files returned in this page.
     for file in &page.files {
