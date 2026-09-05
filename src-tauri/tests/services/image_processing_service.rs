@@ -82,17 +82,16 @@ fn raw_multilabel_config_falls_back_to_the_best_match() {
 }
 
 #[test]
-fn extracts_one_to_three_word_candidates_from_a_detailed_caption() {
+fn extracts_single_word_candidates_from_a_detailed_caption() {
     let candidates = extract_keyword_candidates(
         "A red vintage car parked beside a brick building on a rainy city street.",
     );
 
-    assert!(candidates.contains(&"red vintage car".to_owned()));
-    assert!(candidates.contains(&"vintage car".to_owned()));
-    assert!(candidates.contains(&"car parked".to_owned()));
+    assert!(candidates.iter().all(|candidate| candidate.split_whitespace().count() == 1));
+    assert!(candidates.contains(&"car".to_owned()));
     assert!(candidates.contains(&"parked".to_owned()));
-    assert!(candidates.contains(&"brick building".to_owned()));
-    assert!(candidates.contains(&"rainy city street".to_owned()));
+    assert!(candidates.contains(&"building".to_owned()));
+    assert!(candidates.contains(&"street".to_owned()));
     assert!(!candidates
         .iter()
         .any(|candidate| candidate.contains("beside")));
@@ -101,7 +100,7 @@ fn extracts_one_to_three_word_candidates_from_a_detailed_caption() {
 #[test]
 fn extracts_individual_concepts_from_a_punctuated_caption_list() {
     let candidates = extract_keyword_candidates(
-        "This is an animated image. In this image we can also see many trees, plants, flowers, grass and sky with clouds.",
+        "This is an animated image. In this image we can also see many different trees, Some Different plants, SOME DIFFERENT flowers, some grass and sky with clouds. item Item ITEM. group Group GROUP.",
     );
 
     assert_eq!(
@@ -179,8 +178,8 @@ fn removes_viewpoint_pronoun_and_incomplete_descriptor_candidates() {
         "A large green and red bird is looking directly at the camera. Its head has blue eyes.",
     );
 
-    assert!(candidates.contains(&"red bird".to_owned()));
-    assert!(candidates.contains(&"blue eyes".to_owned()));
+    assert!(candidates.contains(&"bird".to_owned()));
+    assert!(candidates.iter().all(|candidate| candidate.split_whitespace().count() == 1));
     assert!(candidates.contains(&"eyes".to_owned()));
     assert!(candidates.contains(&"head".to_owned()));
     assert!(!candidates.contains(&"large green".to_owned()));
@@ -219,7 +218,7 @@ fn selects_highest_scoring_non_redundant_search_tags() {
 
     assert_eq!(
         tags,
-        ["red vintage car", "brick building", "city street", "carpet"]
+        ["car", "building", "carpet"]
     );
 }
 

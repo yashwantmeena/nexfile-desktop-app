@@ -264,3 +264,5 @@
 @media(max-width:1250px){.preview-info-grid{grid-template-columns:1fr}.preview-path-card,.preview-actions-card{grid-column:auto}}
 
 .preview-card-tags button,.preview-filter-button{max-width:100%;padding:4px 8px;overflow:hidden;border:1px solid #dce5f0;border-radius:7px;color:#45658f;background:#eef4fb;font:inherit;font-size:11px;line-height:15px;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}.preview-card-tags button:hover,.preview-filter-button:hover{border-color:#8eb2e7;color:#2059aa;background:#e5effc}
+
+.files-load-more{min-height:1px;display:flex;justify-content:center;padding-top:16px;color:#707b8e;font-size:12px}

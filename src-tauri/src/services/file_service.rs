@@ -187,8 +187,12 @@ fn read_file_labels(path: &Path) -> (Vec<String>, Vec<String>) {
     let tags = data
         .search_keywords
         .into_iter()
-        .map(|tag| tag.trim().to_owned())
-        .filter(|tag| !tag.is_empty())
+        .flat_map(|tag| {
+            tag.split(|character: char| character.is_whitespace() || character == '_' || character == '-')
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .filter(|tag| !tag.is_empty() && !["some", "different", "item", "group"].iter().any(|word| tag.eq_ignore_ascii_case(word)))
         .fold(Vec::<String>::new(), |mut tags, tag| {
             if !tags
                 .iter()

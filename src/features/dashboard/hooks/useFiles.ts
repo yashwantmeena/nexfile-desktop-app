@@ -55,7 +55,8 @@ export function useFiles(mediaType?: string) {
       document.removeEventListener("visibilitychange", silentRefresh);
     };
   }, [load]);
-  return { files, nextOffset, issues, loading, error, loadMore: () => {
+  const loadMore = useCallback(() => {
     if (nextOffset !== null) void load(nextOffset);
-  } };
+  }, [load, nextOffset]);
+  return { files, nextOffset, issues, loading, error, loadMore };
 }

@@ -8,7 +8,7 @@ pub(crate) fn extract_keyword_candidates(text: &str) -> Vec<String> {
         let mut current_segment = Vec::new();
 
         for raw_token in
-            clause.split(|character: char| !(character.is_alphanumeric() || character == '-'))
+            clause.split(|character: char| !character.is_alphanumeric())
         {
             let token = raw_token.trim_matches('-').to_lowercase();
             if token.is_empty() {
@@ -62,6 +62,7 @@ fn is_clause_boundary(character: char) -> bool {
 }
 
 pub(crate) fn select_search_tags(mut scored_candidates: Vec<(String, f32)>) -> Vec<String> {
+    scored_candidates.retain(|(candidate, _)| candidate.split_whitespace().count() == 1);
     scored_candidates.sort_by(|left, right| {
         right
             .1
@@ -131,6 +132,10 @@ fn is_phrase_boundary(word: &str) -> bool {
             | "also"
             | "all"
             | "many"
+            | "some"
+            | "different"
+            | "item"
+            | "group"
             | "his"
             | "her"
             | "hers"

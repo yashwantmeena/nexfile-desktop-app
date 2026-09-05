@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ChevronDown } from "lucide-react";
 import { AppSidebar } from "@/components/layout/AppSidebar";
@@ -22,6 +22,19 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
   const [countsError, setCountsError] = useState<string | null>(null);
   const [activeCategory,setActiveCategory]=useState("All");
   const fetched = useFiles(activeCategory === "All" ? undefined : activeCategory.toLowerCase());
+  const resultsPaneRef = useRef<HTMLDivElement>(null);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  const { nextOffset, loading, error, loadMore } = fetched;
+  useEffect(() => {
+    const root = resultsPaneRef.current;
+    const sentinel = loadMoreRef.current;
+    if (!root || !sentinel || nextOffset === null || loading || error) return;
+    const observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) loadMore();
+    }, { root, rootMargin: "0px 0px 400px 0px" });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [nextOffset, loading, error, loadMore]);
   useEffect(() => {
     let cancelled = false;
     let pending = false;
@@ -78,7 +91,7 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
         <AppToolbar query={query} dateFilter={dateFilter} onQueryChange={setQuery} onDateFilterChange={setDateFilter}/>
         <FilterBar tags={tags} dateFilterLabel={dateFilter === "any" ? undefined : ({today:"Today","7days":"Last 7 days","30days":"Last 30 days",year:"This year"} as const)[dateFilter]} onTagsChange={setTags} onClearDateFilter={()=>setDateFilter("any")} onReset={()=>{setTags([]);setDateFilter("any");}}/>
         <section className="content-shell">
-          <div className="results-pane">
+          <div className="results-pane" ref={resultsPaneRef}>
             {(countsError || !!homeCounts?.issues.length) && <div className="count-warning" role="alert">
               <strong>File counts could not be verified</strong>
               {countsError && <p>{countsError}</p>}
@@ -95,7 +108,10 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
             {fetched.loading && !loadedFiles.length ? <div className="empty-state" role="status">Loading files…</div>
               : fetched.error && !loadedFiles.length ? null
               : <FileGrid files={files} onOpen={setPreviewIndex}/>}
-            {fetched.nextOffset !== null && <button className="results-sort" disabled={fetched.loading} onClick={fetched.loadMore}>{fetched.loading ? "Loading…" : "Load more files"}</button>}
+            <div ref={loadMoreRef} className="files-load-more">
+              {fetched.loading && loadedFiles.length > 0 && <span role="status">Loading more files…</span>}
+              {fetched.error && fetched.nextOffset !== null && <button className="results-sort" onClick={fetched.loadMore}>Retry loading more files</button>}
+            </div>
           </div>
         </section>
       </main>

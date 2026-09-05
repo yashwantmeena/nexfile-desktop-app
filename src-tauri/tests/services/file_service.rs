@@ -135,7 +135,7 @@ fn fetches_all_types_by_filesystem_modified_time_with_pagination() {
     // A newer AI timestamp must not affect ordering, and sidecars are not files in the result.
     std::fs::write(
         directory.join("old.jpg.json"),
-        br#"{"updatedAtMs":9999999999,"classification":{"primary":[],"secondary":[],"tertiary":[]},"searchKeywords":[" landscape ","mountain","Landscape",""]}"#,
+        br#"{"updatedAtMs":9999999999,"classification":{"primary":[],"secondary":[],"tertiary":[]},"searchKeywords":[" landscape ","mountain","Landscape","","snow covered","snow_covered","snow-covered","Some","SOME","some snow","Different","DIFFERENT","different snow","item","Item","ITEM","group","Group","GROUP"]}"#,
     )
     .unwrap();
     std::fs::write(directory.join(".pending.importing"), b"pending").unwrap();
@@ -189,7 +189,7 @@ fn fetches_all_types_by_filesystem_modified_time_with_pagination() {
     );
     assert_eq!(images.total_count, 1);
     assert_eq!(images.files[0].name, "old.jpg");
-    assert_eq!(images.files[0].tags, ["landscape", "mountain"]);
+    assert_eq!(images.files[0].tags, ["landscape", "mountain", "snow", "covered"]);
     for (primary, secondary, expected) in [
         ("visual", Some("nature"), vec!["nature"]),
         (" Visual ", Some("animals"), vec!["animals"]),
