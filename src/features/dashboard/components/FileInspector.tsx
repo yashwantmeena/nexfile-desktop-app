@@ -1,11 +1,12 @@
-import { File, Star } from "lucide-react";
+import { useState } from "react";
+import { Check, ChevronDown, Copy, Star } from "lucide-react";
 import type { DashboardFile } from "../types/file";
 
 interface FileInspectorProps { file:DashboardFile; favorite:boolean; onFavorite:()=>void; }
 
 function readable(value: string) { return value.replace(/[_-]/g, " "); }
 function formatSize(bytes?: number) {
-  if (bytes === undefined) return "Unknown";
+  if (bytes === undefined) return "Unknown size";
   if (bytes < 1024) return `${bytes} B`;
   const units = ["KB", "MB", "GB", "TB"];
   let value = bytes / 1024;
@@ -15,26 +16,32 @@ function formatSize(bytes?: number) {
 }
 
 export function FileInspector({ file, favorite, onFavorite }: FileInspectorProps) {
+  const [copied, setCopied] = useState(false);
   const categories = file.categories ?? [];
-  const tags = file.tags ?? [];
-  return <aside className="inspector">
+  const tags = (file.tags ?? []).slice(0, 5);
+  const collection = file.collection?.trim();
+  const copyPath = async () => {
+    try {
+      await navigator.clipboard.writeText(file.path);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch { setCopied(false); }
+  };
+
+  return <aside className="inspector redesigned-inspector">
     <header className="inspector-header"><span>File details</span></header>
-    <div className="preview-image" style={file.image && file.fileType !== "video" ? { backgroundImage: `url(${file.image})` } : undefined}>
-      {file.image && file.fileType === "video" && file.kind !== "WEBM" && <video src={file.image} controls preload="metadata" playsInline />}
-      {(!file.image || file.kind === "WEBM") && <File aria-label="No preview available" />}
-    </div>
-    <div className="preview-title"><div><h2 title={file.name}>{file.name}</h2><p>{file.kind} <i/> {formatSize(file.sizeBytes)}</p></div>
+    <div className="inspector-identity"><div><h2 title={file.name}>{file.name}</h2><p><span className="identity-type">{readable(file.fileType ?? file.kind)}</span><i/>{file.kind}<i/>{formatSize(file.sizeBytes)}</p></div>
       <button aria-label={favorite ? "Remove from favorites" : "Add to favorites"} className={favorite ? "favorite" : ""} onClick={onFavorite}><Star/></button>
     </div>
-    <dl className="file-meta-grid">
-      <div><dt>Category</dt><dd className="capitalize">{categories[0] ? readable(categories[0]) : "Uncategorized"}</dd></div>
-      <div><dt>Collection</dt><dd>{file.collection ?? "No collection"}</dd></div>
-      <div><dt>Modified on</dt><dd>{file.time}</dd></div>
-      <div><dt>Type</dt><dd className="capitalize">{file.fileType ?? file.kind}</dd></div>
-    </dl>
-    <section className="tag-section"><h3>Tags</h3><div>
-      {tags.length ? tags.map(tag => <span key={tag}>#{readable(tag)}</span>) : <span>No tags</span>}
-    </div></section>
-    <section className="tag-section file-path-section"><h3>Path</h3><p>{file.path}</p></section>
+    <section className="inspector-organization" aria-label="Organization">
+      <div><span>Category</span><strong>{categories[0] ? readable(categories[0]) : "Uncategorized"}</strong></div>
+      {collection && <div><span>Collection</span><strong>{collection}</strong></div>}
+    </section>
+    {tags.length > 0 && <section className="inspector-tags"><h3>Tags</h3><div>{tags.map(tag => <span key={tag}>{readable(tag)}</span>)}</div></section>}
+    <details className="inspector-file-details">
+      <summary><span>File information</span><ChevronDown/></summary>
+      <dl><div><dt>Modified</dt><dd>{file.time}</dd></div><div><dt>Format</dt><dd>{file.kind}</dd></div><div className="inspector-path-row"><dt>Path</dt><dd title={file.path}>{file.path}</dd></div></dl>
+      <button className="copy-path-button" onClick={copyPath}>{copied ? <Check/> : <Copy/>}{copied ? "Copied" : "Copy path"}</button>
+    </details>
   </aside>;
 }

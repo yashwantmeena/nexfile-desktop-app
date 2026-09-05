@@ -135,7 +135,7 @@ fn fetches_all_types_by_filesystem_modified_time_with_pagination() {
     // A newer AI timestamp must not affect ordering, and sidecars are not files in the result.
     std::fs::write(
         directory.join("old.jpg.json"),
-        br#"{"updated_at_ms":9999999999}"#,
+        br#"{"updatedAtMs":9999999999,"classification":{"primary":[],"secondary":[],"tertiary":[]},"searchKeywords":[" landscape ","mountain","Landscape",""]}"#,
     )
     .unwrap();
     std::fs::write(directory.join(".pending.importing"), b"pending").unwrap();
@@ -189,6 +189,32 @@ fn fetches_all_types_by_filesystem_modified_time_with_pagination() {
     );
     assert_eq!(images.total_count, 1);
     assert_eq!(images.files[0].name, "old.jpg");
+    assert_eq!(images.files[0].tags, ["landscape", "mountain"]);
+    for (primary, secondary, expected) in [
+        ("visual", Some("nature"), vec!["nature"]),
+        (" Visual ", Some("animals"), vec!["animals"]),
+        ("visual", None, vec![]),
+        ("document", None, vec!["document"]),
+    ] {
+        let secondary = secondary.into_iter().map(|label| serde_json::json!({
+            "label": label, "parentLabel": "visual", "score": 0.9
+        })).collect::<Vec<_>>();
+        std::fs::write(
+            directory.join("old.jpg.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "classification": {
+                    "primary": [{"label": primary, "parentLabel": null, "score": 0.95}],
+                    "secondary": secondary,
+                    "tertiary": []
+                }
+            })).unwrap(),
+        ).unwrap();
+        let page = fetch_files(
+            vec![saved.clone()], vec![drive.clone()], &root,
+            Some(FileType::Image), 0, 60,
+        );
+        assert_eq!(page.files[0].categories, expected, "primary: {primary}");
+    }
     let beyond = fetch_files(
         vec![saved.clone()],
         vec![drive],

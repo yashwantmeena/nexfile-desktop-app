@@ -156,7 +156,7 @@ fn read_file_labels(path: &Path) -> (Vec<String>, Vec<String>) {
     #[derive(serde::Deserialize)]
     struct Sidecar {
         classification: crate::models::image_processing_model::ImageClassificationOutput,
-        #[serde(default)]
+        #[serde(default, rename = "searchKeywords", alias = "search_keywords")]
         search_keywords: Vec<String>,
     }
     let sidecar = crate::services::image_processing_service::classification_output_path(path);
@@ -171,6 +171,8 @@ fn read_file_labels(path: &Path) -> (Vec<String>, Vec<String>) {
         .classification
         .primary
         .into_iter()
+        // Visual is a routing label; its secondary prediction is the category.
+        .filter(|prediction| !prediction.label.trim().eq_ignore_ascii_case("visual"))
         .chain(data.classification.secondary)
     {
         let label = prediction.label.trim();

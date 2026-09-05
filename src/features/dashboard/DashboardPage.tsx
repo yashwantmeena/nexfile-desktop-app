@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ChevronDown, Grid2X2, LayoutGrid, List } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { AppToolbar } from "@/components/layout/AppToolbar";
 import type { DateFilter } from "./types/filter";
 import type { AppNavigationItem } from "@/types/navigation";
 import { CategoryFilters } from "./components/CategoryFilters";
 import { FileGrid } from "./components/FileGrid";
-import { FileInspector } from "./components/FileInspector";
+import { FilePreviewModal } from "./components/FilePreviewModal";
 import { FilterBar } from "./components/FilterBar";
 import { useFiles } from "./hooks/useFiles";
 import type { DashboardFile } from "./types/file";
@@ -15,22 +15,19 @@ import type { HomeCounts } from "./types/home";
 import "./dashboard.css";
 
 interface DashboardPageProps { activeNavigation:AppNavigationItem; onNavigationChange:(item:AppNavigationItem)=>void; }
+const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
 export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardPageProps) {
   const [homeCounts, setHomeCounts] = useState<HomeCounts | null>(null);
   const [countsError, setCountsError] = useState<string | null>(null);
-  const [countsLoading, setCountsLoading] = useState(true);
-  const [refreshKey, setRefreshKey] = useState(0);
   const [activeCategory,setActiveCategory]=useState("All");
-  const fetched = useFiles(refreshKey, activeCategory === "All" ? undefined : activeCategory.toLowerCase());
+  const fetched = useFiles(activeCategory === "All" ? undefined : activeCategory.toLowerCase());
   useEffect(() => {
     let cancelled = false;
     let pending = false;
     const load = async () => {
       if (pending) return;
       pending = true;
-      setCountsLoading(true);
-      setHomeCounts(null);
       setCountsError(null);
       try {
         const result = await invoke<HomeCounts>("get_file_count");
@@ -39,32 +36,41 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
         if (!cancelled) setCountsError("Unable to verify file counts. Please try again.");
       } finally {
         pending = false;
-        if (!cancelled) setCountsLoading(false);
+        // Loading state is represented by the category placeholders.
       }
     };
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void load();
+    };
     void load();
+    const interval = window.setInterval(refreshWhenVisible, REFRESH_INTERVAL_MS);
     window.addEventListener("focus", load);
-    return () => { cancelled = true; window.removeEventListener("focus", load); };
-  }, [refreshKey]);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", load);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, []);
   const counts = homeCounts?.counts;
   const categories = [
     { label: "All", count: homeCounts?.totalCount },
     ...(counts ?? []).map(({ fileType, count }) => ({ label: fileType, count })),
   ].map(({ label, count }) => ({ label, count: count == null ? "—" : count.toLocaleString() }));
-  const [query,setQuery]=useState(""); const [selectedId,setSelectedId]=useState<DashboardFile["id"] | null>(null); const [favorites,setFavorites]=useState<DashboardFile["id"][]>([]); const [tags,setTags]=useState<string[]>([]); const [dateFilter,setDateFilter]=useState<DateFilter>("any"); const [gridMode,setGridMode]=useState(true);
+  const [query,setQuery]=useState(""); const [tags,setTags]=useState<string[]>([]); const [dateFilter,setDateFilter]=useState<DateFilter>("any");
+  const [previewIndex,setPreviewIndex]=useState<number|null>(null);
   const loadedFiles = useMemo<DashboardFile[]>(() => fetched.files.map(file => ({
     id: file.id, name: file.name, path: file.path, fileType: file.fileType,
     kind: file.name.includes(".") ? file.name.split(".").pop()!.toUpperCase() : file.fileType.toUpperCase(),
     time: file.modifiedAtMs === null ? "Unknown" : new Date(file.modifiedAtMs).toLocaleString(),
     image: file.imageUrl, sizeBytes: file.sizeBytes, categories: file.categories, tags: file.tags,
   })), [fetched.files]);
-  useEffect(() => {
-    if (!loadedFiles.length) return;
-    setSelectedId(current => loadedFiles.some(file => file.id === current) ? current : loadedFiles[0].id);
-  }, [loadedFiles]);
-  const files=useMemo(()=>loadedFiles.filter(file=>file.name.toLowerCase().includes(query.toLowerCase())),[loadedFiles, query]);
-  const selectedFile=loadedFiles.find(file=>file.id===selectedId);
-  const toggleFavorite=(id:DashboardFile["id"])=>setFavorites(items=>items.includes(id)?items.filter(item=>item!==id):[...items,id]);
+  const files=useMemo(()=>loadedFiles.filter(file=>{
+    if(!file.name.toLowerCase().includes(query.toLowerCase()))return false;
+    const metadata=[...(file.tags??[]),...(file.categories??[]),file.collection??""].map(value=>value.toLowerCase());
+    return tags.every(tag=>metadata.some(value=>value===tag.toLowerCase()));
+  }),[loadedFiles,query,tags]);
   return (
     <div className="nexfile-app">
       <AppSidebar activeItem={activeNavigation} onActiveItemChange={onNavigationChange}/>
@@ -73,44 +79,27 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
         <FilterBar tags={tags} dateFilterLabel={dateFilter === "any" ? undefined : ({today:"Today","7days":"Last 7 days","30days":"Last 30 days",year:"This year"} as const)[dateFilter]} onTagsChange={setTags} onClearDateFilter={()=>setDateFilter("any")} onReset={()=>{setTags([]);setDateFilter("any");}}/>
         <section className="content-shell">
           <div className="results-pane">
-            <header className="results-heading">
-              <div>
-                <h1>Search results</h1>
-                <div className="results-meta">
-                  <p className="result-count">{homeCounts?.totalCount != null
-                    ? `${homeCounts.totalCount.toLocaleString()} imported files across your saved drives`
-                    : countsLoading ? "Verifying file counts…" : "File counts unavailable"}</p>
-                  {counts && <span className="results-status"><i/>Counts verified</span>}
-                </div>
-              </div>
-              <div className="results-controls">
-                <button className="results-sort" disabled={countsLoading || fetched.loading} onClick={() => setRefreshKey(key => key + 1)}>Refresh files</button>
-                <div className="view-switch result-view-switch">
-                  <button className={gridMode ? "active" : ""} onClick={() => setGridMode(true)} aria-label="Grid view"><LayoutGrid /></button>
-                  <button className={gridMode ? "" : "active"} onClick={() => setGridMode(false)} aria-label="List view"><List /></button>
-                  <button aria-label="Compact grid"><Grid2X2 /></button>
-                </div>
-                <button className="results-sort" title="Filesystem modified time, descending">Modified: newest <ChevronDown /></button>
-              </div>
-            </header>
             {(countsError || !!homeCounts?.issues.length) && <div className="count-warning" role="alert">
               <strong>File counts could not be verified</strong>
               {countsError && <p>{countsError}</p>}
               {homeCounts?.issues.map(issue => <p key={issue.driveId}><strong>{issue.driveName || issue.driveId}:</strong> {issue.message}</p>)}
             </div>}
-            <CategoryFilters categories={categories} activeCategory={activeCategory} onCategoryChange={setActiveCategory}/>
+            <div className="category-toolbar">
+              <CategoryFilters categories={categories} activeCategory={activeCategory} onCategoryChange={setActiveCategory}/>
+              <button className="results-sort category-sort" title="Filesystem modified time, descending">Modified: newest <ChevronDown /></button>
+            </div>
             {(fetched.error || fetched.issues.length > 0) && <div className="count-warning" role="alert">
               {fetched.error && <p>{fetched.error}</p>}
               {fetched.issues.map(issue => <p key={issue.driveId}><strong>{issue.driveName || issue.driveId}:</strong> {issue.message}</p>)}
             </div>}
             {fetched.loading && !loadedFiles.length ? <div className="empty-state" role="status">Loading files…</div>
               : fetched.error && !loadedFiles.length ? null
-              : <FileGrid files={files} gridMode={gridMode} selectedId={selectedId} favorites={favorites} onSelect={setSelectedId} onFavorite={toggleFavorite}/>}
+              : <FileGrid files={files} onOpen={setPreviewIndex}/>}
             {fetched.nextOffset !== null && <button className="results-sort" disabled={fetched.loading} onClick={fetched.loadMore}>{fetched.loading ? "Loading…" : "Load more files"}</button>}
           </div>
-          {selectedFile && <FileInspector file={selectedFile} favorite={favorites.includes(selectedFile.id)} onFavorite={()=>toggleFavorite(selectedFile.id)}/>}
         </section>
       </main>
+      {previewIndex!==null&&files[previewIndex]&&<FilePreviewModal files={files} index={previewIndex} onIndexChange={setPreviewIndex} onClose={()=>setPreviewIndex(null)} onApplyFilter={value=>{setTags(current=>current.includes(value)?current:[...current,value]);setPreviewIndex(null);}}/>}
     </div>
   );
 }

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchFiles, type FilePage, type FetchedFile } from "../api/files";
 
-export function useFiles(refreshKey: number, mediaType?: string) {
+const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+
+export function useFiles(mediaType?: string) {
   const [files, setFiles] = useState<FetchedFile[]>([]);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [issues, setIssues] = useState<FilePage["issues"]>([]);
@@ -9,11 +11,11 @@ export function useFiles(refreshKey: number, mediaType?: string) {
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
   const pending = useRef(false);
-  const load = useCallback(async (offset: number, reset = false) => {
-    if (!reset && pending.current) return;
+  const load = useCallback(async (offset: number, reset = false, clear = reset) => {
+    if (pending.current) return;
     if (reset) {
       generation.current += 1;
-      setFiles([]);
+      if (clear) setFiles([]);
       setNextOffset(null);
       setIssues([]);
     }
@@ -37,15 +39,22 @@ export function useFiles(refreshKey: number, mediaType?: string) {
     }
   }, [mediaType]);
   useEffect(() => {
-    const refresh = () => { void load(0, true); };
-    refresh();
-    window.addEventListener("focus", refresh);
+    const initialLoad = () => { void load(0, true, true); };
+    const silentRefresh = () => {
+      if (document.visibilityState === "visible") void load(0, true, false);
+    };
+    initialLoad();
+    const interval = window.setInterval(silentRefresh, REFRESH_INTERVAL_MS);
+    window.addEventListener("focus", silentRefresh);
+    document.addEventListener("visibilitychange", silentRefresh);
     return () => {
       generation.current += 1;
       pending.current = false;
-      window.removeEventListener("focus", refresh);
+      window.clearInterval(interval);
+      window.removeEventListener("focus", silentRefresh);
+      document.removeEventListener("visibilitychange", silentRefresh);
     };
-  }, [load, refreshKey]);
+  }, [load]);
   return { files, nextOffset, issues, loading, error, loadMore: () => {
     if (nextOffset !== null) void load(nextOffset);
   } };
