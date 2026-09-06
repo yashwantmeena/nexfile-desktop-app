@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Archive, Check, ChevronLeft, ChevronRight, Clock3, Copy, ExternalLink, File, FileCode2, FileText, Film, FolderOpen, Heart, Maximize2, Mic2, Minus, MoreHorizontal, Pencil, Plus, Star, Tag, Wrench, X } from "lucide-react";
+import { Archive, Check, ChevronLeft, ChevronRight, Clock3, Copy, ExternalLink, File, FileCode2, FileText, Film, FolderOpen, Heart, Mic2, MoreHorizontal, Pencil, Star, Tag, Wrench, X } from "lucide-react";
 import type { DashboardFile } from "../types/file";
+import { OriginalImagePreview } from "./OriginalImagePreview";
 
 interface FilePreviewModalProps { files:DashboardFile[]; index:number; onIndexChange:(index:number)=>void; onClose:()=>void; onApplyFilter:(value:string)=>void; }
 
@@ -9,13 +10,12 @@ function readable(value:string){return value.replace(/[_-]/g," ");}
 
 export function FilePreviewModal({files,index,onIndexChange,onClose,onApplyFilter}:FilePreviewModalProps){
   const file=files[index];
-  const [zoom,setZoom]=useState(100);
   const [favorite,setFavorite]=useState(false);
   const [copied,setCopied]=useState(false);
   const [displayName,setDisplayName]=useState(file.name);
   const [draftName,setDraftName]=useState(file.name);
   const [editingName,setEditingName]=useState(false);
-  useEffect(()=>{setZoom(100);setFavorite(false);setDisplayName(file.name);setDraftName(file.name);setEditingName(false);},[file.id,file.name]);
+  useEffect(()=>{setFavorite(false);setDisplayName(file.name);setDraftName(file.name);setEditingName(false);},[file.id,file.name]);
   useEffect(()=>{const key=(event:KeyboardEvent)=>{if(event.key==="Escape")onClose();if(event.key==="ArrowLeft"&&index>0)onIndexChange(index-1);if(event.key==="ArrowRight"&&index<files.length-1)onIndexChange(index+1);};window.addEventListener("keydown",key);return()=>window.removeEventListener("keydown",key);},[files.length,index,onClose,onIndexChange]);
   const copyPath=async()=>{try{await navigator.clipboard.writeText(file.path);setCopied(true);window.setTimeout(()=>setCopied(false),1400);}catch{setCopied(false);}};
   const type=file.fileType??file.kind.toLowerCase();
@@ -28,10 +28,9 @@ export function FilePreviewModal({files,index,onIndexChange,onClose,onApplyFilte
         <div className="preview-canvas">
           <span className="preview-kind">{file.kind}</span>
           <div className="preview-top-actions"><button aria-label="Favorite" className={favorite?"active":""} onClick={()=>setFavorite(value=>!value)}><Heart/></button><button aria-label="More actions"><MoreHorizontal/></button></div>
-          {file.image?(type==="video"?<video src={file.image} controls autoPlay/>:<img src={file.image} alt={file.name} style={{transform:`scale(${zoom/100})`}}/>):<div className="preview-fallback"><FallbackIcon/><strong>{file.name}</strong></div>}
+          {file.image?(type==="video"?<video src={file.image} controls autoPlay/>:<OriginalImagePreview key={`${file.id}:${file.image}`} src={file.image} name={file.name}/>):<div className="preview-fallback"><FallbackIcon/><strong>{file.name}</strong></div>}
           <button className="preview-nav preview-previous" disabled={index===0} aria-label="Previous file" onClick={()=>onIndexChange(index-1)}><ChevronLeft/></button>
           <button className="preview-nav preview-next" disabled={index===files.length-1} aria-label="Next file" onClick={()=>onIndexChange(index+1)}><ChevronRight/></button>
-          {type!=="video"&&<div className="preview-zoom"><button aria-label="Zoom out" onClick={()=>setZoom(value=>Math.max(50,value-10))}><Minus/></button><strong>{zoom}%</strong><button aria-label="Zoom in" onClick={()=>setZoom(value=>Math.min(200,value+10))}><Plus/></button><i/><button aria-label="Fit to screen" onClick={()=>setZoom(100)}><Maximize2/></button></div>}
         </div>
       </div>
       <aside className="preview-details">

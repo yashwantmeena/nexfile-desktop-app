@@ -266,3 +266,16 @@
 .preview-card-tags button,.preview-filter-button{max-width:100%;padding:4px 8px;overflow:hidden;border:1px solid #dce5f0;border-radius:7px;color:#45658f;background:#eef4fb;font:inherit;font-size:11px;line-height:15px;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}.preview-card-tags button:hover,.preview-filter-button:hover{border-color:#8eb2e7;color:#2059aa;background:#e5effc}
 
 .files-load-more{min-height:1px;display:flex;justify-content:center;padding-top:16px;color:#707b8e;font-size:12px}
+
+/* Fixed track geometry keeps virtual rows stable as media loads or fails. */
+.file-grid.virtual-file-grid{--file-row-height:210px;align-content:start;overflow-anchor:none}
+.virtual-file-grid .file-card.visual-file-card{height:var(--file-row-height);min-height:0;box-sizing:border-box}
+@media(max-width:1180px){.file-grid.virtual-file-grid{--file-row-height:196px}}
+@media(max-width:680px){.file-grid.virtual-file-grid{--file-row-height:180px}}
+
+/* Reserve room for preview controls so fit mode exposes every image edge. */
+.preview-image-viewport{position:absolute;inset:64px 58px 78px;overflow:auto;overscroll-behavior:contain}
+.preview-image-surface{display:grid;place-items:center}
+.preview-image-surface>img{display:block;max-width:none;max-height:none;object-fit:contain}
+.preview-zoom button:disabled{opacity:.4;cursor:default}
+@media(max-width:560px){.preview-image-viewport{inset:64px 40px 78px}}

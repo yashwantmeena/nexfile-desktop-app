@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchFiles, type FilePage, type FetchedFile } from "../api/files";
 
-const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
 export function useFiles(mediaType?: string) {
   const [files, setFiles] = useState<FetchedFile[]>([]);
@@ -44,13 +43,11 @@ export function useFiles(mediaType?: string) {
       if (document.visibilityState === "visible") void load(0, true, false);
     };
     initialLoad();
-    const interval = window.setInterval(silentRefresh, REFRESH_INTERVAL_MS);
     window.addEventListener("focus", silentRefresh);
     document.addEventListener("visibilitychange", silentRefresh);
     return () => {
       generation.current += 1;
       pending.current = false;
-      window.clearInterval(interval);
       window.removeEventListener("focus", silentRefresh);
       document.removeEventListener("visibilitychange", silentRefresh);
     };

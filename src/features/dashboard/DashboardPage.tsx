@@ -15,7 +15,6 @@ import type { HomeCounts } from "./types/home";
 import "./dashboard.css";
 
 interface DashboardPageProps { activeNavigation:AppNavigationItem; onNavigationChange:(item:AppNavigationItem)=>void; }
-const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
 export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardPageProps) {
   const [homeCounts, setHomeCounts] = useState<HomeCounts | null>(null);
@@ -56,12 +55,10 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
       if (document.visibilityState === "visible") void load();
     };
     void load();
-    const interval = window.setInterval(refreshWhenVisible, REFRESH_INTERVAL_MS);
     window.addEventListener("focus", load);
     document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
       window.removeEventListener("focus", load);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
@@ -75,6 +72,7 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
   const [previewIndex,setPreviewIndex]=useState<number|null>(null);
   const loadedFiles = useMemo<DashboardFile[]>(() => fetched.files.map(file => ({
     id: file.id, name: file.name, path: file.path, fileType: file.fileType,
+    modifiedAtMs: file.modifiedAtMs,
     kind: file.name.includes(".") ? file.name.split(".").pop()!.toUpperCase() : file.fileType.toUpperCase(),
     time: file.modifiedAtMs === null ? "Unknown" : new Date(file.modifiedAtMs).toLocaleString(),
     image: file.imageUrl, sizeBytes: file.sizeBytes, categories: file.categories, tags: file.tags,

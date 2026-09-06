@@ -1,0 +1,22 @@
+<html><head><title>Memory preview verification</title><style>*{box-sizing:border-box}body{margin:0}#status{display:block;padding:8px}</style></head><body><div id="status">Preparing 24 MP image and video fixtures…</div><div id="root"></div><script type="module">
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import {FileGrid} from '/src/features/dashboard/components/FileGrid.tsx';
+import '/src/features/dashboard/dashboard.css';
+const imageCanvas=document.createElement('canvas');imageCanvas.width=6000;imageCanvas.height=4000;
+const ctx=imageCanvas.getContext('2d');ctx.fillStyle='#b3d9f5';ctx.fillRect(0,0,6000,4000);ctx.fillStyle='#28579c';ctx.font='400px sans-serif';ctx.fillText('24 MP source',300,1800);
+const imageBlob=await new Promise(resolve=>imageCanvas.toBlob(resolve,'image/jpeg',.9));
+const imageUrl=URL.createObjectURL(imageBlob);imageCanvas.width=imageCanvas.height=1;
+const videoCanvas=document.createElement('canvas');videoCanvas.width=1280;videoCanvas.height=720;
+const vc=videoCanvas.getContext('2d');vc.fillStyle='#62b092';vc.fillRect(0,0,1280,720);
+const stream=videoCanvas.captureStream(10);const recorder=new MediaRecorder(stream,{mimeType:'video/webm'});const chunks=[];
+recorder.ondataavailable=e=>chunks.push(e.data);const stopped=new Promise(resolve=>recorder.onstop=resolve);recorder.start();
+await new Promise(resolve=>setTimeout(resolve,350));recorder.stop();await stopped;stream.getTracks().forEach(track=>track.stop());
+const videoUrl=URL.createObjectURL(new Blob(chunks,{type:'video/webm'}));videoCanvas.width=videoCanvas.height=1;
+const active=new Set();const create=URL.createObjectURL.bind(URL),revoke=URL.revokeObjectURL.bind(URL);let revoked=0;
+URL.createObjectURL=blob=>{const url=create(blob);active.add(url);return url;};URL.revokeObjectURL=url=>{if(active.delete(url))revoked++;revoke(url);};
+const files=Array.from({length:200},(_,i)=>({id:i,name:`File ${i}.${i%8===0?'webm':'jpg'}`,path:'',kind:i%8===0?'WEBM':'JPG',time:'',modifiedAtMs:i,fileType:i%8===0?'video':'image',image:i%8===0?videoUrl:imageUrl}));
+function Test(){const [count,setCount]=React.useState(200);const [opened,setOpened]=React.useState(-1);return React.createElement(React.Fragment,null,React.createElement('button',{onClick:()=>setCount(3)},'Filter to three'),React.createElement('button',{onClick:()=>setCount(0)},'Clear files'),React.createElement('output',null,`Opened ${opened}`),React.createElement('div',{className:'results-pane',style:{height:600,width:960,maxWidth:'100%'}},React.createElement(FileGrid,{files:files.slice(0,count),onOpen:setOpened})));}
+createRoot(document.getElementById('root')).render(React.createElement(React.StrictMode,null,React.createElement(Test)));
+setInterval(()=>{const imgs=[...document.querySelectorAll('.file-card img')];document.getElementById('status').textContent=JSON.stringify({activePreviews:active.size,revoked,mounted:document.querySelectorAll('[data-file-index]').length,first:document.querySelector('[data-file-index]')?.dataset.fileIndex,last:[...document.querySelectorAll('[data-file-index]')].at(-1)?.dataset.fileIndex,images:imgs.length,maxPixels:Math.max(0,...imgs.map(img=>Math.max(img.naturalWidth,img.naturalHeight))),cardVideos:document.querySelectorAll('.file-card video').length,videoPosters:document.querySelectorAll('.file-card .play').length});},200);
+</script></body></html>
