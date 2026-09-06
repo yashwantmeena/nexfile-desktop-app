@@ -258,6 +258,7 @@ async fn consumes_an_image_into_the_mounted_system_drive_and_queues_processing()
         .await
         .expect("system drive should mount");
 
+    let search = nexfile_desktop_app_lib::TantivyIndexingRepository::open(&root).unwrap();
     let imports = ImportService::new(
         SqliteBackgroundProcessingRepository::new(database.clone()),
         SqliteStorageRepository::new(database.clone()),
@@ -265,7 +266,8 @@ async fn consumes_an_image_into_the_mounted_system_drive_and_queues_processing()
         root.clone(),
     )
     .await
-    .expect("import service should initialize");
+    .expect("import service should initialize")
+    .with_search_index(search.clone());
     imports
         .consume(ImportFileJob {
             process_id: "process-1".to_owned(),
@@ -293,7 +295,12 @@ async fn consumes_an_image_into_the_mounted_system_drive_and_queues_processing()
     )
     .expect("file metadata should be valid JSON");
     assert_eq!(file_metadata["version"], 1);
-    assert_eq!(file_metadata["originalName"], "photo.avip");
+    assert_eq!(file_metadata["name"], "photo.avip");
+    assert!(file_metadata.get("originalName").is_none());
+    let matches = search.search_files("PHOTO.AVIP", "name", &[]).unwrap();
+    assert_eq!(matches.len(), 1);
+    assert_eq!(matches.iter().next().unwrap().1, "abcdefghijklmn");
+    assert!(search.search_files("photo", "tags", &[]).unwrap().is_empty());
     let storage_data = storage
         .get_storage_data()
         .await
@@ -345,8 +352,19 @@ async fn consumes_an_image_into_the_mounted_system_drive_and_queues_processing()
         .expect("image-processing job should decode");
     assert_eq!(queued_job.path, destination);
 
+    let document = root.join("Quarterly report.pdf");
+    std::fs::write(&document, b"pdf").unwrap();
+    imports.consume(ImportFileJob {
+        process_id: "process-2".into(), file_id: "nopqrstuvwxyza".into(), path: document,
+    }).await.unwrap();
+    let matches = search.search_files("report.pdf", "name", &[]).unwrap();
+    assert_eq!(matches.len(), 1);
+    assert_eq!(matches.iter().next().unwrap().1, "nopqrstuvwxyza");
+
     verification_pool.close().await;
     imports.close().await;
     storage.close().await;
+    drop(imports);
+    drop(search);
     std::fs::remove_dir_all(root).expect("test directory should be removable");
 }

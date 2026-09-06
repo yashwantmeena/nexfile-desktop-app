@@ -50,8 +50,8 @@ pub struct ImageClassificationOutput {
 #[serde(rename_all = "camelCase")]
 pub struct ImageProcessingOutput {
     pub version: u32,
-    #[serde(default)]
-    pub original_name: String,
+    #[serde(default, alias = "originalName")]
+    pub name: String,
     #[serde(default)]
     pub created_at_ms: u64,
     #[serde(default)]

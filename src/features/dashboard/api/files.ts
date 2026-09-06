@@ -24,8 +24,8 @@ export interface FilePage {
  * Refresh from offset zero after imports/deletions, which can shift page offsets.
  * AI updated_at_ms belongs to sidebar details and is not read by this fetch.
  */
-export async function fetchFiles(offset = 0, limit = 60, mediaType?: string): Promise<FilePage> {
-  const page = await invoke<FilePage>("fetch_files", { offset, limit, mediaType });
+export async function fetchFiles(offset = 0, limit = 60, mediaType?: string, query = "", searchMode = "tags", tags: string[] = []): Promise<FilePage> {
+  const page = await invoke<FilePage>("fetch_files", { offset, limit, mediaType, query, searchMode, tags });
   return {
     ...page,
     files: page.files.map(file => ({

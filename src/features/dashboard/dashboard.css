@@ -248,6 +248,8 @@
 @media(max-width:560px){.file-preview-backdrop{padding:0}.file-preview-modal{width:100vw;height:100vh;padding:48px 10px 10px;border-radius:0}.preview-stage,.preview-canvas{border-radius:10px}}
 
 .preview-canvas>img,.preview-canvas>video{width:auto;height:auto;max-width:100%;max-height:100%;object-fit:contain}
+.preview-pagination-status{position:absolute;z-index:3;bottom:20px;left:50%;transform:translateX(-50%);max-width:calc(100% - 40px);padding:9px 14px;border-radius:9px;color:#fff;background:rgba(17,24,39,.88);font-size:13px;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,.2)}
+.preview-pagination-status button{margin-left:6px;padding:3px 7px;border:1px solid rgba(255,255,255,.5);border-radius:5px;color:#fff;background:transparent;cursor:pointer;font:inherit}
 
 /* One-step larger preview information typography */
 .preview-details h2{font-size:18px;line-height:24px}

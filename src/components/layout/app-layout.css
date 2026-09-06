@@ -34,6 +34,11 @@
 .global-search input { min-width:0; flex:1; border:0; outline:0; color:#182133; background:transparent; font-size:14px; line-height:20px; font-weight:400; }
 .global-search input:focus-visible { outline:none; }
 .global-search input::placeholder { color:#788496; }
+.tag-search-input { position:relative; display:flex; flex:1; min-width:0; }
+.tag-search-input input { width:100%; }
+.tag-suggestions { position:absolute; top:calc(100% + 16px); left:-10px; right:-10px; z-index:30; padding:6px; border:1px solid #dce2ea; border-radius:12px; background:#fff; box-shadow:0 16px 40px rgba(15,23,42,.14); }
+.tag-suggestions [role="option"] { padding:9px 10px; border-radius:7px; color:#354155; cursor:pointer; overflow-wrap:anywhere; }
+.tag-suggestions [role="option"]:hover,.tag-suggestions [role="option"].active { color:#1f5fbf; background:#edf4ff; }
 .global-search kbd { min-width:34px; height:25px; padding:0 7px; display:grid; place-items:center; border:1px solid #dfe3e9; border-radius:7px; color:#697588; background:#fff; font-family:inherit; font-size:11px; line-height:1; box-shadow:0 1px 1px rgba(15,23,42,.04); }
 .import-files-input { display:none; }
 .import-menu { position:relative; margin-left:auto; flex:none; }

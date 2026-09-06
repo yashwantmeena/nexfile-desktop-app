@@ -5,6 +5,7 @@ use crate::workers::import_worker::ImportWorker;
 use crate::workers::indexing_worker::IndexingWorker;
 
 pub struct AppState {
+    pub search: crate::repositories::indexing_repository::TantivyIndexingRepository,
     pub image_processing_worker: ImageProcessingWorker,
     pub import_worker: ImportWorker,
     pub indexing_worker: IndexingWorker,

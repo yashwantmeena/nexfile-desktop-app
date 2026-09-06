@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct ManagedFileMetadata {
     pub version: u32,
-    pub original_name: String,
+    #[serde(alias = "originalName")]
+    pub name: String,
 }
 
 #[derive(Debug, Serialize)]

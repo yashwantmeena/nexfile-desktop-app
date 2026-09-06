@@ -1,15 +1,59 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Archive, Check, ChevronLeft, ChevronRight, Clock3, Copy, ExternalLink, File, FileCode2, FileText, Film, FolderOpen, Heart, Mic2, MoreHorizontal, Pencil, Star, Tag, Wrench, X } from "lucide-react";
 import type { DashboardFile } from "../types/file";
 import { OriginalMediaPreview } from "./OriginalMediaPreview";
 
-interface FilePreviewModalProps { files:DashboardFile[]; index:number; onIndexChange:(index:number)=>void; onClose:()=>void; onApplyFilter:(value:string)=>void; }
+interface FilePreviewModalProps {
+  files:DashboardFile[];
+  index:number;
+  onIndexChange:(index:number)=>void;
+  onClose:()=>void;
+  onApplyFilter:(value:string)=>void;
+  hasMore:boolean;
+  loadingMore:boolean;
+  loadError:string|null;
+  onLoadMore:()=>void;
+}
 
 function formatSize(bytes?:number){if(bytes===undefined)return "Unknown";if(bytes<1024)return `${bytes} B`;const units=["KB","MB","GB","TB"];let value=bytes/1024,unit=0;while(value>=1024&&unit<units.length-1){value/=1024;unit++;}return `${value>=10?value.toFixed(0):value.toFixed(1)} ${units[unit]}`;}
 function readable(value:string){return value.replace(/[_-]/g," ");}
 
-export function FilePreviewModal({files,index,onIndexChange,onClose,onApplyFilter}:FilePreviewModalProps){
+export function FilePreviewModal({files,index,onIndexChange,onClose,onApplyFilter,hasMore,loadingMore,loadError,onLoadMore}:FilePreviewModalProps){
   const file=files[index];
+  const [pendingNextFrom, setPendingNextFrom] = useState<DashboardFile["id"]|null>(null);
+  const atLoadedEnd = index >= files.length - 1;
+  const next = useCallback(() => {
+    if (index < files.length - 1) {
+      setPendingNextFrom(null);
+      onIndexChange(index + 1);
+    } else if (hasMore) {
+      setPendingNextFrom(file.id);
+      if (!loadingMore) onLoadMore();
+    }
+  }, [index, files.length, hasMore, file.id, loadingMore, onLoadMore, onIndexChange]);
+  const previous = useCallback(() => {
+    setPendingNextFrom(null);
+    if (index > 0) onIndexChange(index - 1);
+  }, [index, onIndexChange]);
+
+  useEffect(() => {
+    if (pendingNextFrom === null) return;
+    if (pendingNextFrom !== file.id) {
+      setPendingNextFrom(null);
+    } else if (!atLoadedEnd) {
+      setPendingNextFrom(null);
+      onIndexChange(index + 1);
+    } else if (!loadingMore) {
+      if (loadError || !hasMore) setPendingNextFrom(null);
+      // A page can contain only duplicates after files shift between requests.
+      else onLoadMore();
+    }
+  }, [pendingNextFrom, file.id, atLoadedEnd, index, loadingMore, loadError, hasMore, onLoadMore, onIndexChange]);
+
+  useEffect(() => {
+    // Prefetch near the boundary even when the grid's scroll sentinel is offscreen.
+    if (files.length - index <= 3 && hasMore && !loadingMore && !loadError) onLoadMore();
+  }, [files.length, index, hasMore, loadingMore, loadError, onLoadMore]);
   const [infoOpen,setInfoOpen]=useState(false);
   const infoId=useId();
   const infoToggleRef=useRef<HTMLButtonElement>(null);
@@ -20,7 +64,17 @@ export function FilePreviewModal({files,index,onIndexChange,onClose,onApplyFilte
   const [draftName,setDraftName]=useState(file.name);
   const [editingName,setEditingName]=useState(false);
   useEffect(()=>{setFavorite(false);setDisplayName(file.name);setDraftName(file.name);setEditingName(false);},[file.id,file.name]);
-  useEffect(()=>{const key=(event:KeyboardEvent)=>{if(event.key==="Escape")onClose();if(event.key==="ArrowLeft"&&index>0)onIndexChange(index-1);if(event.key==="ArrowRight"&&index<files.length-1)onIndexChange(index+1);};window.addEventListener("keydown",key);return()=>window.removeEventListener("keydown",key);},[files.length,index,onClose,onIndexChange]);
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (target instanceof HTMLElement && target.closest("input, textarea, select, [contenteditable='true']")) return;
+      if (event.key === "Escape") onClose();
+      if (event.key === "ArrowLeft") { event.preventDefault(); previous(); }
+      if (event.key === "ArrowRight") { event.preventDefault(); next(); }
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [onClose, previous, next]);
   const copyPath=async()=>{try{await navigator.clipboard.writeText(file.path);setCopied(true);window.setTimeout(()=>setCopied(false),1400);}catch{setCopied(false);}};
   const type=file.fileType??file.kind.toLowerCase();
   const fallbackIcon=type==="video"?Film:type==="audio"?Mic2:file.kind==="ZIP"?Archive:file.kind==="TS"?FileCode2:file.kind==="MD"?FileText:File;
@@ -35,8 +89,10 @@ export function FilePreviewModal({files,index,onIndexChange,onClose,onApplyFilte
             <button ref={infoToggleRef} aria-label={infoOpen?"Hide file information":"Show file information"} title={infoOpen?"Hide file information":"Show file information"} aria-controls={infoId} aria-expanded={infoOpen} onClick={()=>setInfoOpen(value=>!value)}><MoreHorizontal/></button>
           </div>
           {file.image?<OriginalMediaPreview key={`${file.id}:${file.image}`} src={file.image} name={file.name} type={type==="video"?"video":"image"}/>:<div className="preview-fallback"><FallbackIcon/><strong>{file.name}</strong></div>}
-          <button className="preview-nav preview-previous" disabled={index===0} aria-label="Previous file" onClick={()=>onIndexChange(index-1)}><ChevronLeft/></button>
-          <button className="preview-nav preview-next" disabled={index===files.length-1} aria-label="Next file" onClick={()=>onIndexChange(index+1)}><ChevronRight/></button>
+          <button className="preview-nav preview-previous" disabled={index===0} aria-label="Previous file" onClick={previous}><ChevronLeft/></button>
+          <button className="preview-nav preview-next" disabled={atLoadedEnd && !hasMore} aria-label="Next file" aria-busy={atLoadedEnd && loadingMore} onClick={next}><ChevronRight/></button>
+          {atLoadedEnd && loadingMore && <div className="preview-pagination-status" role="status">Loading more files…</div>}
+          {atLoadedEnd && loadError && <div className="preview-pagination-status" role="alert">Couldn’t load more files. <button onClick={next}>Retry</button></div>}
         </div>
       </div>
       {infoOpen && <aside id={infoId} className="preview-details" aria-label="File information">

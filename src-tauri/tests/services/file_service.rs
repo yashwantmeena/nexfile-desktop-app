@@ -179,6 +179,28 @@ fn fetches_all_types_by_filesystem_modified_time_with_pagination() {
     );
     assert_eq!(second.next_offset, None);
     assert_eq!(second.files[1].file_type, FileType::Image);
+    // Match the entire index candidate set before sorting/paginating the filesystem records.
+    // Files with matching sidecar text but no index entry must not leak into search.
+    let matches = std::collections::HashSet::from([
+        (saved.drive_id.clone(), "old".to_owned()),
+        (saved.drive_id.clone(), "tie".to_owned()),
+        (saved.drive_id.clone(), "deleted".to_owned()),
+        ("other-drive".to_owned(), "new".to_owned()),
+    ]);
+    let matched = fetch_matching_files(vec![saved.clone()], vec![drive.clone()], &root, None, 0, 1, Some(&matches));
+    assert_eq!(matched.total_count, 2);
+    assert_eq!(matched.next_offset, Some(1));
+    assert_eq!(matched.files[0].name, "tie.txt");
+    let matched = fetch_matching_files(vec![saved.clone()], vec![drive.clone()], &root, None, 1, 1, Some(&matches));
+    assert_eq!(matched.files[0].name, "old.jpg");
+    assert_eq!(matched.next_offset, None);
+    let matched = fetch_matching_files(vec![saved.clone()], vec![drive.clone()], &root, Some(FileType::Image), 0, 60, Some(&matches));
+    assert_eq!(matched.total_count, 1);
+    let empty = std::collections::HashSet::new();
+    let matched = fetch_matching_files(vec![saved.clone()], vec![drive.clone()], &root, None, 0, 60, Some(&empty));
+    assert!(matched.files.is_empty());
+    assert_eq!(matched.total_count, 0);
+    assert_eq!(matched.next_offset, None);
     let images = fetch_files(
         vec![saved.clone()],
         vec![drive.clone()],

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ArrowUp, ChevronDown } from "lucide-react";
 import { AppSidebar } from "@/components/layout/AppSidebar";
-import { AppToolbar } from "@/components/layout/AppToolbar";
+import { AppToolbar, type SearchMode } from "@/components/layout/AppToolbar";
 import type { DateFilter } from "./types/filter";
 import type { AppNavigationItem } from "@/types/navigation";
 import { CategoryFilters } from "./components/CategoryFilters";
@@ -20,7 +20,9 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
   const [homeCounts, setHomeCounts] = useState<HomeCounts | null>(null);
   const [countsError, setCountsError] = useState<string | null>(null);
   const [activeCategory,setActiveCategory]=useState("All");
-  const fetched = useFiles(activeCategory === "All" ? undefined : activeCategory.toLowerCase());
+  const [query,setQuery]=useState(""); const [tags,setTags]=useState<string[]>([]); const [dateFilter,setDateFilter]=useState<DateFilter>("any");
+  const [searchMode, setSearchMode] = useState<SearchMode>("tags");
+  const fetched = useFiles(activeCategory === "All" ? undefined : activeCategory.toLowerCase(), query, searchMode, tags);
   const resultsPaneRef = useRef<HTMLDivElement>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const [showBackToTop,setShowBackToTop]=useState(false);
@@ -62,7 +64,6 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
     { label: "All", count: homeCounts?.totalCount },
     ...(counts ?? []).map(({ fileType, count }) => ({ label: fileType, count })),
   ].map(({ label, count }) => ({ label, count: count == null ? "—" : count.toLocaleString() }));
-  const [query,setQuery]=useState(""); const [tags,setTags]=useState<string[]>([]); const [dateFilter,setDateFilter]=useState<DateFilter>("any");
   const [previewIndex,setPreviewIndex]=useState<number|null>(null);
   const loadedFiles = useMemo<DashboardFile[]>(() => fetched.files.map(file => ({
     id: file.id, name: file.name, path: file.path, fileType: file.fileType,
@@ -71,16 +72,12 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
     time: file.modifiedAtMs === null ? "Unknown" : new Date(file.modifiedAtMs).toLocaleString(),
     image: file.imageUrl, sizeBytes: file.sizeBytes, categories: file.categories, tags: file.tags,
   })), [fetched.files]);
-  const files=useMemo(()=>loadedFiles.filter(file=>{
-    if(!file.name.toLowerCase().includes(query.toLowerCase()))return false;
-    const metadata=[...(file.tags??[]),...(file.categories??[]),file.collection??""].map(value=>value.toLowerCase());
-    return tags.every(tag=>metadata.some(value=>value===tag.toLowerCase()));
-  }),[loadedFiles,query,tags]);
+  const files = loadedFiles;
   return (
     <div className="nexfile-app">
       <AppSidebar activeItem={activeNavigation} onActiveItemChange={onNavigationChange}/>
       <main className="nf-main search-main">
-        <AppToolbar query={query} dateFilter={dateFilter} onQueryChange={setQuery} onDateFilterChange={setDateFilter}/>
+        <AppToolbar query={query} dateFilter={dateFilter} onQueryChange={setQuery} onDateFilterChange={setDateFilter} searchMode={searchMode} onSearchModeChange={setSearchMode}/>
         <FilterBar tags={tags} dateFilterLabel={dateFilter === "any" ? undefined : ({today:"Today","7days":"Last 7 days","30days":"Last 30 days",year:"This year"} as const)[dateFilter]} onTagsChange={setTags} onClearDateFilter={()=>setDateFilter("any")} onReset={()=>{setTags([]);setDateFilter("any");}}/>
         <section className="content-shell">
           <div className="results-pane" ref={resultsPaneRef} tabIndex={-1} onScroll={event=>setShowBackToTop(event.currentTarget.scrollTop>200)}>
@@ -115,7 +112,7 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
             </div>}
         </section>
       </main>
-      {previewIndex!==null&&files[previewIndex]&&<FilePreviewModal files={files} index={previewIndex} onIndexChange={setPreviewIndex} onClose={()=>setPreviewIndex(null)} onApplyFilter={value=>{setTags(current=>current.includes(value)?current:[...current,value]);setPreviewIndex(null);}}/>}
+      {previewIndex!==null&&files[previewIndex]&&<FilePreviewModal files={files} index={previewIndex} onIndexChange={setPreviewIndex} hasMore={nextOffset!==null} loadingMore={loading} loadError={error} onLoadMore={loadMore} onClose={()=>setPreviewIndex(null)} onApplyFilter={value=>{setTags(current=>current.includes(value)?current:[...current,value]);setPreviewIndex(null);}}/>}
     </div>
   );
 }

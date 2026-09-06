@@ -17,6 +17,27 @@ pub struct StorageService {
 }
 
 impl StorageService {
+    pub async fn search_files(
+        &self, index: crate::repositories::indexing_repository::TantivyIndexingRepository,
+        query: String, mode: String, tags: Vec<String>, offset: usize, limit: usize,
+        media_type: Option<crate::types::file_type::FileType>,
+    ) -> AppResult<crate::models::file_model::FilePage> {
+        if !(1..=200).contains(&limit) {
+            return Err(AppError::validation("The file page size must be between 1 and 200."));
+        }
+        let snapshots = self.repository.list().await?;
+        let root = self.system_metadata_root.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let matches = index.search_files(&query, &mode, &tags)?;
+            if matches.is_empty() {
+                return Ok(crate::models::file_model::FilePage {
+                    files: Vec::new(), total_count: 0, next_offset: None, issues: Vec::new(),
+                });
+            }
+            Ok(crate::services::file_service::fetch_matching_files(
+                snapshots, get_drives(), &root, media_type, offset, limit, Some(&matches)))
+        }).await.map_err(AppError::internal)?
+    }
     pub async fn fetch_files(
         &self,
         offset: usize,

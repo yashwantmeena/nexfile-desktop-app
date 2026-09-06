@@ -38,9 +38,31 @@ pub struct ImportService {
     queue_pool: SqlitePool,
     system_metadata_root: PathBuf,
     copy_lock: Arc<Mutex<()>>,
+    search: Option<crate::repositories::indexing_repository::TantivyIndexingRepository>,
 }
 
 impl ImportService {
+    pub fn with_search_index(
+        mut self,
+        search: crate::repositories::indexing_repository::TantivyIndexingRepository,
+    ) -> Self {
+        self.search = Some(search);
+        self
+    }
+
+    async fn index_filename(&self, drive: &str, job: &ImportFileJob) -> AppResult<()> {
+        if let Some(search) = &self.search {
+            let search = search.clone();
+            let drive = drive.to_owned();
+            let file = job.file_id.clone();
+            let name = job.path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+            tauri::async_runtime::spawn_blocking(move || search.index_filename(&drive, &file, &name))
+                .await
+                .map_err(AppError::internal)??;
+        }
+        Ok(())
+    }
+
     pub(crate) fn metadata_lock(&self) -> &Mutex<()> {
         &self.copy_lock
     }
@@ -64,6 +86,7 @@ impl ImportService {
             queue_pool,
             system_metadata_root,
             copy_lock: Arc::new(Mutex::new(())),
+            search: None,
         })
     }
 
@@ -173,6 +196,7 @@ impl ImportService {
                     )));
                 }
                 write_import_sidecar(&job, &destination)?;
+                self.index_filename(&saved.drive_id, &job).await?;
                 self.publish_for_image_processing(&destination).await?;
                 let (file_count, app_used_bytes, counts) =
                     calculate_managed_statistics(&files_directory)?;
@@ -204,6 +228,7 @@ impl ImportService {
             }
 
             write_import_sidecar(&job, &destination)?;
+            self.index_filename(&saved.drive_id, &job).await?;
             self.publish_for_image_processing(&destination).await?;
             let mut counts = saved.file_type_counts.clone();
             let category = counts
@@ -346,7 +371,7 @@ fn destination_name(job: &ImportFileJob) -> OsString {
 }
 
 fn write_import_sidecar(job: &ImportFileJob, destination: &Path) -> AppResult<()> {
-    let original_name = job
+    let name = job
         .path
         .file_name()
         .filter(|name| !name.is_empty())
@@ -360,7 +385,7 @@ fn write_import_sidecar(job: &ImportFileJob, destination: &Path) -> AppResult<()
     let temporary = path.with_file_name(format!(".{}.sidecar.tmp", job.file_id));
     let bytes = serde_json::to_vec(&ManagedFileMetadata {
         version: 1,
-        original_name,
+        name,
     })
     .map_err(AppError::serialization)?;
     std::fs::write(&temporary, bytes)?;

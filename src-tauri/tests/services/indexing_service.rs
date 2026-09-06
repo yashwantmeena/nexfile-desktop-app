@@ -55,7 +55,7 @@ async fn stores_searchable_image_fields_in_tantivy() {
     std::fs::write(&image_path, b"image").expect("managed image should be written");
     let output = ImageProcessingOutput {
         version: 18,
-        original_name: "photo.jpg".to_owned(),
+        name: "photo.jpg".to_owned(),
         created_at_ms: 1_788_331_200_000,
         updated_at_ms: 1_788_331_300_000,
         metadata: ImageMetadata {
@@ -97,6 +97,12 @@ async fn stores_searchable_image_fields_in_tantivy() {
         serde_json::to_vec(&output).expect("processing output should serialize"),
     )
     .expect("processing sidecar should be written");
+    let mut serialized = serde_json::to_value(&output).unwrap();
+    assert_eq!(serialized["name"], "photo.jpg");
+    assert!(serialized.get("originalName").is_none());
+    let legacy_name = serialized.as_object_mut().unwrap().remove("name").unwrap();
+    serialized["originalName"] = legacy_name;
+    assert_eq!(serde_json::from_value::<ImageProcessingOutput>(serialized).unwrap().name, "photo.jpg");
 
     let repository =
         TantivyIndexingRepository::open(&app_data).expect("indexing repository should open");
@@ -105,6 +111,8 @@ async fn stores_searchable_image_fields_in_tantivy() {
         .process(IndexingJob { path: sidecar_path })
         .await
         .expect("sidecar should be indexed");
+    assert_eq!(repository.search_files("PHOTO.JPG", "name", &[]).unwrap(),
+        std::collections::HashSet::from([("drive-1".to_owned(), "AbC123".to_owned())]));
 
     let reader = repository
         .index()

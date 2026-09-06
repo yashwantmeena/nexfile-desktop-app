@@ -2,15 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import { CalendarDays, Check, ChevronDown, FileText, FileUp, FolderUp, SlidersHorizontal, Sparkles, Tag } from "lucide-react";
 import { getImportErrorMessage, selectAndImportFiles, selectAndImportFolder } from "@/features/import/services/import_service";
 import type { DateFilter } from "@/features/dashboard/types/filter";
+import { TagSearchInput } from "./TagSearchInput";
 
 interface AppToolbarProps {
   query: string;
   dateFilter: DateFilter;
   onQueryChange: (value: string) => void;
   onDateFilterChange: (value: DateFilter) => void;
+  searchMode: SearchMode;
+  onSearchModeChange: (value: SearchMode) => void;
 }
 
-type SearchMode = "name" | "tags";
+export type SearchMode = "name" | "tags";
 
 const searchModes = [
   { value: "name", label: "Name", description: "Match file names", icon: FileText, disabled: false },
@@ -26,8 +29,7 @@ const dateFilters: { value:DateFilter; label:string }[] = [
   { value: "year", label: "This year" },
 ];
 
-export function AppToolbar({ query, dateFilter, onQueryChange, onDateFilterChange }: AppToolbarProps) {
-  const [searchMode, setSearchMode] = useState<SearchMode>("tags");
+export function AppToolbar({ query, dateFilter, onQueryChange, onDateFilterChange, searchMode, onSearchModeChange }: AppToolbarProps) {
   const [searchMenuOpen, setSearchMenuOpen] = useState(false);
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   const [importMenuOpen, setImportMenuOpen] = useState(false);
@@ -93,7 +95,7 @@ export function AppToolbar({ query, dateFilter, onQueryChange, onDateFilterChang
                 className={searchMode === value ? "selected" : ""}
                 disabled={disabled}
                 onClick={() => {
-                  if (value !== "caption") setSearchMode(value);
+                  if (value !== "caption") onSearchModeChange(value);
                   setSearchMenuOpen(false);
                 }}
               >
@@ -106,7 +108,7 @@ export function AppToolbar({ query, dateFilter, onQueryChange, onDateFilterChang
         </div>
         <span className="search-divider" />
         <SearchIcon />
-        <input aria-label="Search files" value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder={placeholder} />
+        <TagSearchInput query={query} enabled={searchMode === "tags" && !searchMenuOpen && !filterMenuOpen} onChange={onQueryChange} placeholder={placeholder} />
         <div className={`search-filter-wrap${filterMenuOpen ? " open" : ""}`} ref={searchFilterRef}>
           <button className="search-filter-button" type="button" aria-label="Open search filters" aria-haspopup="dialog" aria-expanded={filterMenuOpen} title="Search filters" onClick={() => { setSearchMenuOpen(false); setFilterMenuOpen((open) => !open); }}><SlidersHorizontal /></button>
           {filterMenuOpen && <div className="search-filters-menu" role="dialog" aria-label="Search filters">

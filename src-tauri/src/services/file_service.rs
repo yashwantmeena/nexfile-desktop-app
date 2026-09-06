@@ -16,6 +16,18 @@ pub(crate) fn fetch_files(
     offset: usize,
     limit: usize,
 ) -> crate::models::file_model::FilePage {
+    fetch_matching_files(snapshots, connected, system_metadata_root, media_type, offset, limit, None)
+}
+
+pub(crate) fn fetch_matching_files(
+    snapshots: Vec<DriveMetadata>,
+    connected: Vec<DriveInfo>,
+    system_metadata_root: &Path,
+    media_type: Option<crate::types::file_type::FileType>,
+    offset: usize,
+    limit: usize,
+    indexed_matches: Option<&std::collections::HashSet<(String, String)>>,
+) -> crate::models::file_model::FilePage {
     use crate::models::file_model::{FetchedFile, FilePage};
     use crate::services::storage_service::{is_generated_image_sidecar, read_drive_metadata};
     use crate::utils::constants::IMPORTED_FILES_DIRECTORY;
@@ -70,6 +82,12 @@ pub(crate) fn fetch_files(
                 continue;
             };
             let path = entry.path();
+            if let Some(matches) = indexed_matches {
+                let file_id = path.file_stem().and_then(|value| value.to_str()).unwrap_or_default();
+                if !matches.contains(&(saved.drive_id.clone(), file_id.to_owned())) {
+                    continue;
+                }
+            }
             if entry.file_name().to_string_lossy().starts_with('.')
                 || is_generated_image_sidecar(&path)
             {
@@ -93,7 +111,7 @@ pub(crate) fn fetch_files(
                 }
             });
             let managed_name = entry.file_name().to_string_lossy().into_owned();
-            let name = read_original_name(&path).unwrap_or_else(|| managed_name.clone());
+            let name = read_name(&path).unwrap_or_else(|| managed_name.clone());
             files.push(FetchedFile {
                 id: format!("{}:{}", saved.drive_id, managed_name),
                 drive_id: saved.drive_id.clone(),
@@ -142,13 +160,13 @@ pub(crate) fn fetch_files(
     }
 }
 
-fn read_original_name(file_path: &Path) -> Option<String> {
+fn read_name(file_path: &Path) -> Option<String> {
     let path = crate::services::image_processing_service::classification_output_path(file_path);
     let metadata = serde_json::from_slice::<crate::models::file_model::ManagedFileMetadata>(
         &std::fs::read(path).ok()?,
     )
     .ok()?;
-    let name = metadata.original_name.trim();
+    let name = metadata.name.trim();
     (!name.is_empty()).then(|| name.to_owned())
 }
 

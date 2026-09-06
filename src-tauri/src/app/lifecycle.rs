@@ -31,8 +31,9 @@ pub fn initialize<R: tauri::Runtime>(app: &tauri::App<R>) -> AppResult<()> {
         SqliteStorageRepository::new(database.clone()),
         &database,
         system_metadata_root,
-    ))?;
-    let indexing = IndexingService::new(indexing_repository);
+    ))?
+    .with_search_index(indexing_repository.clone());
+    let indexing = IndexingService::new(indexing_repository.clone());
     let import_worker = ImportWorker::start(&database, imports.clone());
     let image_processing_worker = ImageProcessingWorker::start(
         &database,
@@ -49,6 +50,7 @@ pub fn initialize<R: tauri::Runtime>(app: &tauri::App<R>) -> AppResult<()> {
     let indexing_worker = IndexingWorker::start(&database, indexing);
 
     app.manage(AppState {
+        search: indexing_repository,
         image_processing_worker,
         import_worker,
         indexing_worker,

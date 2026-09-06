@@ -10,6 +10,7 @@ pub struct IndexingJob {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct IndexDocument {
+    pub name: String,
     pub file_id: String,
     pub drive_id: String,
     pub created_at_ms: u64,

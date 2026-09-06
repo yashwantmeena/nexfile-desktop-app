@@ -16,7 +16,7 @@ fn prediction(label: &str) -> ClassificationPrediction {
 fn namespaces_categories_objects_and_search_keywords() {
     let output = ImageProcessingOutput {
         version: 18,
-        original_name: "photo.jpg".to_owned(),
+        name: "photo.jpg".to_owned(),
         created_at_ms: 0,
         updated_at_ms: 0,
         metadata: Default::default(),

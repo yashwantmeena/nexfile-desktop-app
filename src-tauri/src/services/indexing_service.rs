@@ -64,6 +64,7 @@ impl IndexingService {
         }
 
         self.repository.upsert(IndexDocument {
+            name: source.output.name,
             file_id: source.file_id,
             drive_id: source.drive_id,
             created_at_ms: source.output.created_at_ms,
