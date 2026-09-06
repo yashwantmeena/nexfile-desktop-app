@@ -6,9 +6,10 @@ interface Props {
   enabled: boolean;
   placeholder: string;
   onChange: (value: string) => void;
+  onSubmit: (value: string) => void;
 }
 
-export function TagSearchInput({ query, enabled, placeholder, onChange }: Props) {
+export function TagSearchInput({ query, enabled, placeholder, onChange, onSubmit }: Props) {
   const listId = useId();
   const [focused, setFocused] = useState(false);
   const [dismissed, setDismissed] = useState(false);
@@ -37,6 +38,7 @@ export function TagSearchInput({ query, enabled, placeholder, onChange }: Props)
     setDismissed(true);
     setActive(-1);
     onChange(value);
+    onSubmit(value);
   };
 
   return <div className="tag-search-input">
@@ -52,15 +54,17 @@ export function TagSearchInput({ query, enabled, placeholder, onChange }: Props)
       onKeyDown={event => {
         if (event.nativeEvent.isComposing) return;
         if (event.key === "Escape") { setDismissed(true); setActive(-1); }
+        if (event.key === "Enter") {
+          event.preventDefault();
+          select(active >= 0 && active < values.length ? values[active] : query);
+          return;
+        }
         if (!values.length) return;
         if (event.key === "ArrowDown" || event.key === "ArrowUp") {
           event.preventDefault();
           setActive(previous => event.key === "ArrowDown"
             ? (previous + 1) % values.length
             : (previous <= 0 ? values.length - 1 : previous - 1));
-        }
-        if (event.key === "Enter" && active >= 0 && active < values.length) {
-          event.preventDefault(); select(values[active]);
         }
       }} />
     {values.length > 0 && <div className="tag-suggestions" id={listId} role="listbox" aria-label="Tag suggestions">

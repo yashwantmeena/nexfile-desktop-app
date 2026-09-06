@@ -326,14 +326,8 @@ async fn consumes_an_image_into_the_mounted_system_drive_and_queues_processing()
             .expect("drive metadata should be readable"),
     )
     .expect("drive metadata should be valid JSON");
-    assert_eq!(
-        drive_metadata["fileTypeCounts"][0],
-        serde_json::json!({"fileType": "image", "count": 1})
-    );
-    assert_eq!(
-        drive_metadata["fileTypeCounts"][1],
-        serde_json::json!({"fileType": "video", "count": 0})
-    );
+    assert!(drive_metadata.get("fileTypeCounts").is_none());
+    assert_eq!(drive_metadata["fileCount"], 1);
 
     let verification_pool = SqlitePoolOptions::new()
         .connect_with(SqliteConnectOptions::new().filename(&database_path))

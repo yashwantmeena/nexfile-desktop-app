@@ -1,4 +1,3 @@
-use crate::mappers::file_mapper::normalize_counts;
 use std::path::Path;
 
 use crate::models::file_model::{FileCountIssue, FileCountSummary, FileTypeCount};
@@ -238,7 +237,6 @@ pub(crate) fn verify_file_counts(
             (drive.partition_name, data)
         })
         .collect::<Vec<_>>();
-    let mut counts = normalize_counts(Vec::new()).expect("empty counts are valid");
     let mut total = 0_i64;
     let mut issues = Vec::new();
 
@@ -262,11 +260,7 @@ pub(crate) fn verify_file_counts(
             let Some(next_total) = total.checked_add(saved.file_count) else {
                 return Some("File counts exceed the supported range.");
             };
-            let Some(next_counts) = add_counts(&counts, &saved.file_type_counts) else {
-                return Some("File counts exceed the supported range.");
-            };
             total = next_total;
-            counts = next_counts;
             None
         });
         if let Some(message) = message {
@@ -279,7 +273,7 @@ pub(crate) fn verify_file_counts(
     }
     let verified = issues.is_empty();
     FileCountSummary {
-        counts: verified.then_some(counts),
+        counts: None,
         total_count: verified.then_some(total),
         issues,
     }
@@ -289,18 +283,11 @@ pub(crate) fn validate_drive_counts(
     saved: &DriveMetadata,
     data: &DriveMetadata,
 ) -> Option<&'static str> {
-    if saved.file_type_counts != data.file_type_counts || saved.file_count != data.file_count {
+    if saved.file_count != data.file_count {
         return Some("File counts in SQLite and drive metadata do not match. Data may be out of sync or modified; no counts have been changed.");
     }
-    let values = saved
-        .file_type_counts
-        .iter()
-        .map(|entry| entry.count)
-        .collect::<Vec<_>>();
-    if values.iter().any(|value| *value < 0)
-        || values.into_iter().try_fold(0_i64, i64::checked_add) != Some(saved.file_count)
-    {
-        return Some("Category counts do not add up to the drive total. Counts may be incomplete or modified.");
+    if saved.file_count < 0 {
+        return Some("The drive's total file count cannot be negative.");
     }
     None
 }

@@ -204,6 +204,7 @@ fn serializes_and_deserializes_a_saved_drive() {
     assert!(value.get("deviceId").is_none());
     assert_eq!(value["appLimitBytes"], 100);
     assert_eq!(value["fileCount"], 25);
+    assert!(value.get("fileTypeCounts").is_none());
     assert_eq!(value["appUsedBytes"], 40);
     assert_eq!(value["priority"], 1);
     assert_eq!(value["isMounted"], true);

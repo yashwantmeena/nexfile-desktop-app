@@ -3,7 +3,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { ArrowUp, ChevronDown } from "lucide-react";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { AppToolbar, type SearchMode } from "@/components/layout/AppToolbar";
-import type { DateFilter } from "./types/filter";
 import type { AppNavigationItem } from "@/types/navigation";
 import { CategoryFilters } from "./components/CategoryFilters";
 import { FileGrid } from "./components/FileGrid";
@@ -20,8 +19,10 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
   const [homeCounts, setHomeCounts] = useState<HomeCounts | null>(null);
   const [countsError, setCountsError] = useState<string | null>(null);
   const [activeCategory,setActiveCategory]=useState("All");
-  const [query,setQuery]=useState(""); const [tags,setTags]=useState<string[]>([]); const [dateFilter,setDateFilter]=useState<DateFilter>("any");
+  const [query,setQuery]=useState(""); const [tags,setTags]=useState<string[]>([]);
+  const [draftQuery, setDraftQuery] = useState("");
   const [searchMode, setSearchMode] = useState<SearchMode>("tags");
+  const tagsKey = JSON.stringify(tags);
   const fetched = useFiles(activeCategory === "All" ? undefined : activeCategory.toLowerCase(), query, searchMode, tags);
   const resultsPaneRef = useRef<HTMLDivElement>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
@@ -39,30 +40,26 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
   }, [nextOffset, loading, error, loadMore]);
   useEffect(() => {
     let cancelled = false;
-    let pending = false;
+    setHomeCounts(null);
+    setCountsError(null);
     const load = async () => {
-      if (pending) return;
-      pending = true;
-      setCountsError(null);
       try {
-        const result = await invoke<HomeCounts>("get_file_count");
+        const result = await invoke<HomeCounts>("get_file_count", { query, searchMode, tags: JSON.parse(tagsKey) });
         if (!cancelled) setHomeCounts(result);
       } catch {
-        if (!cancelled) setCountsError("Unable to verify file counts. Please try again.");
-      } finally {
-        pending = false;
-        // Loading state is represented by the category placeholders.
+        if (!cancelled) setCountsError("Unable to count indexed files. Please try again.");
       }
     };
-    void load();
+    const timer = window.setTimeout(() => void load(), query.trim() ? 150 : 0);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
-  }, []);
+  }, [query, searchMode, tagsKey]);
   const counts = homeCounts?.counts;
   const categories = [
     { label: "All", count: homeCounts?.totalCount },
-    ...(counts ?? []).map(({ fileType, count }) => ({ label: fileType, count })),
+    ...["image", "video", "audio", "document", "archive", "other"].map(fileType => ({ label: fileType, count: counts?.find(entry => entry.fileType === fileType)?.count })),
   ].map(({ label, count }) => ({ label, count: count == null ? "—" : count.toLocaleString() }));
   const [previewIndex,setPreviewIndex]=useState<number|null>(null);
   const loadedFiles = useMemo<DashboardFile[]>(() => fetched.files.map(file => ({
@@ -77,12 +74,15 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
     <div className="nexfile-app">
       <AppSidebar activeItem={activeNavigation} onActiveItemChange={onNavigationChange}/>
       <main className="nf-main search-main">
-        <AppToolbar query={query} dateFilter={dateFilter} onQueryChange={setQuery} onDateFilterChange={setDateFilter} searchMode={searchMode} onSearchModeChange={setSearchMode}/>
-        <FilterBar tags={tags} dateFilterLabel={dateFilter === "any" ? undefined : ({today:"Today","7days":"Last 7 days","30days":"Last 30 days",year:"This year"} as const)[dateFilter]} onTagsChange={setTags} onClearDateFilter={()=>setDateFilter("any")} onReset={()=>{setTags([]);setDateFilter("any");}}/>
+        <AppToolbar query={draftQuery}
+          onQueryChange={value => { setDraftQuery(value); if (searchMode === "name") setQuery(value); }}
+          onQuerySubmit={value => { setDraftQuery(value); setQuery(value.trim()); }}
+          searchMode={searchMode} onSearchModeChange={mode => { setSearchMode(mode); setDraftQuery(query); }}/>
+        <FilterBar tags={tags} onTagsChange={setTags} onReset={()=>setTags([])}/>
         <section className="content-shell">
           <div className="results-pane" ref={resultsPaneRef} tabIndex={-1} onScroll={event=>setShowBackToTop(event.currentTarget.scrollTop>200)}>
             {(countsError || !!homeCounts?.issues.length) && <div className="count-warning" role="alert">
-              <strong>File counts could not be verified</strong>
+              <strong>Indexed file counts are unavailable</strong>
               {countsError && <p>{countsError}</p>}
               {homeCounts?.issues.map(issue => <p key={issue.driveId}><strong>{issue.driveName || issue.driveId}:</strong> {issue.message}</p>)}
             </div>}

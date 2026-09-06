@@ -5,7 +5,9 @@ use std::sync::{Arc, Mutex};
 use tantivy::collector::{DocSetCollector, TopDocs};
 use tantivy::directory::MmapDirectory;
 use tantivy::indexer::{IndexWriter, IndexWriterOptions};
-use tantivy::query::{BooleanQuery, FuzzyTermQuery, Occur, Query, RegexQuery, TermQuery};
+use tantivy::query::{
+    AllQuery, BooleanQuery, FuzzyTermQuery, Occur, Query, RegexQuery, TermQuery,
+};
 use tantivy::schema::{Field, Schema, FAST, INDEXED, STORED, STRING};
 use tantivy::schema::{IndexRecordOption, Value};
 use tantivy::{
@@ -241,6 +243,12 @@ impl TantivyIndexingRepository {
         } else {
             document.add_text(self.fields.drive_id, drive);
             document.add_text(self.fields.file_id, file);
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(AppError::system_time)?
+                .as_millis() as u64;
+            document.add_u64(self.fields.created_at_ms, now);
+            document.add_u64(self.fields.updated_at_ms, now);
         }
         document.add_text(name_field, name.trim().to_lowercase());
         writer
@@ -283,7 +291,7 @@ impl TantivyIndexingRepository {
             .transpose()
     }
 
-    fn search_names(&self, query: &str) -> AppResult<HashSet<(String, String)>> {
+    fn name_query(&self, query: &str) -> AppResult<Box<dyn Query>> {
         if query.len() > 256 {
             return Err(AppError::validation("Search text is too long."));
         }
@@ -297,7 +305,9 @@ impl TantivyIndexingRepository {
             pattern.push(character);
         }
         pattern.push_str(".*");
-        self.matching_files(&RegexQuery::from_pattern(&pattern, field).map_err(AppError::internal)?)
+        Ok(Box::new(
+            RegexQuery::from_pattern(&pattern, field).map_err(AppError::internal)?,
+        ))
     }
 
     pub fn search_files(
@@ -306,21 +316,87 @@ impl TantivyIndexingRepository {
         mode: &str,
         tags: &[String],
     ) -> AppResult<HashSet<(String, String)>> {
-        match mode {
-            "tags" => self.search_tags(query, tags),
-            "name" => {
-                if query.trim().is_empty() {
-                    return self.search_tags("", tags);
-                }
-                let mut files = self.search_names(query)?;
-                if !tags.is_empty() {
-                    let tagged = self.search_tags("", tags)?;
-                    files.retain(|file| tagged.contains(file));
-                }
-                Ok(files)
+        self.matching_files(self.filtered_query(query, mode, tags)?.as_ref())
+    }
+
+    fn filtered_query(
+        &self,
+        query: &str,
+        mode: &str,
+        tags: &[String],
+    ) -> AppResult<Box<dyn Query>> {
+        let base = match mode {
+            "tags" => self.tag_query(query, tags)?,
+            "name" if query.trim().is_empty() => self.tag_query("", tags)?,
+            "name" => Box::new(BooleanQuery::new(vec![
+                (Occur::Must, self.name_query(query)?),
+                (Occur::Must, self.tag_query("", tags)?),
+            ])),
+            _ => return Err(AppError::validation("Unknown search mode.")),
+        };
+        Ok(base)
+    }
+
+    pub fn indexed_results(
+        &self,
+        query: &str,
+        mode: &str,
+        tags: &[String],
+    ) -> AppResult<(
+        HashSet<(String, String)>,
+        crate::models::file_model::FileCountSummary,
+    )> {
+        use crate::models::file_model::{FileCountSummary, FileTypeCount};
+        use crate::types::file_type::FileType;
+        let query = self.filtered_query(query, mode, tags)?;
+        let searcher = self.reader.searcher();
+        let hits = searcher
+            .search(query.as_ref(), &DocSetCollector)
+            .map_err(AppError::internal)?;
+        let mut files = HashSet::new();
+        let mut counts = FileType::ALL.map(|file_type| FileTypeCount {
+            file_type,
+            count: 0,
+        });
+        for address in hits {
+            let doc: TantivyDocument = searcher.doc(address).map_err(AppError::internal)?;
+            let text = |field| doc.get_first(field).and_then(|value| value.as_str());
+            let (Some(drive), Some(file)) = (text(self.fields.drive_id), text(self.fields.file_id))
+            else {
+                continue;
+            };
+            if !files.insert((drive.to_owned(), file.to_owned())) {
+                continue;
             }
-            _ => Err(AppError::validation("Unknown search mode.")),
+            let media = text(self.fields.media_type).unwrap_or_default();
+            let file_type = match media.split('/').next().unwrap_or_default() {
+                "image" => FileType::Image,
+                "video" => FileType::Video,
+                "audio" => FileType::Audio,
+                "document" => FileType::Document,
+                "archive" => FileType::Archive,
+                _ => self
+                    .fields
+                    .name
+                    .and_then(text)
+                    .map(crate::mappers::file_mapper::file_type_from_path)
+                    .unwrap_or(FileType::Other),
+            };
+            counts
+                .iter_mut()
+                .find(|count| count.file_type == file_type)
+                .unwrap()
+                .count += 1;
         }
+        let total_count = Some(counts.iter().map(|entry| entry.count).sum());
+        Ok((
+            files,
+            FileCountSummary {
+                counts: Some(counts.to_vec()),
+                total_count,
+                issues: Vec::new(),
+            },
+        ))
     }
 
     pub fn search_tags(
@@ -328,6 +404,10 @@ impl TantivyIndexingRepository {
         query: &str,
         tags: &[String],
     ) -> AppResult<HashSet<(String, String)>> {
+        self.matching_files(self.tag_query(query, tags)?.as_ref())
+    }
+
+    fn tag_query(&self, query: &str, tags: &[String]) -> AppResult<Box<dyn Query>> {
         if query.len() > 256 || tags.len() > 32 || tags.iter().any(|tag| tag.len() > 256) {
             return Err(AppError::validation(
                 "Search text or tag filters exceed the supported limit.",
@@ -392,9 +472,9 @@ impl TantivyIndexingRepository {
             ));
         }
         if clauses.is_empty() {
-            return Ok(HashSet::new());
+            return Ok(Box::new(AllQuery));
         }
-        self.matching_files(&BooleanQuery::new(clauses))
+        Ok(Box::new(BooleanQuery::new(clauses)))
     }
 
     fn matching_files(&self, query: &dyn Query) -> AppResult<HashSet<(String, String)>> {

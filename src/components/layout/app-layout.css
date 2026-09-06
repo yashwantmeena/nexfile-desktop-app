@@ -34,6 +34,9 @@
 .global-search input { min-width:0; flex:1; border:0; outline:0; color:#182133; background:transparent; font-size:14px; line-height:20px; font-weight:400; }
 .global-search input:focus-visible { outline:none; }
 .global-search input::placeholder { color:#788496; }
+.search-submit { display:grid; place-items:center; flex:none; width:28px; height:28px; padding:4px; border:0; border-radius:6px; background:transparent; cursor:pointer; }
+.search-submit:hover { background:#e8edf5; }
+.search-submit:focus-visible { outline:2px solid #2563eb; outline-offset:2px; }
 .tag-search-input { position:relative; display:flex; flex:1; min-width:0; }
 .tag-search-input input { width:100%; }
 .tag-suggestions { position:absolute; top:calc(100% + 16px); left:-10px; right:-10px; z-index:30; padding:6px; border:1px solid #dce2ea; border-radius:12px; background:#fff; box-shadow:0 16px 40px rgba(15,23,42,.14); }

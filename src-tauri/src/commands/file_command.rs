@@ -13,10 +13,24 @@ pub async fn suggest_tags(state: State<'_, AppState>, prefix: String) -> AppResu
 }
 
 #[tauri::command]
-pub async fn get_file_count(state: State<'_, AppState>) -> AppResult<FileCountSummary> {
-    // Do not inspect between an import's SQLite commit and metadata-file write.
-    let _guard = state.imports.metadata_lock().lock().await;
-    state.storage.get_file_count().await
+pub async fn get_file_count(
+    state: State<'_, AppState>,
+    query: Option<String>,
+    search_mode: Option<String>,
+    tags: Option<Vec<String>>,
+) -> AppResult<FileCountSummary> {
+    let index = state.search.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        index
+            .indexed_results(
+                &query.unwrap_or_default(),
+                &search_mode.unwrap_or_else(|| "tags".into()),
+                &tags.unwrap_or_default(),
+            )
+            .map(|(_, counts)| counts)
+    })
+    .await
+    .map_err(crate::error::AppError::internal)?
 }
 
 #[tauri::command]
@@ -37,7 +51,7 @@ pub async fn fetch_files(
         .into_iter()
         .filter(|tag| !tag.trim().is_empty())
         .collect::<Vec<_>>();
-    let page = if !query.trim().is_empty() || !tags.is_empty() {
+    let page = {
         state
             .storage
             .search_files(
@@ -49,11 +63,6 @@ pub async fn fetch_files(
                 limit.unwrap_or(60),
                 media_type,
             )
-            .await?
-    } else {
-        state
-            .storage
-            .fetch_files(offset.unwrap_or(0), limit.unwrap_or(60), media_type)
             .await?
     };
     // Grant access only to the image files returned in this page.

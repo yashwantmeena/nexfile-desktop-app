@@ -9,6 +9,111 @@ fn temporary_directory(test_name: &str) -> PathBuf {
 }
 
 #[test]
+fn counts_indexed_matches_across_types_search_and_tags() {
+    use nexfile_desktop_app_lib::{FileType, IndexDocument};
+    let root = temporary_directory("filtered-counts");
+    let repository = TantivyIndexingRepository::open(&root).unwrap();
+    assert_eq!(
+        repository
+            .indexed_results("", "tags", &[])
+            .unwrap()
+            .1
+            .total_count,
+        Some(0)
+    );
+    let mut source = IndexDocument {
+        name: "Beach.jpg".into(),
+        file_id: "photo".into(),
+        drive_id: "drive".into(),
+        created_at_ms: 100,
+        updated_at_ms: 100,
+        media_type: Some("image/jpeg".into()),
+        size_bytes: 1,
+        latitude: None,
+        longitude: None,
+        object_labels: vec!["beach".into()],
+        search_keywords: vec!["beach".into()],
+        secondary_labels: vec![],
+        categories: vec!["travel".into()],
+    };
+    repository.upsert(source.clone()).unwrap();
+    source.file_id = "report".into();
+    source.name = "Beach report.pdf".into();
+    source.media_type = Some("application/pdf".into());
+    source.updated_at_ms = 200;
+    repository.upsert(source.clone()).unwrap();
+    repository
+        .index_filename("drive", "song", "Music.mp3")
+        .unwrap();
+    let (files, summary) = repository.indexed_results("", "tags", &[]).unwrap();
+    assert_eq!(files.len(), 3);
+    assert_eq!(summary.total_count, Some(3));
+    let counts = summary.counts.unwrap();
+    assert_eq!(counts.len(), 6);
+    for kind in [FileType::Image, FileType::Document, FileType::Audio] {
+        assert_eq!(
+            counts
+                .iter()
+                .find(|entry| entry.file_type == kind)
+                .unwrap()
+                .count,
+            1
+        );
+    }
+    assert_eq!(
+        repository
+            .indexed_results("bea", "tags", &[])
+            .unwrap()
+            .1
+            .total_count,
+        Some(2)
+    );
+    assert_eq!(
+        repository
+            .indexed_results("bea", "tags", &["travel".into()])
+            .unwrap()
+            .1
+            .total_count,
+        Some(2)
+    );
+    assert_eq!(
+        repository
+            .indexed_results("REPORT.PDF", "name", &["beach".into()])
+            .unwrap()
+            .1
+            .total_count,
+        Some(1)
+    );
+    assert_eq!(
+        repository
+            .indexed_results("REPORT.PDF", "name", &[])
+            .unwrap()
+            .1
+            .total_count,
+        Some(1)
+    );
+    assert_eq!(
+        repository
+            .indexed_results("bea", "tags", &["missing".into()])
+            .unwrap()
+            .1
+            .total_count,
+        Some(0)
+    );
+    repository.upsert(source).unwrap();
+    assert_eq!(
+        repository
+            .indexed_results("", "tags", &[])
+            .unwrap()
+            .1
+            .total_count,
+        Some(3)
+    );
+    drop(repository);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn suggests_unique_live_prefix_tags_with_limits_and_refresh() {
     use nexfile_desktop_app_lib::IndexDocument;
     let root = temporary_directory("tag-suggestions");

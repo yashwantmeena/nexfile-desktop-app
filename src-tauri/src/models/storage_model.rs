@@ -20,7 +20,8 @@ pub struct DriveMetadata {
     pub app_limit_bytes: Option<i64>,
     pub file_count: i64,
     #[sqlx(skip)]
-    #[serde(deserialize_with = "crate::mappers::file_mapper::deserialize_file_type_counts")]
+    // Category counters belong to SQLite/storage UI, not the on-drive verification file.
+    #[serde(skip, default = "crate::mappers::file_mapper::empty_file_type_counts")]
     pub file_type_counts: Vec<FileTypeCount>,
     pub app_used_bytes: i64,
     #[serde(default)]

@@ -28,7 +28,7 @@ impl StorageService {
         let snapshots = self.repository.list().await?;
         let root = self.system_metadata_root.clone();
         tauri::async_runtime::spawn_blocking(move || {
-            let matches = index.search_files(&query, &mode, &tags)?;
+            let (matches, _) = index.indexed_results(&query, &mode, &tags)?;
             if matches.is_empty() {
                 return Ok(crate::models::file_model::FilePage {
                     files: Vec::new(), total_count: 0, next_offset: None, issues: Vec::new(),
@@ -204,7 +204,16 @@ impl StorageService {
             .unwrap_or(0)
             .saturating_add(1);
         let was_saved = saved.is_some();
-        let metadata = metadata_for_mount(&drive, saved, metadata, next_priority);
+        let mut metadata = metadata_for_mount(&drive, saved, metadata, next_priority);
+        // Recover local category counters from managed files when there is no matching
+        // database snapshot; they are deliberately absent from drive_metadata.json.
+        if metadata.file_type_counts.iter().try_fold(0_i64, |sum, entry| sum.checked_add(entry.count)) != Some(metadata.file_count) {
+            let (file_count, bytes, counts) = calculate_managed_statistics(
+                &drive_storage_root(&drive, &self.system_metadata_root).join(IMPORTED_FILES_DIRECTORY))?;
+            metadata.file_count = file_count;
+            metadata.app_used_bytes = bytes;
+            metadata.file_type_counts = counts;
+        }
         let metadata_file_path = metadata_path(&drive, &self.system_metadata_root);
 
         if was_saved {
@@ -391,7 +400,6 @@ fn metadata_for_mount(
             .is_some_and(|(saved, metadata)| {
                 saved.drive_id == metadata.drive_id
                     && saved.file_count == metadata.file_count
-                    && saved.file_type_counts == metadata.file_type_counts
                     && saved.app_used_bytes == metadata.app_used_bytes
             });
 

@@ -1,14 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { CalendarDays, Check, ChevronDown, FileText, FileUp, FolderUp, SlidersHorizontal, Sparkles, Tag } from "lucide-react";
+import { Check, ChevronDown, FileText, FileUp, FolderUp, Sparkles, Tag } from "lucide-react";
 import { getImportErrorMessage, selectAndImportFiles, selectAndImportFolder } from "@/features/import/services/import_service";
-import type { DateFilter } from "@/features/dashboard/types/filter";
 import { TagSearchInput } from "./TagSearchInput";
 
 interface AppToolbarProps {
   query: string;
-  dateFilter: DateFilter;
   onQueryChange: (value: string) => void;
-  onDateFilterChange: (value: DateFilter) => void;
+  onQuerySubmit: (value: string) => void;
   searchMode: SearchMode;
   onSearchModeChange: (value: SearchMode) => void;
 }
@@ -21,35 +19,23 @@ const searchModes = [
   { value: "caption", label: "Caption", description: "Vector search", icon: Sparkles, disabled: true },
 ] as const;
 
-const dateFilters: { value:DateFilter; label:string }[] = [
-  { value: "any", label: "Any time" },
-  { value: "today", label: "Today" },
-  { value: "7days", label: "Last 7 days" },
-  { value: "30days", label: "Last 30 days" },
-  { value: "year", label: "This year" },
-];
-
-export function AppToolbar({ query, dateFilter, onQueryChange, onDateFilterChange, searchMode, onSearchModeChange }: AppToolbarProps) {
+export function AppToolbar({ query, onQueryChange, onQuerySubmit, searchMode, onSearchModeChange }: AppToolbarProps) {
   const [searchMenuOpen, setSearchMenuOpen] = useState(false);
-  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   const [importMenuOpen, setImportMenuOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState<string>();
   const searchModeRef = useRef<HTMLDivElement>(null);
-  const searchFilterRef = useRef<HTMLDivElement>(null);
   const importMenuRef = useRef<HTMLDivElement>(null);
   const placeholder = searchMode === "tags" ? "Search files by tag..." : "Search files by name...";
 
   useEffect(() => {
     const closeOnOutsideClick = (event: PointerEvent) => {
       if (!searchModeRef.current?.contains(event.target as Node)) setSearchMenuOpen(false);
-      if (!searchFilterRef.current?.contains(event.target as Node)) setFilterMenuOpen(false);
       if (!importMenuRef.current?.contains(event.target as Node)) setImportMenuOpen(false);
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setSearchMenuOpen(false);
-        setFilterMenuOpen(false);
         setImportMenuOpen(false);
       }
     };
@@ -79,7 +65,7 @@ export function AppToolbar({ query, dateFilter, onQueryChange, onDateFilterChang
     <header className="nf-toolbar">
       <div className="global-search">
         <div className={`search-mode${searchMenuOpen ? " open" : ""}`} ref={searchModeRef}>
-          <button className="search-mode-trigger" type="button" aria-haspopup="listbox" aria-expanded={searchMenuOpen} onClick={() => { setFilterMenuOpen(false); setSearchMenuOpen((open) => !open); }}>
+          <button className="search-mode-trigger" type="button" aria-haspopup="listbox" aria-expanded={searchMenuOpen} onClick={() => { setSearchMenuOpen((open) => !open); }}>
             <span>{searchMode === "name" ? "Name" : "Tags"}</span>
             <ChevronDown />
           </button>
@@ -107,23 +93,8 @@ export function AppToolbar({ query, dateFilter, onQueryChange, onDateFilterChang
           </div>}
         </div>
         <span className="search-divider" />
-        <SearchIcon />
-        <TagSearchInput query={query} enabled={searchMode === "tags" && !searchMenuOpen && !filterMenuOpen} onChange={onQueryChange} placeholder={placeholder} />
-        <div className={`search-filter-wrap${filterMenuOpen ? " open" : ""}`} ref={searchFilterRef}>
-          <button className="search-filter-button" type="button" aria-label="Open search filters" aria-haspopup="dialog" aria-expanded={filterMenuOpen} title="Search filters" onClick={() => { setSearchMenuOpen(false); setFilterMenuOpen((open) => !open); }}><SlidersHorizontal /></button>
-          {filterMenuOpen && <div className="search-filters-menu" role="dialog" aria-label="Search filters">
-            <header className="filter-menu-header"><span><SlidersHorizontal /></span><div><strong>Search filters</strong><small>Narrow your results</small></div></header>
-            <div className="filter-menu-content">
-              <section className="filter-group">
-                <header><span><CalendarDays /></span><div><strong>Date modified</strong><small>Choose when files were updated</small></div></header>
-                <div className="filter-option-grid" role="radiogroup" aria-label="Date modified">
-                  {dateFilters.map(({ value, label }) => <button key={value} type="button" role="radio" aria-checked={dateFilter === value} className={dateFilter === value ? "selected" : ""} onClick={() => onDateFilterChange(value)}><span className="date-radio"><i /></span>{label}{dateFilter === value && <Check />}</button>)}
-                </div>
-              </section>
-            </div>
-            <footer className="filter-menu-footer"><button type="button" className="filter-clear" disabled={dateFilter === "any"} onClick={() => onDateFilterChange("any")}>Clear</button><button type="button" className="filter-done" onClick={() => setFilterMenuOpen(false)}>Done</button></footer>
-          </div>}
-        </div>
+        <button className="search-submit" type="button" aria-label="Search files" title="Search" onClick={() => onQuerySubmit(query)}><SearchIcon /></button>
+        <TagSearchInput query={query} enabled={searchMode === "tags" && !searchMenuOpen} onChange={onQueryChange} onSubmit={onQuerySubmit} placeholder={placeholder} />
       </div>
       <div className={`import-menu${importMenuOpen ? " open" : ""}`} ref={importMenuRef}>
         <button className="import-files-button" type="button" aria-haspopup="menu" aria-expanded={importMenuOpen} disabled={isImporting} onClick={() => setImportMenuOpen((open) => !open)}>

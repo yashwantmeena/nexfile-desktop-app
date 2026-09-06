@@ -18,20 +18,20 @@ fn managed_usage_excludes_generated_sidecars_but_counts_imported_json() {
         .expect("imported JSON should be written");
     std::fs::write(directory.join("document.txt"), [8_u8, 9]).expect("document should be written");
     std::fs::write(directory.join("document.txt.json"), [10_u8])
-        .expect("similarly named imported JSON should be written");
+        .expect("document sidecar should be written");
     std::fs::write(directory.join(".pending.importing"), [0_u8; 30])
         .expect("temporary file should be written");
 
     let (files, bytes, counts) =
         calculate_managed_statistics(&directory).expect("usage should be calculated");
-    assert_eq!((files, bytes), (4, 10));
+    assert_eq!((files, bytes), (3, 9));
     assert_eq!(counts.iter().map(|entry| entry.count).sum::<i64>(), files);
 
     std::fs::remove_dir_all(&directory).expect("test directory should be removed");
 }
 
 #[test]
-fn writes_and_reads_file_type_counts_in_drive_metadata() {
+fn writes_only_total_file_count_in_drive_metadata() {
     let directory =
         std::env::temp_dir().join(format!("nexfile-metadata-counts-{}", uuid::Uuid::new_v4()));
     let path = directory.join("drive_metadata.json");
@@ -84,15 +84,14 @@ fn writes_and_reads_file_type_counts_in_drive_metadata() {
     metadata.file_type_counts = counts.clone();
     write_metadata(&path, &metadata).expect("drive metadata should be written");
 
-    assert_eq!(read_metadata(&path).unwrap(), metadata);
+    let read = read_metadata(&path).unwrap();
+    assert_eq!(read.file_count, metadata.file_count);
+    assert!(read.file_type_counts.iter().all(|entry| entry.count == 0));
     let value = serde_json::from_slice::<serde_json::Value>(
         &std::fs::read(&path).expect("drive metadata should be readable"),
     )
     .expect("drive metadata should be valid JSON");
-    assert_eq!(
-        value["fileTypeCounts"][0],
-        serde_json::json!({"fileType": "image", "count": 1})
-    );
+    assert!(value.get("fileTypeCounts").is_none());
     assert_eq!(value["fileCount"], 3);
 
     std::fs::remove_dir_all(directory).expect("test directory should be removed");

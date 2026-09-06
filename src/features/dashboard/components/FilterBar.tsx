@@ -1,9 +1,9 @@
-import { CalendarDays, ListFilter, RotateCcw, X } from "lucide-react";
+import { ListFilter, RotateCcw, X } from "lucide-react";
 
-interface FilterBarProps { tags:string[]; dateFilterLabel?:string; onTagsChange:(tags:string[])=>void; onClearDateFilter:()=>void; onReset:()=>void; }
+interface FilterBarProps { tags:string[]; onTagsChange:(tags:string[])=>void; onReset:()=>void; }
 
-export function FilterBar({ tags, dateFilterLabel, onTagsChange, onClearDateFilter, onReset }:FilterBarProps) {
-  const appliedCount=tags.length+(dateFilterLabel?1:0);
+export function FilterBar({ tags, onTagsChange, onReset }:FilterBarProps) {
+  const appliedCount=tags.length;
   return (
     <section className="match-row" aria-label="Active filters">
       <div className="filter-heading">
@@ -12,7 +12,6 @@ export function FilterBar({ tags, dateFilterLabel, onTagsChange, onClearDateFilt
       </div>
       <div className="filter-scroll">
         {tags.map(tag=><span className="filter-tag" key={tag}>#{tag}<button aria-label={`Remove ${tag} filter`} onClick={()=>onTagsChange(tags.filter(item=>item!==tag))}><X /></button></span>)}
-        {dateFilterLabel&&<span className="filter-tag date-filter-tag"><CalendarDays />{dateFilterLabel}<button aria-label="Remove date filter" onClick={onClearDateFilter}><X /></button></span>}
       </div>
       <button className="clear-all" disabled={!appliedCount} onClick={onReset}><RotateCcw />Reset</button>
     </section>

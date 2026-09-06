@@ -70,7 +70,7 @@ async fn loads_per_drive_counts_from_one_database_snapshot() {
 }
 
 #[test]
-fn rejects_category_mismatch_even_when_totals_match() {
+fn accepts_matching_totals_regardless_of_category_counts() {
     let mut data = metadata();
     data.file_type_counts
         .iter_mut()
@@ -82,15 +82,15 @@ fn rejects_category_mismatch_even_when_totals_match() {
         .find(|entry| entry.file_type == FileType::Video)
         .unwrap()
         .count = 1;
-    assert!(validate_drive_counts(&snapshot(), &data).is_some());
+    assert!(validate_drive_counts(&snapshot(), &data).is_none());
 }
 
 #[test]
-fn rejects_matching_but_incomplete_category_counts() {
+fn rejects_total_count_mismatch() {
     let mut saved = snapshot();
     let mut data = metadata();
     saved.file_count = 4;
-    data.file_count = 4;
+    data.file_count = 3;
     assert!(validate_drive_counts(&saved, &data).is_some());
 }
 
@@ -105,7 +105,7 @@ fn unavailable_drive_hides_counts_instead_of_claiming_tampering() {
 #[test]
 fn no_saved_drives_returns_verified_zero() {
     let result = verify_file_counts(vec![], vec![], Path::new("unused"));
-    assert_eq!(result.counts, Some(normalize_counts(Vec::new()).unwrap()));
+    assert!(result.counts.is_none());
     assert_eq!(result.total_count, Some(0));
     assert!(result.issues.is_empty());
 }
@@ -275,23 +275,20 @@ fn reads_drive_metadata_without_modifying_it() {
     };
     let result = verify_file_counts(vec![snapshot()], vec![drive.clone()], &root);
     assert_eq!(result.total_count, Some(3));
-    assert_eq!(
-        result
-            .counts
-            .unwrap()
-            .iter()
-            .find(|entry| entry.file_type == FileType::Image)
-            .unwrap()
-            .count,
-        2
-    );
+    assert!(result.counts.is_none());
     assert_eq!(std::fs::read(&path).unwrap(), bytes);
 
-    // Old/missing counters must not be silently treated as valid zero counts.
+    // Per-type counters are optional legacy data, not part of verification.
     value.as_object_mut().unwrap().remove("fileTypeCounts");
     std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
-    let result = verify_file_counts(vec![snapshot()], vec![drive], &root);
-    assert!(result.counts.is_none());
-    assert_eq!(result.issues.len(), 1);
+    let result = verify_file_counts(vec![snapshot()], vec![drive.clone()], &root);
+    assert_eq!(result.total_count, Some(3));
+    assert!(result.issues.is_empty());
+    value["fileTypeCounts"] = serde_json::json!("ignored obsolete field");
+    std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+    assert_eq!(verify_file_counts(vec![snapshot()], vec![drive.clone()], &root).total_count, Some(3));
+    value["fileCount"] = serde_json::json!(4);
+    std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+    assert!(verify_file_counts(vec![snapshot()], vec![drive], &root).total_count.is_none());
     std::fs::remove_dir_all(root).unwrap();
 }
