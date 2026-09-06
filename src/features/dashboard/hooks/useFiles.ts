@@ -38,18 +38,12 @@ export function useFiles(mediaType?: string) {
     }
   }, [mediaType]);
   useEffect(() => {
-    const initialLoad = () => { void load(0, true, true); };
-    const silentRefresh = () => {
-      if (document.visibilityState === "visible") void load(0, true, false);
-    };
-    initialLoad();
-    window.addEventListener("focus", silentRefresh);
-    document.addEventListener("visibilitychange", silentRefresh);
+    // Returning to the app must not replace loaded pages with page one:
+    // shrinking the virtual grid would clamp the user's scroll position.
+    void load(0, true, true);
     return () => {
       generation.current += 1;
       pending.current = false;
-      window.removeEventListener("focus", silentRefresh);
-      document.removeEventListener("visibilitychange", silentRefresh);
     };
   }, [load]);
   const loadMore = useCallback(() => {

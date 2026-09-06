@@ -19,7 +19,7 @@ export function FileCard({ file, previewUrl, onOpen }:FileCardProps) {
   useEffect(() => setPreviewFailed(false), [previewUrl]);
   const showPreview = Boolean(previewUrl) && !previewFailed;
   return <article className={`file-card visual-file-card ${showPreview?"visual-only-file-card":"named-file-card"}`} role="button" tabIndex={0} aria-label={`Preview ${file.name}`} onClick={onOpen} onKeyDown={event=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();onOpen();}}}>
-    <div className="variant-artwork"><FileArtwork file={{...file, image:previewUrl}} showPreview={showPreview} onPreviewError={()=>setPreviewFailed(true)}/><span className={`card-extension-badge ${file.kind.toLowerCase()}`}>{file.kind}</span></div>
+    <div className="variant-artwork"><FileArtwork file={{...file, image:previewUrl}} showPreview={showPreview} onPreviewError={()=>setPreviewFailed(true)}/></div>
     {!showPreview && <div className="fallback-file-details">
       <strong title={file.name}>{file.name}</strong>
     </div>}

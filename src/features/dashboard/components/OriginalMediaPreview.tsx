@@ -1,11 +1,11 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { Maximize2, Minus, Plus } from "lucide-react";
 
-interface OriginalImagePreviewProps { src: string; name: string; }
+interface OriginalMediaPreviewProps { src: string; name: string; type: "image" | "video"; }
 
 /** Scale the original's intrinsic dimensions, rather than scaling an already
  * fitted CSS box. Null zoom follows the available viewport as it resizes. */
-export function OriginalImagePreview({ src, name }: OriginalImagePreviewProps) {
+export function OriginalMediaPreview({ src, name, type }: OriginalMediaPreviewProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const [natural, setNatural] = useState({ width: 0, height: 0 });
@@ -37,22 +37,27 @@ export function OriginalImagePreview({ src, name }: OriginalImagePreviewProps) {
     element.scrollTop = Math.max(0, (height - element.clientHeight) / 2);
   }, [width, height]);
   return <>
-    <div className="preview-image-viewport" ref={viewportRef}>
-      {failed ? <div className="preview-fallback" role="status">Unable to display this image.</div> :
-        <div className="preview-image-surface" style={{ width: Math.max(viewport.width, width), height: Math.max(viewport.height, height) }}>
-          <img src={src} alt={name} decoding="async" draggable={false}
-            onLoad={event => setNatural({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
+    <div className="preview-media-viewport" ref={viewportRef}>
+      {failed ? <div className="preview-fallback" role="status">Unable to display this {type}.</div> :
+        <div className="preview-media-surface" style={{ width: Math.max(viewport.width, width), height: Math.max(viewport.height, height) }}>
+          {type === "video" ? <video src={src} aria-label={name} controls autoPlay playsInline
+            onLoadedMetadata={event => setNatural({ width: event.currentTarget.videoWidth, height: event.currentTarget.videoHeight })}
+            onResize={event => setNatural({ width: event.currentTarget.videoWidth, height: event.currentTarget.videoHeight })}
             onError={() => setFailed(true)}
             style={{ width: width || 1, height: height || 1, visibility: natural.width ? "visible" : "hidden" }}/>
+          : <img src={src} alt={name} decoding="async" draggable={false}
+            onLoad={event => setNatural({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
+            onError={() => setFailed(true)}
+            style={{ width: width || 1, height: height || 1, visibility: natural.width ? "visible" : "hidden" }}/>}
         </div>}
     </div>
     {!failed && <div className="preview-zoom">
       <button aria-label="Zoom out" disabled={!natural.width} onClick={() => setZoom(Math.max(fit / 4, scale / 1.25))}><Minus/></button>
-      <strong title="Scale relative to the original image dimensions">{natural.width ? `${Number((scale * 100).toFixed(1))}%` : "…"}</strong>
+      <strong title="Scale relative to the original dimensions">{natural.width ? `${Number((scale * 100).toFixed(1))}%` : "…"}</strong>
       <button aria-label="Zoom in" disabled={!natural.width} onClick={() => setZoom(Math.min(4, scale * 1.25))}><Plus/></button>
       <i/>
       <button aria-label="Actual size (100%)" title="Actual size (100%)" disabled={!natural.width} onClick={() => setZoom(1)}>1:1</button>
-      <button aria-label="Fit to screen" title="Fit complete image" onClick={() => setZoom(null)}><Maximize2/></button>
+      <button aria-label="Fit to screen" title="Fit complete media" onClick={() => setZoom(null)}><Maximize2/></button>
     </div>}
   </>;
 }

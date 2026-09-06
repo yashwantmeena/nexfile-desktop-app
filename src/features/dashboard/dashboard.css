@@ -274,8 +274,23 @@
 @media(max-width:680px){.file-grid.virtual-file-grid{--file-row-height:180px}}
 
 /* Reserve room for preview controls so fit mode exposes every image edge. */
-.preview-image-viewport{position:absolute;inset:64px 58px 78px;overflow:auto;overscroll-behavior:contain}
-.preview-image-surface{display:grid;place-items:center}
-.preview-image-surface>img{display:block;max-width:none;max-height:none;object-fit:contain}
+.preview-media-viewport{position:absolute;inset:64px 58px 78px;overflow:auto;overscroll-behavior:contain}
+.preview-media-surface{display:grid;place-items:center}
+.preview-media-surface>img,.preview-media-surface>video{display:block;max-width:none;max-height:none;object-fit:contain}
 .preview-zoom button:disabled{opacity:.4;cursor:default}
-@media(max-width:560px){.preview-image-viewport{inset:64px 40px 78px}}
+@media(max-width:560px){.preview-media-viewport{inset:64px 40px 78px}}
+
+/* The original preview gets the full width until information is requested. */
+.file-preview-modal.preview-info-collapsed{grid-template-columns:minmax(0,1fr)}
+.preview-info-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;color:#344155;font-size:13px}
+.preview-info-heading button{width:30px;height:30px;display:grid;place-items:center;border:0;border-radius:7px;color:#68778c;background:#f3f6f9;cursor:pointer}
+.preview-info-heading svg{width:16px;height:16px}
+@media(max-width:900px){.preview-info-open>.preview-details{display:block;position:absolute;z-index:4;top:24px;right:24px;bottom:24px;width:min(380px,calc(100% - 48px));box-shadow:-8px 0 30px rgba(15,23,42,.18)}}
+@media(max-width:560px){.preview-info-open>.preview-details{top:48px;right:10px;bottom:10px;width:calc(100% - 20px)}}
+
+.content-shell{position:relative}
+.files-back-to-top{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:5;display:flex;padding:0;filter:drop-shadow(0 3px 8px rgba(15,23,42,.18))}
+.files-back-to-top button{display:inline-flex;align-items:center;gap:8px;padding:9px 15px;border:1px solid #dce2e9;border-radius:9px;color:#405068;background:#fff;font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+.files-back-to-top button:hover{color:#2563d9;background:#f0f5fc;border-color:#b8cbea}
+.files-back-to-top button:focus-visible{outline:2px solid #2563d9;outline-offset:3px}
+.files-back-to-top svg{width:16px;height:16px}

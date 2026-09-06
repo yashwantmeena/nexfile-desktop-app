@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Archive, Check, ChevronLeft, ChevronRight, Clock3, Copy, ExternalLink, File, FileCode2, FileText, Film, FolderOpen, Heart, Mic2, MoreHorizontal, Pencil, Star, Tag, Wrench, X } from "lucide-react";
 import type { DashboardFile } from "../types/file";
-import { OriginalImagePreview } from "./OriginalImagePreview";
+import { OriginalMediaPreview } from "./OriginalMediaPreview";
 
 interface FilePreviewModalProps { files:DashboardFile[]; index:number; onIndexChange:(index:number)=>void; onClose:()=>void; onApplyFilter:(value:string)=>void; }
 
@@ -10,6 +10,10 @@ function readable(value:string){return value.replace(/[_-]/g," ");}
 
 export function FilePreviewModal({files,index,onIndexChange,onClose,onApplyFilter}:FilePreviewModalProps){
   const file=files[index];
+  const [infoOpen,setInfoOpen]=useState(false);
+  const infoId=useId();
+  const infoToggleRef=useRef<HTMLButtonElement>(null);
+  const closeInfo=()=>{setInfoOpen(false);infoToggleRef.current?.focus();};
   const [favorite,setFavorite]=useState(false);
   const [copied,setCopied]=useState(false);
   const [displayName,setDisplayName]=useState(file.name);
@@ -22,18 +26,21 @@ export function FilePreviewModal({files,index,onIndexChange,onClose,onApplyFilte
   const fallbackIcon=type==="video"?Film:type==="audio"?Mic2:file.kind==="ZIP"?Archive:file.kind==="TS"?FileCode2:file.kind==="MD"?FileText:File;
   const FallbackIcon=fallbackIcon;
   return <div className="file-preview-backdrop" role="dialog" aria-modal="true" aria-label={`Preview ${file.name}`} onMouseDown={event=>{if(event.target===event.currentTarget)onClose();}}>
-    <section className="file-preview-modal">
+    <section className={`file-preview-modal ${infoOpen?"preview-info-open":"preview-info-collapsed"}`}>
       <button className="preview-close" aria-label="Close preview" onClick={onClose}><X/></button>
       <div className="preview-stage">
         <div className="preview-canvas">
-          <span className="preview-kind">{file.kind}</span>
-          <div className="preview-top-actions"><button aria-label="Favorite" className={favorite?"active":""} onClick={()=>setFavorite(value=>!value)}><Heart/></button><button aria-label="More actions"><MoreHorizontal/></button></div>
-          {file.image?(type==="video"?<video src={file.image} controls autoPlay/>:<OriginalImagePreview key={`${file.id}:${file.image}`} src={file.image} name={file.name}/>):<div className="preview-fallback"><FallbackIcon/><strong>{file.name}</strong></div>}
+          <div className="preview-top-actions">
+            <button aria-label="Favorite" aria-pressed={favorite} className={favorite?"active":""} onClick={()=>setFavorite(value=>!value)}><Heart/></button>
+            <button ref={infoToggleRef} aria-label={infoOpen?"Hide file information":"Show file information"} title={infoOpen?"Hide file information":"Show file information"} aria-controls={infoId} aria-expanded={infoOpen} onClick={()=>setInfoOpen(value=>!value)}><MoreHorizontal/></button>
+          </div>
+          {file.image?<OriginalMediaPreview key={`${file.id}:${file.image}`} src={file.image} name={file.name} type={type==="video"?"video":"image"}/>:<div className="preview-fallback"><FallbackIcon/><strong>{file.name}</strong></div>}
           <button className="preview-nav preview-previous" disabled={index===0} aria-label="Previous file" onClick={()=>onIndexChange(index-1)}><ChevronLeft/></button>
           <button className="preview-nav preview-next" disabled={index===files.length-1} aria-label="Next file" onClick={()=>onIndexChange(index+1)}><ChevronRight/></button>
         </div>
       </div>
-      <aside className="preview-details">
+      {infoOpen && <aside id={infoId} className="preview-details" aria-label="File information">
+        <div className="preview-info-heading"><strong>File information</strong><button aria-label="Collapse file information" onClick={closeInfo}><X/></button></div>
         <header><span className="preview-file-icon"><File/></span><div className="preview-name-block">{editingName?<div className="preview-name-editor"><input value={draftName} autoFocus aria-label="File name" onChange={event=>setDraftName(event.target.value)} onKeyDown={event=>{if(event.key==="Enter"){setDisplayName(draftName.trim()||file.name);setEditingName(false);}if(event.key==="Escape"){setDraftName(displayName);setEditingName(false);}}}/><button aria-label="Save file name" onClick={()=>{setDisplayName(draftName.trim()||file.name);setEditingName(false);}}><Check/></button></div>:<div className="preview-name-row"><h2 title={displayName}>{displayName}</h2><button aria-label="Edit file name" onClick={()=>setEditingName(true)}><Pencil/></button></div>}<p>{file.kind} <i/> {formatSize(file.sizeBytes)}</p></div><button aria-label="Favorite" className={favorite?"active":""} onClick={()=>setFavorite(value=>!value)}><Star/></button></header>
         <div className="preview-info-grid">
           <section className="preview-info-card"><h3><File/>File information</h3><dl><div><dt>Type</dt><dd>{readable(type)}</dd></div><div><dt>Format</dt><dd>{file.kind}</dd></div><div><dt>Size</dt><dd>{formatSize(file.sizeBytes)}</dd></div></dl></section>
@@ -44,7 +51,7 @@ export function FilePreviewModal({files,index,onIndexChange,onClose,onApplyFilte
           <section className="preview-info-card preview-path-card"><h3><FolderOpen/>Path</h3><div className="preview-card-path"><span title={file.path}>{file.path}</span><button onClick={copyPath} aria-label="Copy path"><Copy/></button></div></section>
           <section className="preview-info-card preview-actions-card"><h3><Wrench/>Actions</h3><div className="preview-action-buttons"><button className="primary"><ExternalLink/>Open</button><button><FolderOpen/>Open folder</button><button onClick={copyPath}><Copy/>{copied?"Copied":"Copy path"}</button><button aria-label="More actions"><MoreHorizontal/></button></div></section>
         </div>
-      </aside>
+      </aside>}
     </section>
   </div>;
 }
