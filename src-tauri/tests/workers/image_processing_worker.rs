@@ -14,6 +14,57 @@ fn test_service(root: &std::path::Path) -> ImageProcessingService {
     )
 }
 
+#[tokio::test]
+async fn worker_acknowledges_failed_job_and_processes_next_job() {
+    use crate::utils::constants::IMAGE_PROCESSING_QUEUE;
+    use apalis::prelude::TaskSink;
+
+    let root = std::env::temp_dir().join(format!("nexfile-worker-retry-{}", uuid::Uuid::new_v4()));
+    let database = test_database(&root).await;
+    let invalid = root.join("invalid.avif");
+    std::fs::write(&invalid, b"invalid image").unwrap();
+    let mut queue = SqliteStorage::<ImageProcessingJob, (), ()>::new_in_queue(
+        database.pool(),
+        IMAGE_PROCESSING_QUEUE,
+    );
+    queue
+        .push(ImageProcessingJob { path: invalid })
+        .await
+        .unwrap();
+    queue
+        .push(ImageProcessingJob {
+            path: root.join("missing.jpg"),
+        })
+        .await
+        .unwrap();
+    let worker = ImageProcessingWorker::start(
+        &database,
+        root.join("clip"),
+        root.join("florence"),
+        root.join("configs"),
+    );
+    let completed = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        loop {
+            let done: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM Jobs WHERE status = 'Done'")
+                .fetch_one(database.pool())
+                .await
+                .unwrap();
+            if done == 2 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await;
+    worker.close().await;
+    assert!(
+        completed.is_ok(),
+        "failed job must be acknowledged and the next job completed"
+    );
+    database.close().await;
+    std::fs::remove_dir_all(root).unwrap();
+}
+
 async fn test_database(root: &std::path::Path) -> SqliteDatabase {
     std::fs::create_dir_all(root).expect("test directory should be created");
     let database = SqliteDatabase::open(root.join("nexfile.sqlite3"))

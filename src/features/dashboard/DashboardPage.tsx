@@ -23,7 +23,8 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
   const [draftQuery, setDraftQuery] = useState("");
   const [searchMode, setSearchMode] = useState<SearchMode>("tags");
   const tagsKey = JSON.stringify(tags);
-  const fetched = useFiles(activeCategory === "All" ? undefined : activeCategory.toLowerCase(), query, searchMode, tags);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const fetched = useFiles(activeCategory === "All" ? undefined : activeCategory.toLowerCase(), query, searchMode, tags, refreshKey);
   const resultsPaneRef = useRef<HTMLDivElement>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const [showBackToTop,setShowBackToTop]=useState(false);
@@ -55,7 +56,7 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [query, searchMode, tagsKey]);
+  }, [query, searchMode, tagsKey, refreshKey]);
   const counts = homeCounts?.counts;
   const categories = [
     { label: "All", count: homeCounts?.totalCount },
@@ -108,6 +109,8 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
                 pane?.focus({preventScroll:true});
                 pane?.scrollTo({top:0,behavior:"instant"});
                 setShowBackToTop(false);
+                setPreviewIndex(null);
+                setRefreshKey(current => current + 1);
               }}><ArrowUp aria-hidden="true"/>Back to top</button>
             </div>}
         </section>

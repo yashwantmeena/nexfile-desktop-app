@@ -56,6 +56,11 @@ const MODELS = [
         sha256: "c529b26bafce2ee76f886f3a0e374bb646b07a6d8b7640fd8a50d7a48843dd67",
       },
       {
+        source: "onnx/decoder_model_merged_int8.onnx",
+        destination: "onnx/decoder_model_merged_int8.onnx",
+        sha256: "f22f52f980c33df0efa15932c2f3db6d9d3595ce6387eca938b8cfe23dc4c641",
+      },
+      {
         source: "tokenizer.json",
         destination: "tokenizer.json",
         sha256: "847bbeab6174d66a88898f729d52fa8d355fafe1bea101cf960dd404581df70e",

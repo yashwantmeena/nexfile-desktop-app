@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchFiles, type FilePage, type FetchedFile } from "../api/files";
 
 
-export function useFiles(mediaType?: string, query = "", searchMode = "tags", tags: string[] = []) {
+export function useFiles(mediaType?: string, query = "", searchMode = "tags", tags: string[] = [], refreshKey = 0) {
   const tagsKey = JSON.stringify(tags);
   const [files, setFiles] = useState<FetchedFile[]>([]);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
@@ -61,7 +61,7 @@ export function useFiles(mediaType?: string, query = "", searchMode = "tags", ta
       generation.current += 1;
       pending.current = false;
     };
-  }, [load, query]);
+  }, [load, query, refreshKey]);
   const loadMore = useCallback(() => {
     if (nextOffset !== null) void load(nextOffset);
   }, [load, nextOffset]);

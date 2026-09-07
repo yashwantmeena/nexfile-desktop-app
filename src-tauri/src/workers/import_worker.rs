@@ -1,5 +1,6 @@
 use apalis::prelude::*;
 use apalis_sqlite::SqliteStorage;
+use futures::FutureExt;
 use tauri::async_runtime::{channel, JoinHandle, Mutex, Sender};
 
 use crate::models::import_model::ImportFileJob;
@@ -14,25 +15,53 @@ pub struct ImportWorker {
 
 impl ImportWorker {
     pub fn start(database: &SqliteDatabase, service: ImportService) -> Self {
-        let backend = SqliteStorage::<ImportFileJob, (), ()>::new_in_queue(
-            database.pool(),
-            IMPORT_FILE_QUEUE,
-        );
-        let worker = WorkerBuilder::new(IMPORT_FILE_WORKER)
-            .backend(backend)
-            .concurrency(1)
-            .build(move |job: ImportFileJob| {
-                let service = service.clone();
-                async move { consume_import_file(job, service).await }
-            });
+        let queue_pool = database.pool().clone();
         let (shutdown, mut shutdown_receiver) = channel(1);
+        let shutdown_signal = async move {
+            let _ = shutdown_receiver.recv().await;
+        }
+        .boxed()
+        .shared();
         let task = tauri::async_runtime::spawn(async move {
-            worker
-                .run_until(async move {
-                    let _ = shutdown_receiver.recv().await;
-                    Ok::<(), std::io::Error>(())
-                })
-                .await
+            loop {
+                let backend = SqliteStorage::<ImportFileJob, (), ()>::new_in_queue(
+                    &queue_pool,
+                    IMPORT_FILE_QUEUE,
+                );
+                let handler_service = service.clone();
+                let worker =
+                    WorkerBuilder::new(format!("{}-{}", IMPORT_FILE_WORKER, uuid::Uuid::new_v4()))
+                        .backend(backend)
+                        .concurrency(1)
+                        .build(move |job: ImportFileJob| {
+                            let service = handler_service.clone();
+                            async move {
+                                let subject = job.path.display().to_string();
+                                super::retry::retry_and_ack(IMPORT_FILE_QUEUE, &subject, || {
+                                    consume_import_file(job.clone(), service.clone())
+                                })
+                                .await
+                            }
+                        });
+                let stop = shutdown_signal.clone();
+                let result = worker
+                    .run_until(async move {
+                        stop.await;
+                        Ok::<(), std::io::Error>(())
+                    })
+                    .await;
+                if shutdown_signal.clone().now_or_never().is_some() {
+                    return result;
+                }
+                eprintln!(
+                    "[{}][RESTART] worker exited: {result:?}",
+                    IMPORT_FILE_WORKER
+                );
+                tokio::select! {
+                    _ = shutdown_signal.clone() => return Ok(()),
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {}
+                }
+            }
         });
 
         Self {

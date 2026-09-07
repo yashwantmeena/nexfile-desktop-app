@@ -292,7 +292,7 @@
 
 .content-shell{position:relative}
 .files-back-to-top{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:5;display:flex;padding:0;filter:drop-shadow(0 3px 8px rgba(15,23,42,.18))}
-.files-back-to-top button{display:inline-flex;align-items:center;gap:8px;padding:9px 15px;border:1px solid #dce2e9;border-radius:9px;color:#405068;background:#fff;font:inherit;font-size:12px;font-weight:600;cursor:pointer}
-.files-back-to-top button:hover{color:#2563d9;background:#f0f5fc;border-color:#b8cbea}
+.files-back-to-top button{display:inline-flex;align-items:center;gap:8px;padding:9px 15px;border:1px solid #b8cbea;border-radius:9px;color:#2563d9;background:#eff6ff;font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+.files-back-to-top button:hover{background:#dbeafe;border-color:#93b4e8}
 .files-back-to-top button:focus-visible{outline:2px solid #2563d9;outline-offset:3px}
 .files-back-to-top svg{width:16px;height:16px}

@@ -159,8 +159,17 @@ impl ImageProcessingService {
             let captioner = captioner
                 .as_mut()
                 .expect("captioner is initialized before use");
+            let encoding_started = logger.stage("encode Florence-2 image features");
+            let florence_image = captioner
+                .prepare_path(prepared_image.path())
+                .map_err(AppError::internal)?;
+            logger.stage_complete(
+                "Florence-2 image encoding",
+                encoding_started,
+                "shared across tasks",
+            );
             let florence_output = captioner
-                .generate_path(prepared_image.path(), florence_task)
+                .generate_prepared(&florence_image, florence_task)
                 .map_err(AppError::internal)?;
             logger.stage_complete(
                 if use_ocr {
@@ -170,9 +179,10 @@ impl ImageProcessingService {
                 },
                 florence_started,
                 format_args!(
-                    "characters={} words={}",
+                    "characters={} words={} tokens={}",
                     florence_output.text.chars().count(),
-                    florence_output.text.split_whitespace().count()
+                    florence_output.text.split_whitespace().count(),
+                    florence_output.token_ids.len()
                 ),
             );
 
@@ -181,7 +191,7 @@ impl ImageProcessingService {
             } else {
                 let detection_started = logger.stage("generate Florence-2 object detections");
                 let detection_output = captioner
-                    .generate_path(prepared_image.path(), Florence2Task::ObjectDetection)
+                    .generate_prepared(&florence_image, Florence2Task::ObjectDetection)
                     .map_err(AppError::internal)?;
                 let detections = parse_object_detections(
                     &detection_output.text,
@@ -191,7 +201,11 @@ impl ImageProcessingService {
                 logger.stage_complete(
                     "Florence-2 object detection",
                     detection_started,
-                    format_args!("detections={}", detections.len()),
+                    format_args!(
+                        "detections={} tokens={}",
+                        detections.len(),
+                        detection_output.token_ids.len()
+                    ),
                 );
                 Some(ImageObjectDetectionOutput {
                     raw_text: detection_output.text,

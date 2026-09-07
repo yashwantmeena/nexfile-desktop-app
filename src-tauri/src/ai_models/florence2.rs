@@ -1,10 +1,11 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use image::{imageops::FilterType, DynamicImage, GenericImageView};
-use ndarray::{concatenate, Array2, Array3, Array4, ArrayD, Axis, Ix3};
+use ndarray::{concatenate, Array2, Array3, Array4, ArrayD, ArrayViewD, Axis, Ix3};
 use ort::{
     session::{builder::GraphOptimizationLevel, Session, SessionOutputs},
-    value::Tensor,
+    value::{DynValue, Tensor},
 };
 use serde::{Deserialize, Serialize};
 use tokenizers::{Tokenizer, TruncationParams};
@@ -183,7 +184,7 @@ pub struct Florence2Output {
     pub image_height: u32,
 }
 
-/// Florence-2 ONNX inference using a non-cached, greedy decoder.
+/// Florence-2 ONNX inference using greedy decoding and an optional KV cache.
 ///
 /// The four sessions correspond to image feature extraction, token embedding,
 /// multimodal encoding, and autoregressive text decoding.
@@ -192,8 +193,15 @@ pub struct Florence2Model {
     token_embeddings: Session,
     multimodal_encoder: Session,
     decoder: Session,
+    decoder_with_past: Option<Session>,
     tokenizer: Tokenizer,
     config: Florence2Config,
+}
+
+/// Image features reusable across prompts for the same image.
+pub(crate) struct Florence2Image {
+    features: Array3<f32>,
+    size: (u32, u32),
 }
 
 impl Florence2Model {
@@ -240,6 +248,40 @@ impl Florence2Model {
             &[LOGITS],
         )?;
 
+        // Older/custom exports can still run without the companion graph.
+        let cached_path = paths
+            .decoder
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(|name| name.strip_prefix("decoder_model"))
+            .map(|suffix| {
+                paths
+                    .decoder
+                    .with_file_name(format!("decoder_model_merged{suffix}"))
+            });
+        let decoder_with_past = match cached_path {
+            Some(path) if path.is_file() => {
+                let session = build_session(&path)?;
+                validate_session(
+                    &session,
+                    "cached decoder",
+                    &[INPUTS_EMBEDS, ENCODER_ATTENTION_MASK],
+                    &[LOGITS],
+                )?;
+                validate_cache_sessions(&decoder, &session)?;
+                Some(session)
+            }
+            _ => None,
+        };
+        eprintln!(
+            "[Florence-2] KV cache {}",
+            if decoder_with_past.is_some() {
+                "enabled"
+            } else {
+                "unavailable (legacy decoder)"
+            }
+        );
+
         let mut tokenizer = Tokenizer::from_file(&paths.tokenizer)
             .map_err(|error| Florence2Error::Tokenizer(error.to_string()))?;
         tokenizer
@@ -255,6 +297,7 @@ impl Florence2Model {
             token_embeddings,
             multimodal_encoder,
             decoder,
+            decoder_with_past,
             tokenizer,
             config,
         })
@@ -274,8 +317,39 @@ impl Florence2Model {
         image: &DynamicImage,
         task: Florence2Task,
     ) -> Result<Florence2Output, Florence2Error> {
-        let original_size = image.dimensions();
+        let prepared = self.prepare_image(image)?;
+        self.generate_prepared(&prepared, task)
+    }
+
+    pub(crate) fn prepare_path(
+        &mut self,
+        path: impl AsRef<Path>,
+    ) -> Result<Florence2Image, Florence2Error> {
+        self.prepare_image(&image::open(path)?)
+    }
+
+    fn prepare_image(&mut self, image: &DynamicImage) -> Result<Florence2Image, Florence2Error> {
         let pixel_values = preprocess_image(image, &self.config)?;
+        let features = run_f32(
+            &mut self.vision_encoder,
+            ort::inputs![PIXEL_VALUES => Tensor::from_array(pixel_values)?],
+            IMAGE_FEATURES,
+        )?
+        .into_dimensionality::<Ix3>()
+        .map_err(|error| Florence2Error::Tensor(error.to_string()))?;
+        Ok(Florence2Image {
+            features,
+            size: image.dimensions(),
+        })
+    }
+
+    pub(crate) fn generate_prepared(
+        &mut self,
+        prepared: &Florence2Image,
+        task: Florence2Task,
+    ) -> Result<Florence2Output, Florence2Error> {
+        let original_size = prepared.size;
+        let image_features = &prepared.features;
         let prompt_encoding = self
             .tokenizer
             .encode(task.prompt(), true)
@@ -287,14 +361,6 @@ impl Florence2Model {
             .iter()
             .map(|value| i64::from(*value))
             .collect::<Vec<_>>();
-
-        let image_features = run_f32(
-            &mut self.vision_encoder,
-            ort::inputs![PIXEL_VALUES => Tensor::from_array(pixel_values)?],
-            IMAGE_FEATURES,
-        )?
-        .into_dimensionality::<Ix3>()
-        .map_err(|error| Florence2Error::Tensor(error.to_string()))?;
 
         let text_features = self.embed_tokens(&prompt_ids)?;
         let inputs_embeds = concatenate(Axis(1), &[image_features.view(), text_features.view()])
@@ -349,6 +415,9 @@ impl Florence2Model {
         encoder_hidden_states: &Array3<f32>,
         encoder_attention_mask: &Array2<i64>,
     ) -> Result<Vec<u32>, Florence2Error> {
+        if self.decoder_with_past.is_some() {
+            return self.decode_greedy_cached(encoder_hidden_states, encoder_attention_mask);
+        }
         let mut generated = vec![self.config.decoder_start_token_id];
 
         for step in 0..self.config.max_new_tokens {
@@ -373,8 +442,8 @@ impl Florence2Model {
                         .inputs()
                         .iter()
                         .any(|input| input.name() == ATTENTION_MASK);
-                    let logits = if accepts_attention_mask {
-                        run_f32(
+                    let next_token = if accepts_attention_mask {
+                        run_next_token(
                             &mut self.decoder,
                             ort::inputs![
                                 INPUTS_EMBEDS => Tensor::from_array(decoder_inputs)?,
@@ -382,20 +451,18 @@ impl Florence2Model {
                                 ENCODER_ATTENTION_MASK => Tensor::from_array(encoder_attention_mask.clone())?,
                                 ENCODER_HIDDEN_STATES => Tensor::from_array(encoder_hidden_states.clone())?,
                             ],
-                            LOGITS,
                         )?
                     } else {
-                        run_f32(
+                        run_next_token(
                             &mut self.decoder,
                             ort::inputs![
                                 INPUTS_EMBEDS => Tensor::from_array(decoder_inputs)?,
                                 ENCODER_ATTENTION_MASK => Tensor::from_array(encoder_attention_mask.clone())?,
                                 ENCODER_HIDDEN_STATES => Tensor::from_array(encoder_hidden_states.clone())?,
                             ],
-                            LOGITS,
                         )?
                     };
-                    argmax_last_token(&logits)? as u32
+                    next_token
                 }
             };
 
@@ -407,6 +474,131 @@ impl Florence2Model {
 
         Ok(generated)
     }
+
+    fn decode_greedy_cached(
+        &mut self,
+        encoder_hidden_states: &Array3<f32>,
+        encoder_attention_mask: &Array2<i64>,
+    ) -> Result<Vec<u32>, Florence2Error> {
+        // Cache lifetime is one prompt, never shared across tasks or images.
+        let mut cache: HashMap<String, DynValue> = HashMap::new();
+        let encoder_mask = Tensor::from_array(encoder_attention_mask.clone())?;
+        let encoder_states = Tensor::from_array(encoder_hidden_states.clone())?;
+        let mut generated = vec![self.config.decoder_start_token_id];
+        for step in 0..self.config.max_new_tokens {
+            if step == 0 {
+                if let Some(token) = self.config.forced_bos_token_id {
+                    generated.push(token);
+                    if token == self.config.eos_token_id {
+                        break;
+                    }
+                    continue;
+                }
+            }
+            let tokens = if cache.is_empty() {
+                &generated[..]
+            } else {
+                &generated[generated.len() - 1..]
+            };
+            let embedded = self.embed_tokens(&to_i64_ids(tokens))?;
+            let session = if cache.is_empty() {
+                &mut self.decoder
+            } else {
+                self.decoder_with_past
+                    .as_mut()
+                    .expect("cached decoder is loaded")
+            };
+            let mut inputs = ort::inputs![
+                INPUTS_EMBEDS => Tensor::from_array(embedded)?,
+                ENCODER_ATTENTION_MASK => &encoder_mask,
+            ];
+            inputs.push((ENCODER_HIDDEN_STATES.into(), (&encoder_states).into()));
+            if !cache.is_empty() {
+                inputs.push((
+                    "use_cache_branch".into(),
+                    Tensor::from_array(([1], vec![true]))?.into(),
+                ));
+            }
+            if session
+                .inputs()
+                .iter()
+                .any(|input| input.name() == ATTENTION_MASK)
+            {
+                inputs.push((
+                    ATTENTION_MASK.into(),
+                    Tensor::from_array(Array2::from_elem((1, generated.len()), 1_i64))?.into(),
+                ));
+            }
+            for (name, value) in &cache {
+                inputs.push((name.as_str().into(), value.into()));
+            }
+            let outputs = session.run(inputs)?;
+            let logits = outputs.get(LOGITS).ok_or_else(|| {
+                Florence2Error::IncompatibleModel("decoder did not return logits".into())
+            })?;
+            let token = argmax_last_token(logits.try_extract_array::<f32>()?)? as u32;
+            // Move runtime-owned tensors forward without copying their contents.
+            // Cross-attention keys/values are emitted only by the initial graph.
+            for (name, value) in outputs {
+                if let Some(suffix) = name.strip_prefix("present.") {
+                    if suffix.contains(".encoder.")
+                        && cache.contains_key(&format!("past_key_values.{suffix}"))
+                    {
+                        continue;
+                    }
+                    cache.insert(format!("past_key_values.{suffix}"), value);
+                }
+            }
+            generated.push(token);
+            if token == self.config.eos_token_id {
+                break;
+            }
+        }
+        Ok(generated)
+    }
+}
+
+fn validate_cache_sessions(initial: &Session, cached: &Session) -> Result<(), Florence2Error> {
+    let mut count = 0;
+    for input in cached.inputs() {
+        let name = input.name();
+        if let Some(suffix) = name.strip_prefix("past_key_values.") {
+            count += 1;
+            let output = format!("present.{suffix}");
+            if !initial
+                .outputs()
+                .iter()
+                .any(|candidate| candidate.name() == output)
+                || (suffix.contains(".decoder.")
+                    && !cached
+                        .outputs()
+                        .iter()
+                        .any(|candidate| candidate.name() == output))
+            {
+                return Err(Florence2Error::IncompatibleModel(format!(
+                    "missing cache output {output}"
+                )));
+            }
+        } else if ![
+            INPUTS_EMBEDS,
+            ENCODER_ATTENTION_MASK,
+            ENCODER_HIDDEN_STATES,
+            ATTENTION_MASK,
+            "use_cache_branch",
+        ]
+        .contains(&name)
+        {
+            return Err(Florence2Error::IncompatibleModel(format!(
+                "unsupported cached decoder input {name}"
+            )));
+        }
+    }
+    if count == 0 {
+        return Err(Florence2Error::IncompatibleModel(
+            "cached decoder has no past-key-value inputs".into(),
+        ));
+    }
+    Ok(())
 }
 
 fn build_session(model_path: &Path) -> Result<Session, Florence2Error> {
@@ -503,18 +695,35 @@ fn extract_f32(
     Ok(output.try_extract_array::<f32>()?.to_owned())
 }
 
-fn argmax_last_token(logits: &ArrayD<f32>) -> Result<usize, Florence2Error> {
+// Select directly from the runtime output; copying all sequence logits is costly.
+fn run_next_token<'a>(
+    session: &mut Session,
+    inputs: Vec<(
+        std::borrow::Cow<'a, str>,
+        ort::session::SessionInputValue<'a>,
+    )>,
+) -> Result<u32, Florence2Error> {
+    let outputs = session.run(inputs)?;
+    let logits = outputs
+        .get(LOGITS)
+        .ok_or_else(|| Florence2Error::IncompatibleModel("decoder did not return logits".into()))?;
+    Ok(argmax_last_token(logits.try_extract_array::<f32>()?)? as u32)
+}
+
+fn argmax_last_token(logits: ArrayViewD<'_, f32>) -> Result<usize, Florence2Error> {
     let shape = logits.shape();
     if shape.len() != 3 || shape[0] != 1 || shape[1] == 0 || shape[2] == 0 {
         return Err(Florence2Error::EmptyLogits);
     }
 
-    let sequence_index = shape[1] - 1;
-    let vocabulary_size = shape[2];
-    (0..vocabulary_size)
-        .max_by(|left, right| {
-            logits[[0, sequence_index, *left]].total_cmp(&logits[[0, sequence_index, *right]])
-        })
+    // Slice once instead of repeatedly indexing a dynamic three-dimensional
+    // array for every vocabulary comparison (especially expensive in dev builds).
+    let batch = logits.index_axis(Axis(0), 0);
+    let last = batch.index_axis(Axis(0), shape[1] - 1);
+    last.iter()
+        .enumerate()
+        .max_by(|(_, left), (_, right)| left.total_cmp(right))
+        .map(|(index, _)| index)
         .ok_or(Florence2Error::EmptyLogits)
 }
 
@@ -528,4 +737,111 @@ fn clean_decoded_text(text: &str) -> String {
         .fold(text.to_owned(), |text, token| text.replace(token, ""))
         .trim()
         .to_owned()
+}
+
+#[cfg(test)]
+mod performance_tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "requires bundled models; compares cached and uncached inference"]
+    fn cached_decoder_matches_uncached_generation() {
+        let directory =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/ai-models/florence-2-base-ft");
+        let mut model = Florence2Model::load(Florence2ModelPaths::from_dir_with_suffix(
+            directory,
+            Some("_int8"),
+        ))
+        .unwrap();
+        assert!(
+            model.decoder_with_past.is_some(),
+            "cached model must be bundled"
+        );
+        let image = DynamicImage::ImageRgb8(image::RgbImage::from_fn(224, 224, |x, y| {
+            image::Rgb([(x % 256) as u8, (y % 256) as u8, ((x + y) % 256) as u8])
+        }));
+        let prepared = model.prepare_image(&image).unwrap();
+        for task in [
+            Florence2Task::DetailedCaption,
+            Florence2Task::ObjectDetection,
+            Florence2Task::OcrWithRegion,
+        ] {
+            let started = std::time::Instant::now();
+            let cached = model.generate_prepared(&prepared, task.clone()).unwrap();
+            let cached_time = started.elapsed();
+            let cached_session = model.decoder_with_past.take();
+            let started = std::time::Instant::now();
+            let uncached = model.generate_prepared(&prepared, task.clone()).unwrap();
+            let uncached_time = started.elapsed();
+            model.decoder_with_past = cached_session;
+            eprintln!(
+                "{task:?}: cached={cached_time:?} uncached={uncached_time:?} tokens={}",
+                cached.token_ids.len()
+            );
+            assert_eq!(cached, uncached);
+        }
+        // Force an equal amount of decoder work to exercise growing cache lengths.
+        model.config.max_new_tokens = 64;
+        model.config.eos_token_id = u32::MAX;
+        let started = std::time::Instant::now();
+        let cached = model
+            .generate_prepared(&prepared, Florence2Task::DetailedCaption)
+            .unwrap();
+        let cached_time = started.elapsed();
+        let cached_session = model.decoder_with_past.take();
+        let started = std::time::Instant::now();
+        let uncached = model
+            .generate_prepared(&prepared, Florence2Task::DetailedCaption)
+            .unwrap();
+        model.decoder_with_past = cached_session;
+        eprintln!(
+            "64-token workload: cached={cached_time:?} uncached={:?}",
+            started.elapsed()
+        );
+        assert_eq!(cached, uncached);
+    }
+
+    #[test]
+    fn selects_only_the_last_token_logits() {
+        let logits =
+            Array3::from_shape_vec((1, 2, 3), vec![99.0, 0.0, 0.0, 0.0, 1.0, 2.0]).unwrap();
+        assert_eq!(argmax_last_token(logits.view().into_dyn()).unwrap(), 2);
+        assert!(argmax_last_token(Array3::<f32>::zeros((1, 0, 3)).view().into_dyn()).is_err());
+    }
+
+    #[test]
+    #[ignore = "requires bundled Florence-2 models; runs real inference"]
+    fn shared_image_features_preserve_generated_tokens() {
+        let directory =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/ai-models/florence-2-base-ft");
+        let mut model = Florence2Model::load_with_config(
+            Florence2ModelPaths::from_dir_with_suffix(directory, Some("_int8")),
+            Florence2Config {
+                max_new_tokens: 8,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let image = DynamicImage::new_rgb8(80, 60);
+        let tasks = [
+            Florence2Task::DetailedCaption,
+            Florence2Task::ObjectDetection,
+        ];
+        let started = std::time::Instant::now();
+        let separate = tasks
+            .iter()
+            .map(|task| model.generate(&image, task.clone()).unwrap())
+            .collect::<Vec<_>>();
+        let separate_time = started.elapsed();
+        let started = std::time::Instant::now();
+        let prepared = model.prepare_image(&image).unwrap();
+        for (task, expected) in tasks.into_iter().zip(separate) {
+            let actual = model.generate_prepared(&prepared, task).unwrap();
+            assert_eq!(actual, expected);
+        }
+        eprintln!(
+            "separate encodings: {separate_time:?}; shared encoding: {:?}",
+            started.elapsed()
+        );
+    }
 }

@@ -38,6 +38,7 @@ pub struct ImportService {
     queue_pool: SqlitePool,
     system_metadata_root: PathBuf,
     copy_lock: Arc<Mutex<()>>,
+    metadata_lock: Arc<Mutex<()>>,
     search: Option<crate::repositories::indexing_repository::TantivyIndexingRepository>,
 }
 
@@ -64,7 +65,7 @@ impl ImportService {
     }
 
     pub(crate) fn metadata_lock(&self) -> &Mutex<()> {
-        &self.copy_lock
+        &self.metadata_lock
     }
 
     pub async fn new(
@@ -86,6 +87,7 @@ impl ImportService {
             queue_pool,
             system_metadata_root,
             copy_lock: Arc::new(Mutex::new(())),
+            metadata_lock: Arc::new(Mutex::new(())),
             search: None,
         })
     }
@@ -153,7 +155,10 @@ impl ImportService {
 
     pub async fn consume(&self, job: ImportFileJob) -> AppResult<()> {
         let _guard = self.copy_lock.lock().await;
-        self.consume_with_drives(job, get_drives()).await
+        let drives = tauri::async_runtime::spawn_blocking(get_drives)
+            .await
+            .map_err(AppError::internal)?;
+        self.consume_with_drives(job, drives).await
     }
 
     async fn consume_with_drives(
@@ -189,6 +194,7 @@ impl ImportService {
             let destination = files_directory.join(destination_name(&job));
 
             if destination.try_exists()? {
+                let _metadata_guard = self.metadata_lock.lock().await;
                 if std::fs::metadata(&destination)?.len() != source_metadata.len() {
                     return Err(AppError::internal(std::io::Error::new(
                         std::io::ErrorKind::AlreadyExists,
@@ -196,8 +202,6 @@ impl ImportService {
                     )));
                 }
                 write_import_sidecar(&job, &destination)?;
-                self.index_filename(&saved.drive_id, &job).await?;
-                self.publish_for_image_processing(&destination).await?;
                 let (file_count, app_used_bytes, counts) =
                     calculate_managed_statistics(&files_directory)?;
                 saved.file_count = file_count;
@@ -209,6 +213,9 @@ impl ImportService {
                         write_drive_metadata(&drive, &self.system_metadata_root, updated)
                     })
                     .await?;
+                drop(_metadata_guard);
+                self.index_filename(&saved.drive_id, &job).await?;
+                self.publish_for_image_processing(&destination).await?;
                 return Ok(());
             }
 
@@ -218,7 +225,16 @@ impl ImportService {
 
             std::fs::create_dir_all(&files_directory)?;
             let temporary = files_directory.join(format!(".{}.importing", job.file_id));
-            match copy_atomically(&job.path, &temporary, &destination, source_metadata.len()) {
+            // Keep imports serialized, but let browsing proceed while bytes are copied.
+            let source = job.path.clone();
+            let staging_path = temporary.clone();
+            let expected_size = source_metadata.len();
+            let copied = tauri::async_runtime::spawn_blocking(move || {
+                copy_to_temporary(&source, &staging_path, expected_size)
+            })
+            .await
+            .map_err(AppError::internal)?;
+            match copied {
                 Ok(()) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::StorageFull => {
                     let _ = std::fs::remove_file(&temporary);
@@ -227,9 +243,11 @@ impl ImportService {
                 Err(error) => return Err(error.into()),
             }
 
+            // Publish only a complete file. Readers share this short publication lock,
+            // never the lock that serializes the potentially slow copy.
+            let _metadata_guard = self.metadata_lock.lock().await;
+            std::fs::rename(&temporary, &destination)?;
             write_import_sidecar(&job, &destination)?;
-            self.index_filename(&saved.drive_id, &job).await?;
-            self.publish_for_image_processing(&destination).await?;
             let mut counts = saved.file_type_counts.clone();
             let category = counts
                 .iter_mut()
@@ -254,6 +272,9 @@ impl ImportService {
                     write_drive_metadata(&drive, &self.system_metadata_root, updated)
                 })
                 .await?;
+            drop(_metadata_guard);
+            self.index_filename(&saved.drive_id, &job).await?;
+            self.publish_for_image_processing(&destination).await?;
             return Ok(());
         }
 
@@ -400,10 +421,9 @@ fn write_import_sidecar(job: &ImportFileJob, destination: &Path) -> AppResult<()
     Ok(())
 }
 
-fn copy_atomically(
+fn copy_to_temporary(
     source: &Path,
     temporary: &Path,
-    destination: &Path,
     expected_size: u64,
 ) -> std::io::Result<()> {
     let copied = std::fs::copy(source, temporary)?;
@@ -414,5 +434,58 @@ fn copy_atomically(
             "the complete source file was not copied",
         ));
     }
-    std::fs::rename(temporary, destination)
+    Ok(())
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod concurrency_tests {
+    use super::*;
+    use crate::services::storage_service::StorageService;
+
+    #[tokio::test]
+    async fn stages_copy_while_browsing_holds_metadata_lock() {
+        let root = std::env::temp_dir().join(format!("nexfile-copy-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let source = root.join("notes.txt");
+        std::fs::write(&source, b"complete contents").unwrap();
+        let database = SqliteDatabase::open(root.join("test.sqlite3")).await.unwrap();
+        let storage = StorageService::new(SqliteStorageRepository::new(database.clone()), root.clone());
+        let partition = storage.get_storage_data().await.unwrap().drives
+            .into_iter().find(|drive| drive.is_system).unwrap().partition_name;
+        storage.mount_drive(None, &partition).await.unwrap();
+        let imports = ImportService::new(
+            SqliteBackgroundProcessingRepository::new(database.clone()),
+            SqliteStorageRepository::new(database.clone()), &database, root.clone(),
+        ).await.unwrap();
+        let guard = imports.metadata_lock().lock().await;
+        let worker = imports.clone();
+        let task = tauri::async_runtime::spawn(async move {
+            worker.consume(ImportFileJob {
+                process_id: "test".into(), file_id: "abcdefghijklmn".into(), path: source,
+            }).await
+        });
+        let directory = root.join("nexfile").join("files");
+        let staged = directory.join(".abcdefghijklmn.importing");
+        let destination = directory.join("abcdefghijklmn.txt");
+        let copied = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            loop {
+                if std::fs::read(&staged).ok().as_deref() == Some(b"complete contents") {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        }).await;
+        assert!(copied.is_ok(), "copy must proceed while a browser holds the metadata lock");
+        assert!(!destination.exists(), "staged bytes must not be published yet");
+        let page = storage.fetch_files(0, 60, None).await.unwrap();
+        assert!(page.files.is_empty(), "browsing must exclude the staged file");
+        drop(guard);
+        task.await.unwrap().unwrap();
+        assert_eq!(std::fs::read(&destination).unwrap(), b"complete contents");
+        assert!(!staged.exists());
+        assert_eq!(storage.fetch_files(0, 60, None).await.unwrap().files.len(), 1);
+        imports.close().await;
+        storage.close().await;
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
