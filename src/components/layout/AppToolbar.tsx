@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, FileText, FileUp, FolderUp, Sparkles, Tag } from "lucide-react";
+import { Check, ChevronDown, FileText, FileUp, FolderUp, Plus, Sparkles, Tag } from "lucide-react";
+import { useCollections } from "./CollectionsProvider";
 import { getImportErrorMessage, selectAndImportFiles, selectAndImportFolder } from "@/features/import/services/import_service";
 import { TagSearchInput } from "./TagSearchInput";
 
@@ -20,6 +21,8 @@ const searchModes = [
 ] as const;
 
 export function AppToolbar({ query, onQueryChange, onQuerySubmit, searchMode, onSearchModeChange }: AppToolbarProps) {
+  const { openCreate, collections } = useCollections();
+  const [importCollections, setImportCollections] = useState<string[]>([]);
   const [searchMenuOpen, setSearchMenuOpen] = useState(false);
   const [importMenuOpen, setImportMenuOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -96,18 +99,20 @@ export function AppToolbar({ query, onQueryChange, onQuerySubmit, searchMode, on
         <button className="search-submit" type="button" aria-label="Search files" title="Search" onClick={() => onQuerySubmit(query)}><SearchIcon /></button>
         <TagSearchInput query={query} enabled={searchMode === "tags" && !searchMenuOpen} onChange={onQueryChange} onSubmit={onQuerySubmit} placeholder={placeholder} />
       </div>
+      <button className="create-collection-button" type="button" onClick={openCreate} title="Create collection"><Plus size={17}/><span>Create collection</span></button>
       <div className={`import-menu${importMenuOpen ? " open" : ""}`} ref={importMenuRef}>
-        <button className="import-files-button" type="button" aria-haspopup="menu" aria-expanded={importMenuOpen} disabled={isImporting} onClick={() => setImportMenuOpen((open) => !open)}>
+        <button className="import-files-button" type="button" aria-haspopup="dialog" aria-expanded={importMenuOpen} disabled={isImporting} onClick={() => setImportMenuOpen((open) => !open)}>
           <FileUp />
           <span>{isImporting ? "Queuing..." : "Import"}</span>
           <ChevronDown className="import-chevron" />
         </button>
-        {importMenuOpen && <div className="import-options" role="menu">
-          <button type="button" role="menuitem" onClick={() => void startImport(selectAndImportFiles)}>
+        {importMenuOpen && <div className="import-options" role="dialog" aria-label="Import options">
+          <fieldset className="import-collections"><legend>Add to collections</legend>{collections.length ? collections.map(item => <label key={item.id}><input type="checkbox" checked={importCollections.includes(item.id)} onChange={event => setImportCollections(current => event.target.checked ? [...current, item.id] : current.filter(id => id !== item.id))}/><span>{item.name}</span></label>) : <p>Create a collection to organize this import.</p>}<small>Optional · applied to every imported file</small></fieldset>
+          <button type="button" onClick={() => void startImport(() => selectAndImportFiles(importCollections.filter(id => collections.some(item => item.id === id))))}>
             <FileUp />
             <span><strong>Import files</strong><small>Select one or more files</small></span>
           </button>
-          <button type="button" role="menuitem" onClick={() => void startImport(selectAndImportFolder)}>
+          <button type="button" onClick={() => void startImport(() => selectAndImportFolder(importCollections.filter(id => collections.some(item => item.id === id))))}>
             <FolderUp />
             <span><strong>Import folder</strong><small>Select a folder and its contents</small></span>
           </button>
@@ -121,3 +126,5 @@ export function AppToolbar({ query, onQueryChange, onQuerySubmit, searchMode, on
 function SearchIcon() {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></svg>;
 }
+
+

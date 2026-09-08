@@ -889,7 +889,10 @@ pub(crate) fn valid_existing_output(path: &Path) -> AppResult<bool> {
 }
 
 fn write_output(path: &Path, output: &ImageProcessingOutput) -> AppResult<()> {
-    let bytes = serde_json::to_vec_pretty(output).map_err(AppError::serialization)?;
+    let mut value = serde_json::to_value(output).map_err(AppError::serialization)?;
+    let ids = super::file_service::sidecar_collection_ids(path)?;
+    value["collectionIds"] = serde_json::to_value(ids).map_err(AppError::serialization)?;
+    let bytes = serde_json::to_vec_pretty(&value).map_err(AppError::serialization)?;
     let mut temporary_name = path
         .file_name()
         .map(OsString::from)
@@ -907,3 +910,4 @@ fn write_output(path: &Path, output: &ImageProcessingOutput) -> AppResult<()> {
     }
     Ok(())
 }
+

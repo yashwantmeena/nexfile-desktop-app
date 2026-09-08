@@ -63,6 +63,10 @@ pub fn run() {
             })
         })
         .invoke_handler(tauri::generate_handler![
+            commands::collection_command::list_collections,
+            commands::collection_command::create_collection,
+            commands::collection_command::update_collection,
+            commands::collection_command::delete_collection,
             commands::import_command::import_file,
             commands::file_command::get_file_count,
             commands::file_command::fetch_files,
@@ -88,3 +92,4 @@ pub fn run() {
         }
     });
 }
+

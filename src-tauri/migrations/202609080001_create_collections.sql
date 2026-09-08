@@ -1,0 +1,7 @@
+CREATE TABLE collections (
+ id TEXT PRIMARY KEY NOT NULL,
+ name TEXT NOT NULL,
+ name_key TEXT NOT NULL UNIQUE,
+ created_at_ms INTEGER NOT NULL DEFAULT 0,
+ updated_at_ms INTEGER NOT NULL DEFAULT 0
+);

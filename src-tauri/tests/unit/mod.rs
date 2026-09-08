@@ -27,3 +27,9 @@ mod import_service_unit;
 
 #[path = "../services/storage_service_unit.rs"]
 mod storage_service_unit;
+
+#[path = "../repositories/collection_repository.rs"]
+mod collection_repository;
+
+#[path = "../services/collection_service.rs"]
+mod collection_service;

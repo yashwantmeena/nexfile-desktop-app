@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS background_processes (
         failed_items >= 0 AND failed_items <= processed_items
     ),
     remark TEXT,
+    collections TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(collections) AND json_type(collections) = 'array'),
     created_at_ms INTEGER NOT NULL DEFAULT (
         CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
     ) CHECK (created_at_ms >= 0),

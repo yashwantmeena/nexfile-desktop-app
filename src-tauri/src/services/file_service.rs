@@ -306,3 +306,28 @@ pub(crate) fn add_counts(a: &[FileTypeCount], b: &[FileTypeCount]) -> Option<Vec
     }
     Some(result)
 }
+
+/// Read membership for one known sidecar; never enumerate the drive.
+pub(crate) fn sidecar_collection_ids(path: &Path) -> crate::error::AppResult<Vec<String>> {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error.into()),
+    };
+    let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(crate::error::AppError::serialization)?;
+    value.get("collectionIds").map(|ids| serde_json::from_value(ids.clone()).map_err(crate::error::AppError::serialization)).unwrap_or_else(|| Ok(Vec::new()))
+}
+
+pub(crate) fn add_sidecar_collections(file: &Path, ids: &[String]) -> crate::error::AppResult<()> {
+    let path = super::image_processing_service::classification_output_path(file);
+    let mut existing = sidecar_collection_ids(&path)?;
+    let before = existing.len();
+    for id in ids { if !existing.contains(id) { existing.push(id.clone()); } }
+    if existing.len() == before { return Ok(()); }
+    let bytes = std::fs::read(&path)?;
+    let mut value: serde_json::Value = serde_json::from_slice(&bytes).map_err(crate::error::AppError::serialization)?;
+    let object = value.as_object_mut().ok_or_else(|| crate::error::AppError::validation("File metadata must be a JSON object."))?;
+    object.insert("collectionIds".into(), serde_json::to_value(existing).map_err(crate::error::AppError::serialization)?);
+    crate::system::filesystem::write_file(path, serde_json::to_vec_pretty(&value).map_err(crate::error::AppError::serialization)?)?;
+    Ok(())
+}

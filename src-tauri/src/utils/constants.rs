@@ -36,3 +36,4 @@ pub(crate) const IMPORT_FILE_PROCESS_TYPE: &str = "import_file";
 pub(crate) const IMPORT_FILE_QUEUE: &str = "import_file";
 pub(crate) const IMPORT_FILE_WORKER: &str = "import_file_worker";
 pub(crate) const NEXFILE_DIRECTORY: &str = "nexfile";
+pub(crate) const COLLECTION_ID_LENGTH: usize = 14;

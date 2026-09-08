@@ -7,6 +7,8 @@ pub struct ManagedFileMetadata {
     pub version: u32,
     #[serde(alias = "originalName")]
     pub name: String,
+    #[serde(default)]
+    pub collection_ids: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]

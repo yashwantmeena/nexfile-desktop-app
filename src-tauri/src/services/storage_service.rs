@@ -544,3 +544,4 @@ pub(crate) fn write_metadata(path: &Path, metadata: &DriveMetadata) -> AppResult
     let encoded = serde_json::to_vec_pretty(metadata).map_err(AppError::serialization)?;
     write_file(path, encoded).map_err(Into::into)
 }
+

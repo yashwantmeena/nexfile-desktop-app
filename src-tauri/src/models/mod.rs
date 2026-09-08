@@ -4,3 +4,4 @@ pub mod image_processing_model;
 pub mod import_model;
 pub mod indexing_model;
 pub mod storage_model;
+pub mod collection_model;

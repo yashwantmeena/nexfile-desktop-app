@@ -5,5 +5,6 @@ const icons:Record<string,typeof File>={image:Image,video:Video,audio:Music,arch
 interface CategoryFiltersProps { categories:FileCategory[]; activeCategory:string; onCategoryChange:(value:string)=>void; }
 
 export function CategoryFilters({ categories, activeCategory, onCategoryChange }:CategoryFiltersProps) {
-  return <div className="category-row">{categories.map(({label,count})=>{const Icon=icons[label]??File;return <button key={label} className={activeCategory===label?"active":""} onClick={()=>onCategoryChange(label)}><Icon /><span>{label}</span><small>{count}</small></button>})}</div>;
+  return <div className="category-row" aria-label="File types">{categories.map(({label,count})=>{const Icon=icons[label]??File;return <button key={label} className={activeCategory===label?"active":""} onClick={()=>onCategoryChange(label)}><Icon /><span>{label}</span><small>{count}</small></button>})}</div>;
 }
+

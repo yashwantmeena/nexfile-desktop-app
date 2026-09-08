@@ -3,7 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 
 import type { BackgroundProcess } from "../types/background-process";
 
-export async function selectAndImportFiles(): Promise<BackgroundProcess | null> {
+export async function selectAndImportFiles(collectionIds: string[] = []): Promise<BackgroundProcess | null> {
   const selectedPaths = await open({
     directory: false,
     multiple: true,
@@ -15,10 +15,10 @@ export async function selectAndImportFiles(): Promise<BackgroundProcess | null> 
   const paths = Array.isArray(selectedPaths) ? selectedPaths : [selectedPaths];
   if (paths.length === 0) return null;
 
-  return invoke<BackgroundProcess>("import_file", { paths });
+  return invoke<BackgroundProcess>("import_file", { paths, collectionIds });
 }
 
-export async function selectAndImportFolder(): Promise<BackgroundProcess | null> {
+export async function selectAndImportFolder(collectionIds: string[] = []): Promise<BackgroundProcess | null> {
   const selectedPath = await open({
     directory: true,
     multiple: false,
@@ -30,7 +30,7 @@ export async function selectAndImportFolder(): Promise<BackgroundProcess | null>
   const path = Array.isArray(selectedPath) ? selectedPath[0] : selectedPath;
   if (!path) return null;
 
-  return invoke<BackgroundProcess>("import_folder", { path });
+  return invoke<BackgroundProcess>("import_folder", { path, collectionIds });
 }
 
 export function getImportErrorMessage(error: unknown): string {
@@ -45,3 +45,4 @@ export function getImportErrorMessage(error: unknown): string {
 
   return "Unable to start the file import.";
 }
+

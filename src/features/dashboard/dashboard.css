@@ -296,3 +296,20 @@
 .files-back-to-top button:hover{background:#dbeafe;border-color:#93b4e8}
 .files-back-to-top button:focus-visible{outline:2px solid #2563d9;outline-offset:3px}
 .files-back-to-top svg{width:16px;height:16px}
+.collection-filter-trigger { height:35px; max-width:220px; flex:none; display:flex; align-items:center; gap:8px; padding:0 11px; border:1px solid #dce2e9; border-radius:9px; color:#344155; background:#fff; cursor:pointer; font-size:12px; }
+.collection-filter-trigger span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.collection-filter-trigger svg { flex:none; }
+.collection-filter-trigger:hover { background:#f7f9fc; border-color:#bfc9d6; }
+.collection-filter-trigger.active { color:#2563eb; border-color:#bad2f6; background:#edf4ff; }
+.collection-filter-menu { z-index:50; width:280px; max-width:calc(100vw - 24px); padding:6px; border:1px solid #dce2ea; border-radius:12px; background:#fff; color:#344155; box-shadow:0 16px 40px #0f172a24; font-family:"Segoe UI",sans-serif; }
+.collection-filter-search { display:flex; align-items:center; gap:8px; margin:4px 4px 6px; padding:8px; border:1px solid #dce2ea; border-radius:7px; color:#8590a0; }
+.collection-filter-search input { min-width:0; width:100%; border:0; background:transparent; font-size:13px; }
+.collection-filter-options { max-height:250px; overflow:auto; }
+.collection-filter-options button { width:100%; display:flex; align-items:center; gap:9px; padding:10px; border:0; border-radius:7px; background:transparent; color:inherit; text-align:left; font-size:13px; cursor:pointer; }
+.collection-filter-options button span { flex:1; overflow-wrap:anywhere; }
+.collection-filter-options button svg { flex:none; }
+.collection-filter-options button:hover,.collection-filter-options button[aria-pressed=true] { color:#2563eb; background:#edf4ff; }
+.collection-filter-options p { margin:12px 10px; color:#8590a0; font-size:12px; line-height:1.6; }
+.collection-page-heading { margin-top:22px; }
+@media(max-width:1250px) { .category-toolbar { flex-wrap:wrap; } .category-toolbar .category-row { flex-basis:100%; } .category-toolbar .category-sort { margin-left:auto; } }
+.model-category-label { margin:8px 10px; color:#697386; font-size:12px; font-weight:600; }
