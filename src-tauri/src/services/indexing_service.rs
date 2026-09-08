@@ -77,6 +77,7 @@ impl IndexingService {
             search_keywords: search_keywords.into_iter().collect(),
             secondary_labels: secondary_labels.into_iter().collect(),
             categories: categories.into_iter().collect(),
+            collection_ids: source.collection_ids,
         })
     }
 }
@@ -84,6 +85,7 @@ impl IndexingService {
 struct IndexSource {
     file_id: String,
     drive_id: String,
+    collection_ids: Vec<String>,
     output: ImageProcessingOutput,
 }
 
@@ -133,9 +135,12 @@ impl IndexSource {
             .map_err(AppError::serialization)?;
 
         let file_id = required_text(image_path.file_stem(), "The managed image has no file ID.")?;
+        let drive_id = drive_metadata.drive_id;
+        let collection_ids = crate::services::file_service::sidecar_collection_ids(sidecar_path)?;
         Ok(Self {
             file_id,
-            drive_id: drive_metadata.drive_id,
+            drive_id,
+            collection_ids,
             output,
         })
     }

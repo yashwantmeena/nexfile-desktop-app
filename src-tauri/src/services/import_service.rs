@@ -68,7 +68,10 @@ impl ImportService {
 
     async fn save_selected_collections(&self, job: &ImportFileJob, root: &Path, drive_id: &str, destination: &Path) -> AppResult<()> {
         let encoded: Option<String> = sqlx::query_scalar("SELECT collections FROM background_processes WHERE process_id = ?").bind(&job.process_id).fetch_optional(&self.queue_pool).await.map_err(AppError::database)?;
-        let mut names: Vec<String> = match encoded { Some(encoded) => serde_json::from_str(&encoded).map_err(AppError::serialization)?, None => Vec::new() };
+        let mut names: Vec<String> = match encoded {
+            Some(encoded) => serde_json::from_str(&encoded).map_err(AppError::serialization)?,
+            None => Vec::new(),
+        };
         // Inherit only from the known source file, without scanning source or destination drives.
         if let Some(files) = job.path.parent().filter(|path| path.file_name().and_then(|name| name.to_str()) == Some(IMPORTED_FILES_DIRECTORY)) {
             if let Some(source_root) = files.parent() {
@@ -94,13 +97,18 @@ impl ImportService {
         self
     }
 
-    async fn index_filename(&self, drive: &str, job: &ImportFileJob) -> AppResult<()> {
+    async fn index_filename(&self, drive: &str, job: &ImportFileJob, destination: &Path) -> AppResult<()> {
         if let Some(search) = &self.search {
             let search = search.clone();
             let drive = drive.to_owned();
             let file = job.file_id.clone();
             let name = job.path.file_name().unwrap_or_default().to_string_lossy().into_owned();
-            tauri::async_runtime::spawn_blocking(move || search.index_filename(&drive, &file, &name))
+            let collection_ids = crate::services::file_service::sidecar_collection_ids(
+                &classification_output_path(destination),
+            )?;
+            tauri::async_runtime::spawn_blocking(move || {
+                search.index_filename(&drive, &file, &name, &collection_ids)
+            })
                 .await
                 .map_err(AppError::internal)??;
         }
@@ -196,15 +204,12 @@ impl ImportService {
             &self.queue_pool,
             IMPORT_FILE_QUEUE,
         );
-
         if let Err(error) = queue.push_all(&mut jobs).await {
             let _ = self.repository.delete(&process.process_id).await;
             return Err(AppError::database(error));
         }
-
         Ok(process)
     }
-
     pub async fn consume(&self, job: ImportFileJob) -> AppResult<()> {
         let _guard = self.copy_lock.lock().await;
         let drives = tauri::async_runtime::spawn_blocking(get_drives)
@@ -267,7 +272,7 @@ impl ImportService {
                     })
                     .await?;
                 drop(_metadata_guard);
-                self.index_filename(&saved.drive_id, &job).await?;
+                self.index_filename(&saved.drive_id, &job, &destination).await?;
                 self.publish_for_image_processing(&destination).await?;
                 return Ok(());
             }
@@ -318,7 +323,7 @@ impl ImportService {
                 })
                 .await?;
             drop(_metadata_guard);
-            self.index_filename(&saved.drive_id, &job).await?;
+            self.index_filename(&saved.drive_id, &job, &destination).await?;
             self.publish_for_image_processing(&destination).await?;
             return Ok(());
         }

@@ -171,7 +171,7 @@ fn read_name(file_path: &Path) -> Option<String> {
     (!name.is_empty()).then(|| name.to_owned())
 }
 
-fn read_collection_names(file_path: &Path, storage_root: &Path, drive_id: &str) -> Vec<String> {
+pub(crate) fn read_collection_names(file_path: &Path, storage_root: &Path, drive_id: &str) -> Vec<String> {
     let ids = crate::services::file_service::sidecar_collection_ids(
         &crate::services::image_processing_service::classification_output_path(file_path),
     )

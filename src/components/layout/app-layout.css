@@ -208,10 +208,6 @@
 .collection-dialog footer button,.collection-empty button { padding:10px 15px; border:1px solid #dce2ea; border-radius:9px; background:#fff; color:#344155; cursor:pointer; }
 .collection-dialog button[type=submit] { background:#2868d8; color:white; border-color:#2868d8; }
 .collection-dialog button:disabled { opacity:.45; cursor:default; }
-.collection-page-heading { display:flex; align-items:center; justify-content:space-between; padding:6px 0 24px; border-bottom:1px solid #e7eaf0; gap:20px; }
-.collection-page-heading p { margin:0 0 6px; color:#8590a0; font-size:10px; font-weight:650; letter-spacing:.1em; }
-.collection-page-heading h1 { margin:0; font-size:24px; font-weight:650; overflow-wrap:anywhere; }
-.collection-page-heading>span { flex:none; color:#8590a0; font-size:13px; }
 .collection-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:420px; text-align:center; }
 .collection-empty h2 { margin:20px 0 8px; font-size:20px; font-weight:600; }
 .collection-empty p { margin:0 0 24px; color:#8590a0; font-size:14px; line-height:1.7; }
@@ -225,7 +221,6 @@
 .collection-actions-menu [role=separator] { height:1px; margin:4px; background:#e7eaf0; }
 .collection-actions-menu .collection-delete-action { color:#bd3545; }
 .collection-actions-menu .collection-delete-action[data-highlighted] { background:#fff0f2; }
-.collection-header-actions { display:flex; align-items:center; gap:12px; flex:none; color:#8590a0; font-size:13px; }
 .collection-dialog footer .delete-collection-confirm { color:#fff; background:#bd3545; border-color:#bd3545; }
 .collection-dialog p { overflow-wrap:anywhere; }
 .collection-dialog select { width:100%; height:44px; padding:0 10px; border:1px solid #d8e0eb; border-radius:9px; background:#fff; margin-bottom:14px; font:inherit; }

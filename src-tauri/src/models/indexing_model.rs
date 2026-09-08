@@ -23,4 +23,5 @@ pub struct IndexDocument {
     pub search_keywords: Vec<String>,
     pub secondary_labels: Vec<String>,
     pub categories: Vec<String>,
+    pub collection_ids: Vec<String>,
 }

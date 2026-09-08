@@ -18,19 +18,19 @@ pub async fn get_file_count(
     query: Option<String>,
     search_mode: Option<String>,
     tags: Option<Vec<String>>,
+    collection: Option<String>,
 ) -> AppResult<FileCountSummary> {
-    let index = state.search.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        index
-            .indexed_results(
-                &query.unwrap_or_default(),
-                &search_mode.unwrap_or_else(|| "tags".into()),
-                &tags.unwrap_or_default(),
-            )
-            .map(|(_, counts)| counts)
-    })
-    .await
-    .map_err(crate::error::AppError::internal)?
+    let _guard = state.imports.metadata_lock().lock().await;
+    state
+        .storage
+        .search_file_count(
+            state.search.clone(),
+            query.unwrap_or_default(),
+            search_mode.unwrap_or_else(|| "tags".into()),
+            tags.unwrap_or_default(),
+            collection,
+        )
+        .await
 }
 
 #[tauri::command]
@@ -43,6 +43,7 @@ pub async fn fetch_files(
     query: Option<String>,
     search_mode: Option<String>,
     tags: Option<Vec<String>>,
+    collection: Option<String>,
 ) -> AppResult<crate::models::file_model::FilePage> {
     let _guard = state.imports.metadata_lock().lock().await;
     let query = query.unwrap_or_default();
@@ -62,6 +63,7 @@ pub async fn fetch_files(
                 offset.unwrap_or(0),
                 limit.unwrap_or(60),
                 media_type,
+                collection,
             )
             .await?
     };

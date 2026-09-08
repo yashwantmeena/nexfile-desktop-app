@@ -15,7 +15,7 @@ fn counts_indexed_matches_across_types_search_and_tags() {
     let repository = TantivyIndexingRepository::open(&root).unwrap();
     assert_eq!(
         repository
-            .indexed_results("", "tags", &[])
+            .indexed_results("", "tags", &[], None)
             .unwrap()
             .1
             .total_count,
@@ -24,7 +24,7 @@ fn counts_indexed_matches_across_types_search_and_tags() {
     let mut source = IndexDocument {
         name: "Beach.jpg".into(),
         file_id: "photo".into(),
-        drive_id: "drive".into(),
+        drive_id: "drive-a".into(),
         created_at_ms: 100,
         updated_at_ms: 100,
         media_type: Some("image/jpeg".into()),
@@ -35,19 +35,43 @@ fn counts_indexed_matches_across_types_search_and_tags() {
         search_keywords: vec!["beach".into()],
         secondary_labels: vec![],
         categories: vec!["travel".into()],
+        collection_ids: vec!["local-delhi-a".into()],
     };
     repository.upsert(source.clone()).unwrap();
     source.file_id = "report".into();
+    source.drive_id = "drive-b".into();
     source.name = "Beach report.pdf".into();
+    source.collection_ids = vec!["local-delhi-b".into()];
     source.media_type = Some("application/pdf".into());
     source.updated_at_ms = 200;
     repository.upsert(source.clone()).unwrap();
     repository
-        .index_filename("drive", "song", "Music.mp3")
+        .index_filename("drive-a", "song", "Music.mp3", &[])
         .unwrap();
-    let (files, summary) = repository.indexed_results("", "tags", &[]).unwrap();
+    let (files, summary) = repository.indexed_results("", "tags", &[], None).unwrap();
     assert_eq!(files.len(), 3);
     assert_eq!(summary.total_count, Some(3));
+    let delhi_ids = vec![
+        ("drive-a".to_owned(), "local-delhi-a".to_owned()),
+        ("drive-b".to_owned(), "local-delhi-b".to_owned()),
+    ];
+    assert_eq!(
+        repository
+            .indexed_results("", "tags", &[], Some(&delhi_ids))
+            .unwrap()
+            .1
+            .total_count,
+        Some(2)
+    );
+    let wrong_drive = vec![("drive-a".to_owned(), "local-delhi-b".to_owned())];
+    assert!(repository
+        .search_files("", "tags", &[], Some(&wrong_drive))
+        .unwrap()
+        .is_empty());
+    assert!(repository
+        .search_files("", "tags", &[], Some(&[]))
+        .unwrap()
+        .is_empty());
     let counts = summary.counts.unwrap();
     assert_eq!(counts.len(), 6);
     for kind in [FileType::Image, FileType::Document, FileType::Audio] {
@@ -62,7 +86,7 @@ fn counts_indexed_matches_across_types_search_and_tags() {
     }
     assert_eq!(
         repository
-            .indexed_results("bea", "tags", &[])
+            .indexed_results("bea", "tags", &[], None)
             .unwrap()
             .1
             .total_count,
@@ -70,7 +94,7 @@ fn counts_indexed_matches_across_types_search_and_tags() {
     );
     assert_eq!(
         repository
-            .indexed_results("bea", "tags", &["travel".into()])
+            .indexed_results("bea", "tags", &["travel".into()], None)
             .unwrap()
             .1
             .total_count,
@@ -78,7 +102,7 @@ fn counts_indexed_matches_across_types_search_and_tags() {
     );
     assert_eq!(
         repository
-            .indexed_results("REPORT.PDF", "name", &["beach".into()])
+            .indexed_results("REPORT.PDF", "name", &["beach".into()], None)
             .unwrap()
             .1
             .total_count,
@@ -86,7 +110,7 @@ fn counts_indexed_matches_across_types_search_and_tags() {
     );
     assert_eq!(
         repository
-            .indexed_results("REPORT.PDF", "name", &[])
+            .indexed_results("REPORT.PDF", "name", &[], None)
             .unwrap()
             .1
             .total_count,
@@ -94,7 +118,7 @@ fn counts_indexed_matches_across_types_search_and_tags() {
     );
     assert_eq!(
         repository
-            .indexed_results("bea", "tags", &["missing".into()])
+            .indexed_results("bea", "tags", &["missing".into()], None)
             .unwrap()
             .1
             .total_count,
@@ -103,7 +127,7 @@ fn counts_indexed_matches_across_types_search_and_tags() {
     repository.upsert(source).unwrap();
     assert_eq!(
         repository
-            .indexed_results("", "tags", &[])
+            .indexed_results("", "tags", &[], None)
             .unwrap()
             .1
             .total_count,
@@ -133,67 +157,68 @@ fn suggests_unique_live_prefix_tags_with_limits_and_refresh() {
         search_keywords: vec!["beach".into(), "bear".into(), "éclair".into()],
         secondary_labels: vec!["beaver".into()],
         categories: vec!["beauty".into()],
+        collection_ids: vec![],
     };
     repository.upsert(document.clone()).unwrap();
     let one = std::collections::HashSet::from([("drive".to_owned(), "one".to_owned())]);
-    assert_eq!(repository.search_files(" BE ", "tags", &[]).unwrap(), one);
+    assert_eq!(repository.search_files(" BE ", "tags", &[], None).unwrap(), one);
     assert_eq!(
-        repository.search_files("beach b", "tags", &[]).unwrap(),
+        repository.search_files("beach b", "tags", &[], None).unwrap(),
         one
     );
     assert_eq!(
         repository
-            .search_files("", "tags", &["beach".into(), "beauty".into()])
+            .search_files("", "tags", &["beach".into(), "beauty".into()], None)
             .unwrap(),
         one
     );
     assert!(repository
-        .search_files("be", "tags", &["missing".into()])
+        .search_files("be", "tags", &["missing".into()], None)
         .unwrap()
         .is_empty());
     assert!(repository
-        .search_files("be.*", "tags", &[])
+        .search_files("be.*", "tags", &[], None)
         .unwrap()
         .is_empty());
     // Existing tag documents must never be implicitly reindexed as filenames.
     assert!(repository
-        .search_files("beach", "name", &[])
+        .search_files("beach", "name", &[], None)
         .unwrap()
         .is_empty());
     repository
-        .index_filename("drive", "one", "Beach (2026).JPG")
+        .index_filename("drive", "one", "Beach (2026).JPG", &[])
         .unwrap();
     assert_eq!(
-        repository.search_files("(2026).jpg", "name", &[]).unwrap(),
+        repository.search_files("(2026).jpg", "name", &[], None).unwrap(),
         one
     );
     assert_eq!(
         repository
-            .search_files("BEACH", "name", &["beauty".into()])
+            .search_files("BEACH", "name", &["beauty".into()], None)
             .unwrap(),
         one
     );
     assert!(repository
-        .search_files(".*", "name", &[])
+        .search_files(".*", "name", &[], None)
         .unwrap()
         .is_empty());
     assert!(repository
-        .search_files("beach", "name", &["missing".into()])
+        .search_files("beach", "name", &["missing".into()], None)
         .unwrap()
         .is_empty());
-    assert!(repository.search_files("beach", "invalid", &[]).is_err());
+    assert!(repository.search_files("beach", "invalid", &[], None).is_err());
     assert!(repository
-        .search_files(&"a".repeat(257), "tags", &[])
+        .search_files(&"a".repeat(257), "tags", &[], None)
         .is_err());
     repository
-        .index_filename("drive", "one", "Renamed.jpg")
+        .index_filename("drive", "one", "Renamed.jpg", &[])
         .unwrap();
     assert!(repository
-        .search_files("beach", "name", &[])
+        .search_files("beach", "name", &[], None)
         .unwrap()
         .is_empty());
     assert_eq!(
-        repository.search_files("renamed", "name", &[]).unwrap(),
+        repository.search_files("renamed", "name", &[], None).unwrap(),
         one
     );
     assert_eq!(
@@ -218,7 +243,7 @@ fn suggests_unique_live_prefix_tags_with_limits_and_refresh() {
     document.search_keywords = (0..600).map(|i| format!("berry{i:03}")).collect();
     repository.upsert(document).unwrap();
     assert!(repository
-        .search_files("beach", "tags", &[])
+        .search_files("beach", "tags", &[], None)
         .unwrap()
         .is_empty());
     let suggestions = repository.suggest_tags("be").unwrap();
@@ -227,7 +252,7 @@ fn suggests_unique_live_prefix_tags_with_limits_and_refresh() {
     assert!(suggestions.windows(2).all(|pair| pair[0] < pair[1]));
     drop(repository);
     let reopened = TantivyIndexingRepository::open(&root).unwrap();
-    assert_eq!(reopened.search_files("renamed", "name", &[]).unwrap(), one);
+    assert_eq!(reopened.search_files("renamed", "name", &[], None).unwrap(), one);
     assert_eq!(reopened.suggest_tags("be").unwrap(), suggestions);
     drop(reopened);
     std::fs::remove_dir_all(root).unwrap();
@@ -255,6 +280,7 @@ fn opens_index_with_expected_schema() {
         "search_keywords",
         "secondary_labels",
         "categories",
+        "collection_ids",
     ] {
         assert!(schema.get_field(field_name).is_ok(), "missing {field_name}");
     }
@@ -281,56 +307,28 @@ fn opens_index_with_expected_schema() {
 }
 
 #[test]
-fn keeps_legacy_v3_schema_and_documents_without_reindexing() {
-    use tantivy::{doc, Index, TantivyDocument};
+fn rejects_an_outdated_schema() {
+    use tantivy::Index;
     let template_root = temporary_directory("schema-template");
     let template = TantivyIndexingRepository::open(&template_root).unwrap();
     let mut schema_json = serde_json::to_value(template.index().schema()).unwrap();
     schema_json
         .as_array_mut()
         .unwrap()
-        .retain(|field| field["name"] != "name");
+        .retain(|field| field["name"] != "collection_ids");
     let schema: tantivy::schema::Schema = serde_json::from_value(schema_json).unwrap();
     drop(template);
     std::fs::remove_dir_all(template_root).unwrap();
 
-    let root = temporary_directory("legacy-v3");
+    let root = temporary_directory("outdated-schema");
     let path = root.join("search-index-v3");
     std::fs::create_dir_all(&path).unwrap();
-    let index = Index::create_in_dir(&path, schema.clone()).unwrap();
-    let mut writer = index
-        .writer_with_num_threads::<TantivyDocument>(1, 15_000_000)
-        .unwrap();
-    writer
-        .add_document(doc!(schema.get_field("file_id").unwrap() => "old",
-        schema.get_field("drive_id").unwrap() => "drive",
-        schema.get_field("search_keywords").unwrap() => "beach"))
-        .unwrap();
-    writer.commit().unwrap();
-    drop(writer);
-    drop(index);
+    drop(Index::create_in_dir(&path, schema).unwrap());
 
-    let repository = TantivyIndexingRepository::open(&root).unwrap();
-    assert_eq!(repository.index().schema(), schema);
-    assert_eq!(
-        repository.search_files("bea", "tags", &[]).unwrap().len(),
-        1
-    );
-    assert!(repository
-        .search_files("photo", "name", &[])
-        .unwrap_err()
-        .to_string()
-        .contains("name field"));
-    repository
-        .index_filename("drive", "old", "photo.jpg")
-        .unwrap();
-    assert_eq!(repository.index().schema(), schema);
-    assert_eq!(
-        repository.search_files("bea", "tags", &[]).unwrap().len(),
-        1
-    );
-    assert!(!root.join("search-filenames-v1").exists());
-    drop(repository);
+    let error = TantivyIndexingRepository::open(&root)
+        .err()
+        .expect("an outdated schema should be rejected");
+    assert!(error.to_string().contains("unsupported schema"));
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -342,20 +340,5 @@ fn reopens_an_existing_index() {
     drop(first);
 
     TantivyIndexingRepository::open(&root).expect("existing indexing repository should reopen");
-    std::fs::remove_dir_all(root).expect("temporary index should be removable");
-}
-
-#[test]
-fn ignores_an_index_from_an_older_schema_generation() {
-    let root = temporary_directory("tantivy-schema-upgrade");
-    let legacy = root.join("search-index");
-    std::fs::create_dir_all(&legacy).expect("legacy index directory should be created");
-    std::fs::write(legacy.join("meta.json"), b"incompatible legacy index")
-        .expect("legacy index fixture should be written");
-
-    TantivyIndexingRepository::open(&root).expect("a schema upgrade should create a fresh index");
-
-    assert!(legacy.join("meta.json").is_file());
-    assert!(root.join("search-index-v3").join("meta.json").is_file());
     std::fs::remove_dir_all(root).expect("temporary index should be removable");
 }

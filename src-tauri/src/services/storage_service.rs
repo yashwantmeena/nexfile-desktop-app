@@ -20,7 +20,7 @@ impl StorageService {
     pub async fn search_files(
         &self, index: crate::repositories::indexing_repository::TantivyIndexingRepository,
         query: String, mode: String, tags: Vec<String>, offset: usize, limit: usize,
-        media_type: Option<crate::types::file_type::FileType>,
+        media_type: Option<crate::types::file_type::FileType>, collection: Option<String>,
     ) -> AppResult<crate::models::file_model::FilePage> {
         if !(1..=200).contains(&limit) {
             return Err(AppError::validation("The file page size must be between 1 and 200."));
@@ -28,15 +28,70 @@ impl StorageService {
         let snapshots = self.repository.list().await?;
         let root = self.system_metadata_root.clone();
         tauri::async_runtime::spawn_blocking(move || {
-            let (matches, _) = index.indexed_results(&query, &mode, &tags)?;
+            let connected = get_drives();
+            let collection_ids = collection
+                .as_deref()
+                .filter(|name| !name.trim().is_empty())
+                .map(|name| {
+                    crate::services::collection_service::ids_by_name(
+                        &snapshots,
+                        &connected,
+                        &root,
+                        name,
+                    )
+                })
+                .transpose()?;
+            let (matches, _) = index.indexed_results(
+                &query,
+                &mode,
+                &tags,
+                collection_ids.as_deref(),
+            )?;
             if matches.is_empty() {
                 return Ok(crate::models::file_model::FilePage {
                     files: Vec::new(), total_count: 0, next_offset: None, issues: Vec::new(),
                 });
             }
             Ok(crate::services::file_service::fetch_matching_files(
-                snapshots, get_drives(), &root, media_type, offset, limit, Some(&matches)))
+                snapshots, connected, &root, media_type, offset, limit, Some(&matches)))
         }).await.map_err(AppError::internal)?
+    }
+
+    pub async fn search_file_count(
+        &self,
+        index: crate::repositories::indexing_repository::TantivyIndexingRepository,
+        query: String,
+        mode: String,
+        tags: Vec<String>,
+        collection: Option<String>,
+    ) -> AppResult<crate::models::file_model::FileCountSummary> {
+        let snapshots = self.repository.list().await?;
+        let root = self.system_metadata_root.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let connected = get_drives();
+            let collection_ids = collection
+                .as_deref()
+                .filter(|name| !name.trim().is_empty())
+                .map(|name| {
+                    crate::services::collection_service::ids_by_name(
+                        &snapshots,
+                        &connected,
+                        &root,
+                        name,
+                    )
+                })
+                .transpose()?;
+            index
+                .indexed_results(
+                    &query,
+                    &mode,
+                    &tags,
+                    collection_ids.as_deref(),
+                )
+                .map(|(_, counts)| counts)
+        })
+        .await
+        .map_err(AppError::internal)?
     }
     pub async fn fetch_files(
         &self,

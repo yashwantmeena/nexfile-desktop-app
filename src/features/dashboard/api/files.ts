@@ -25,8 +25,8 @@ export interface FilePage {
  * Refresh from offset zero after imports/deletions, which can shift page offsets.
  * Search text and tags are filtered before pagination.
  */
-export async function fetchFiles(offset = 0, limit = 60, mediaType?: string, query = "", searchMode = "tags", tags: string[] = []): Promise<FilePage> {
-  const page = await invoke<FilePage>("fetch_files", { offset, limit, mediaType, query, searchMode, tags });
+export async function fetchFiles(offset = 0, limit = 60, mediaType?: string, query = "", searchMode = "tags", tags: string[] = [], collection?: string): Promise<FilePage> {
+  const page = await invoke<FilePage>("fetch_files", { offset, limit, mediaType, query, searchMode, tags, collection });
   return {
     ...page,
     files: page.files.map(file => ({

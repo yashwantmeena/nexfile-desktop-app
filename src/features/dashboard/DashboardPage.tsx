@@ -1,7 +1,6 @@
-import { CollectionActions } from "@/components/layout/CollectionActions";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ArrowUp, ChevronDown, FolderOpen } from "lucide-react";
+import { ArrowUp, ChevronDown } from "lucide-react";
 import { useCollections } from "@/components/layout/CollectionsProvider";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { AppToolbar, type SearchMode } from "@/components/layout/AppToolbar";
@@ -19,8 +18,8 @@ import "./dashboard.css";
 interface DashboardPageProps { activeNavigation:AppNavigationItem; onNavigationChange:(item:AppNavigationItem)=>void; }
 
 export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardPageProps) {
-  const { selected, select } = useCollections();
-  const isCollection = !!selected;
+  const { selected } = useCollections();
+  const activeCollection = activeNavigation === "Collections" ? selected : undefined;
   const [modelCategory, setModelCategory] = useState<string | undefined>();
   const [homeCounts, setHomeCounts] = useState<HomeCounts | null>(null);
   const [countsError, setCountsError] = useState<string | null>(null);
@@ -30,7 +29,7 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
   const [searchMode, setSearchMode] = useState<SearchMode>("tags");
   const tagsKey = JSON.stringify(tags);
   const [refreshKey, setRefreshKey] = useState(0);
-  const fetched = useFiles(activeCategory === "All" ? undefined : activeCategory.toLowerCase(), query, searchMode, tags, refreshKey);
+  const fetched = useFiles(activeCategory === "All" ? undefined : activeCategory.toLowerCase(), query, searchMode, tags, refreshKey, activeCollection?.name);
   const resultsPaneRef = useRef<HTMLDivElement>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const [showBackToTop,setShowBackToTop]=useState(false);
@@ -38,20 +37,20 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
   useEffect(() => {
     const root = resultsPaneRef.current;
     const sentinel = loadMoreRef.current;
-    if (isCollection || !root || !sentinel || nextOffset === null || loading || error) return;
+    if (!root || !sentinel || nextOffset === null || loading || error) return;
     const observer = new IntersectionObserver(entries => {
       if (entries.some(entry => entry.isIntersecting)) loadMore();
     }, { root, rootMargin: "0px 0px 400px 0px" });
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [nextOffset, loading, error, loadMore, isCollection]);
+  }, [nextOffset, loading, error, loadMore]);
   useEffect(() => {
     let cancelled = false;
     setHomeCounts(null);
     setCountsError(null);
     const load = async () => {
       try {
-        const result = await invoke<HomeCounts>("get_file_count", { query, searchMode, tags: JSON.parse(tagsKey) });
+        const result = await invoke<HomeCounts>("get_file_count", { query, searchMode, tags: JSON.parse(tagsKey), collection: activeCollection?.name });
         if (!cancelled) setHomeCounts(result);
       } catch {
         if (!cancelled) setCountsError("Unable to count indexed files. Please try again.");
@@ -62,12 +61,12 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [query, searchMode, tagsKey, refreshKey]);
+  }, [query, searchMode, tagsKey, refreshKey, activeCollection?.name]);
   const counts = homeCounts?.counts;
   const categories = [
     { label: "All", count: homeCounts?.totalCount },
     ...["image", "video", "audio", "document", "archive", "other"].map(fileType => ({ label: fileType, count: counts?.find(entry => entry.fileType === fileType)?.count })),
-  ].map(({ label, count }) => ({ label, count: isCollection ? "0" : count == null ? "—" : count.toLocaleString() }));
+  ].map(({ label, count }) => ({ label, count: count == null ? "—" : count.toLocaleString() }));
   const [previewIndex,setPreviewIndex]=useState<number|null>(null);
   const loadedFiles = useMemo<DashboardFile[]>(() => fetched.files.map(file => ({
     id: file.id, name: file.name, path: file.path, fileType: file.fileType,
@@ -78,7 +77,7 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
     collections: file.collectionNames, collection: file.collectionNames[0],
   })), [fetched.files]);
   const modelCategories = [...new Set(loadedFiles.flatMap(file => file.categories ?? []))].sort();
-  const files = isCollection ? [] : loadedFiles.filter(file => !modelCategory || file.categories?.includes(modelCategory));
+  const files = loadedFiles.filter(file => !modelCategory || file.categories?.includes(modelCategory));
   return (
     <div className="nexfile-app">
       <AppSidebar activeItem={activeNavigation} onActiveItemChange={onNavigationChange}/>
@@ -90,7 +89,7 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
         <FilterBar tags={tags} onTagsChange={setTags} onReset={()=>setTags([])}/>
         <section className="content-shell">
           <div className="results-pane" ref={resultsPaneRef} tabIndex={-1} onScroll={event=>setShowBackToTop(event.currentTarget.scrollTop>200)}>
-            {!isCollection && (countsError || !!homeCounts?.issues.length) && <div className="count-warning" role="alert">
+            {(countsError || !!homeCounts?.issues.length) && <div className="count-warning" role="alert">
               <strong>Indexed file counts are unavailable</strong>
               {countsError && <p>{countsError}</p>}
               {homeCounts?.issues.map(issue => <p key={issue.driveId}><strong>{issue.driveName || issue.driveId}:</strong> {issue.message}</p>)}
@@ -100,7 +99,6 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
               <ModelCategoryFilter categories={modelCategories} selected={modelCategory} onSelect={value => { setModelCategory(value); setPreviewIndex(null); }}/>
               <button className="results-sort category-sort" title="Filesystem modified time, descending">Modified: newest <ChevronDown /></button>
             </div>
-            {isCollection ? <><div className="collection-page-heading"><div><p>COLLECTION</p><h1>{selected.name}</h1></div><div className="collection-header-actions"><span>0 files</span><CollectionActions id={selected.id} name={selected.name}/></div></div><div className="collection-empty"><div className="collection-symbol"><FolderOpen size={28}/></div><h2>A home for related files</h2><p>This collection is ready. Adding files to collections<br/>will be available when collection storage is connected.</p><button type="button" onClick={() => { select(null); onNavigationChange("Search"); }}>Browse all files</button></div></> : <>
             {(fetched.error || fetched.issues.length > 0) && <div className="count-warning" role="alert">
               {fetched.error && <p>{fetched.error}</p>}
               {fetched.issues.map(issue => <p key={issue.driveId}><strong>{issue.driveName || issue.driveId}:</strong> {issue.message}</p>)}
@@ -112,7 +110,6 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
               {fetched.loading && loadedFiles.length > 0 && <span role="status">Loading more files…</span>}
               {fetched.error && fetched.nextOffset !== null && <button className="results-sort" onClick={fetched.loadMore}>Retry loading more files</button>}
             </div>
-            </>}
           </div>
             {showBackToTop && files.length > 0 && <div className="files-back-to-top">
               <button onClick={()=>{

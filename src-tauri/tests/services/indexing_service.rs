@@ -105,7 +105,7 @@ async fn stores_searchable_image_fields_in_tantivy() {
         .process(IndexingJob { path: sidecar_path })
         .await
         .expect("sidecar should be indexed");
-    assert_eq!(repository.search_files("PHOTO.JPG", "name", &[]).unwrap(),
+    assert_eq!(repository.search_files("PHOTO.JPG", "name", &[], None).unwrap(),
         std::collections::HashSet::from([("drive-1".to_owned(), "AbC123".to_owned())]));
 
     let reader = repository

@@ -6,7 +6,7 @@ use tantivy::collector::{DocSetCollector, TopDocs};
 use tantivy::directory::MmapDirectory;
 use tantivy::indexer::{IndexWriter, IndexWriterOptions};
 use tantivy::query::{
-    AllQuery, BooleanQuery, FuzzyTermQuery, Occur, Query, RegexQuery, TermQuery,
+    AllQuery, BooleanQuery, EmptyQuery, FuzzyTermQuery, Occur, Query, RegexQuery, TermQuery,
 };
 use tantivy::schema::{Field, Schema, FAST, INDEXED, STORED, STRING};
 use tantivy::schema::{IndexRecordOption, Value};
@@ -32,7 +32,8 @@ struct IndexFields {
     search_keywords: Field,
     secondary_labels: Field,
     categories: Field,
-    name: Option<Field>,
+    collection_ids: Field,
+    name: Field,
 }
 
 #[derive(Clone)]
@@ -48,18 +49,14 @@ impl TantivyIndexingRepository {
         let index_path = app_data_dir.as_ref().join(SEARCH_INDEX_DIRECTORY);
         std::fs::create_dir_all(&index_path)?;
 
-        let (schema, mut fields) = build_schema(true);
+        let (schema, fields) = build_schema();
         let directory = MmapDirectory::open(&index_path).map_err(AppError::internal)?;
         let index = if Index::exists(&directory).map_err(AppError::internal)? {
             let index = Index::open(directory).map_err(AppError::internal)?;
             if index.schema() != schema {
-                let (legacy_schema, legacy_fields) = build_schema(false);
-                if index.schema() != legacy_schema {
-                    return Err(AppError::validation(
-                        "The search index has an unsupported schema.",
-                    ));
-                }
-                fields = legacy_fields;
+                return Err(AppError::validation(
+                    "The search index has an unsupported schema.",
+                ));
             }
             index
         } else {
@@ -115,27 +112,30 @@ impl TantivyIndexingRepository {
         for category in source.categories {
             document.add_text(self.fields.categories, category);
         }
+        for collection_id in source.collection_ids {
+            if !collection_id.is_empty() {
+                document.add_text(self.fields.collection_ids, collection_id);
+            }
+        }
 
         let mut writer = self.writer.lock().map_err(|_| {
             AppError::internal(std::io::Error::other(
                 "Tantivy index writer lock is poisoned.",
             ))
         })?;
-        if let Some(field) = self.fields.name {
-            let name = if source.name.is_empty() {
-                self.existing_document(&source.drive_id, &source.file_id)?
-                    .and_then(|doc| {
-                        doc.get_first(field)
-                            .and_then(|value| value.as_str())
-                            .map(str::to_owned)
-                    })
-                    .unwrap_or_default()
-            } else {
-                source.name.trim().to_lowercase()
-            };
-            if !name.is_empty() {
-                document.add_text(field, name);
-            }
+        let name = if source.name.is_empty() {
+            self.existing_document(&source.drive_id, &source.file_id)?
+                .and_then(|doc| {
+                    doc.get_first(self.fields.name)
+                        .and_then(|value| value.as_str())
+                        .map(str::to_owned)
+                })
+                .unwrap_or_default()
+        } else {
+            source.name.trim().to_lowercase()
+        };
+        if !name.is_empty() {
+            document.add_text(self.fields.name, name);
         }
         writer
             .delete_query(Box::new(
@@ -223,11 +223,14 @@ impl TantivyIndexingRepository {
         &self.index
     }
 
-    pub fn index_filename(&self, drive: &str, file: &str, name: &str) -> AppResult<()> {
-        // Keep legacy indexes untouched until the user explicitly recreates them.
-        let Some(name_field) = self.fields.name else {
-            return Ok(());
-        };
+    pub fn index_filename(
+        &self,
+        drive: &str,
+        file: &str,
+        name: &str,
+        collection_ids: &[String],
+    ) -> AppResult<()> {
+        let name_field = self.fields.name;
         let mut writer = self.writer.lock().map_err(|_| {
             AppError::internal(std::io::Error::other(
                 "Search index writer lock is poisoned.",
@@ -236,7 +239,7 @@ impl TantivyIndexingRepository {
         let mut document = TantivyDocument::default();
         if let Some(existing) = self.existing_document(drive, file)? {
             for (field, value) in existing.iter_fields_and_values() {
-                if field != name_field {
+                if field != name_field && field != self.fields.collection_ids {
                     document.add_field_value(field, value);
                 }
             }
@@ -251,6 +254,11 @@ impl TantivyIndexingRepository {
             document.add_u64(self.fields.updated_at_ms, now);
         }
         document.add_text(name_field, name.trim().to_lowercase());
+        for collection_id in collection_ids {
+            if !collection_id.is_empty() {
+                document.add_text(self.fields.collection_ids, collection_id);
+            }
+        }
         writer
             .delete_query(Box::new(self.identity_query(drive, file)))
             .map_err(AppError::internal)?;
@@ -295,8 +303,7 @@ impl TantivyIndexingRepository {
         if query.len() > 256 {
             return Err(AppError::validation("Search text is too long."));
         }
-        let field = self.fields.name.ok_or_else(|| AppError::validation(
-            "Name search requires a search index created with the name field. The existing index has not been rebuilt."))?;
+        let field = self.fields.name;
         let mut pattern = String::from(".*");
         for character in query.trim().to_lowercase().chars() {
             if ".+*?()|[]{}^$\\".contains(character) {
@@ -315,8 +322,9 @@ impl TantivyIndexingRepository {
         query: &str,
         mode: &str,
         tags: &[String],
+        collection_ids: Option<&[(String, String)]>,
     ) -> AppResult<HashSet<(String, String)>> {
-        self.matching_files(self.filtered_query(query, mode, tags)?.as_ref())
+        self.matching_files(self.filtered_query(query, mode, tags, collection_ids)?.as_ref())
     }
 
     fn filtered_query(
@@ -324,6 +332,7 @@ impl TantivyIndexingRepository {
         query: &str,
         mode: &str,
         tags: &[String],
+        collection_ids: Option<&[(String, String)]>,
     ) -> AppResult<Box<dyn Query>> {
         let base = match mode {
             "tags" => self.tag_query(query, tags)?,
@@ -334,7 +343,53 @@ impl TantivyIndexingRepository {
             ])),
             _ => return Err(AppError::validation("Unknown search mode.")),
         };
-        Ok(base)
+        match self.collection_query(collection_ids)? {
+            Some(collection) => Ok(Box::new(BooleanQuery::new(vec![
+                (Occur::Must, base),
+                (Occur::Must, collection),
+            ]))),
+            None => Ok(base),
+        }
+    }
+
+    fn collection_query(
+        &self,
+        collection_ids: Option<&[(String, String)]>,
+    ) -> AppResult<Option<Box<dyn Query>>> {
+        let Some(collection_ids) = collection_ids else {
+            return Ok(None);
+        };
+        let field = self.fields.collection_ids;
+        let matches = collection_ids
+            .iter()
+            .filter(|(drive_id, collection_id)| !drive_id.is_empty() && !collection_id.is_empty())
+            .map(|(drive_id, collection_id)| {
+                (
+                    Occur::Should,
+                    Box::new(BooleanQuery::new(vec![
+                        (
+                            Occur::Must,
+                            Box::new(TermQuery::new(
+                                Term::from_field_text(self.fields.drive_id, drive_id),
+                                IndexRecordOption::Basic,
+                            )) as Box<dyn Query>,
+                        ),
+                        (
+                            Occur::Must,
+                            Box::new(TermQuery::new(
+                                Term::from_field_text(field, collection_id),
+                                IndexRecordOption::Basic,
+                            )) as Box<dyn Query>,
+                        ),
+                    ])) as Box<dyn Query>,
+                )
+            })
+            .collect::<Vec<_>>();
+        Ok(Some(if matches.is_empty() {
+            Box::new(EmptyQuery)
+        } else {
+            Box::new(BooleanQuery::new(matches))
+        }))
     }
 
     pub fn indexed_results(
@@ -342,13 +397,14 @@ impl TantivyIndexingRepository {
         query: &str,
         mode: &str,
         tags: &[String],
+        collection_ids: Option<&[(String, String)]>,
     ) -> AppResult<(
         HashSet<(String, String)>,
         crate::models::file_model::FileCountSummary,
     )> {
         use crate::models::file_model::{FileCountSummary, FileTypeCount};
         use crate::types::file_type::FileType;
-        let query = self.filtered_query(query, mode, tags)?;
+        let query = self.filtered_query(query, mode, tags, collection_ids)?;
         let searcher = self.reader.searcher();
         let hits = searcher
             .search(query.as_ref(), &DocSetCollector)
@@ -375,10 +431,7 @@ impl TantivyIndexingRepository {
                 "audio" => FileType::Audio,
                 "document" => FileType::Document,
                 "archive" => FileType::Archive,
-                _ => self
-                    .fields
-                    .name
-                    .and_then(text)
+                _ => text(self.fields.name)
                     .map(crate::mappers::file_mapper::file_type_from_path)
                     .unwrap_or(FileType::Other),
             };
@@ -498,7 +551,7 @@ impl TantivyIndexingRepository {
     }
 }
 
-fn build_schema(include_name: bool) -> (Schema, IndexFields) {
+fn build_schema() -> (Schema, IndexFields) {
     let mut builder = Schema::builder();
     let fields = IndexFields {
         file_id: builder.add_text_field("file_id", STRING | STORED),
@@ -513,7 +566,8 @@ fn build_schema(include_name: bool) -> (Schema, IndexFields) {
         search_keywords: builder.add_text_field("search_keywords", STRING | STORED),
         secondary_labels: builder.add_text_field("secondary_labels", STRING | STORED),
         categories: builder.add_text_field("categories", STRING | STORED),
-        name: include_name.then(|| builder.add_text_field("name", STRING | STORED)),
+        collection_ids: builder.add_text_field("collection_ids", STRING | STORED),
+        name: builder.add_text_field("name", STRING | STORED),
     };
     (builder.build(), fields)
 }

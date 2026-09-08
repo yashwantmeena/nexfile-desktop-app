@@ -326,6 +326,5 @@
 .collection-filter-options button svg { flex:none; }
 .collection-filter-options button:hover,.collection-filter-options button[aria-pressed=true] { color:#2563eb; background:#edf4ff; }
 .collection-filter-options p { margin:12px 10px; color:#8590a0; font-size:12px; line-height:1.6; }
-.collection-page-heading { margin-top:22px; }
 @media(max-width:1250px) { .category-toolbar { flex-wrap:wrap; } .category-toolbar .category-row { flex-basis:100%; } .category-toolbar .category-sort { margin-left:auto; } }
 .model-category-label { margin:8px 10px; color:#697386; font-size:12px; font-weight:600; }

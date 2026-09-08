@@ -297,10 +297,10 @@ async fn consumes_an_image_into_the_mounted_system_drive_and_queues_processing()
     assert_eq!(file_metadata["version"], 1);
     assert_eq!(file_metadata["name"], "photo.avip");
     assert!(file_metadata.get("originalName").is_none());
-    let matches = search.search_files("PHOTO.AVIP", "name", &[]).unwrap();
+    let matches = search.search_files("PHOTO.AVIP", "name", &[], None).unwrap();
     assert_eq!(matches.len(), 1);
     assert_eq!(matches.iter().next().unwrap().1, "abcdefghijklmn");
-    assert!(search.search_files("photo", "tags", &[]).unwrap().is_empty());
+    assert!(search.search_files("photo", "tags", &[], None).unwrap().is_empty());
     let storage_data = storage
         .get_storage_data()
         .await
@@ -341,7 +341,7 @@ async fn consumes_an_image_into_the_mounted_system_drive_and_queues_processing()
     imports.consume(ImportFileJob {
         process_id: "process-2".into(), file_id: "nopqrstuvwxyza".into(), path: document,
     }).await.unwrap();
-    let matches = search.search_files("report.pdf", "name", &[]).unwrap();
+    let matches = search.search_files("report.pdf", "name", &[], None).unwrap();
     assert_eq!(matches.len(), 1);
     assert_eq!(matches.iter().next().unwrap().1, "nopqrstuvwxyza");
 

@@ -29,7 +29,7 @@ export function AppSidebar({ activeItem, onActiveItemChange }: AppSidebarProps) 
       </nav>
       <div className="collections-heading"><p className="sidebar-label">Collections</p><button type="button" aria-label="Create collection" onClick={openCreate}><Plus size={15}/></button></div>
       <nav className="nf-nav collection-nav" aria-label="Collections">
-        {collections.map(item => <div className="collection-sidebar-item" key={item.id}><button title={item.name} aria-current={activeItem === "Collections" && selected?.id === item.id ? "page" : undefined} className={activeItem === "Collections" && selected?.id === item.id ? "active" : ""} onClick={() => { select(item.id); onActiveItemChange("Collections"); }}><FolderOpen/><span>{item.name}</span><small>0</small></button><CollectionActions id={item.id} name={item.name}/></div>)}
+        {collections.map(item => <div className="collection-sidebar-item" key={item.id}><button title={item.name} aria-current={activeItem === "Collections" && selected?.id === item.id ? "page" : undefined} className={activeItem === "Collections" && selected?.id === item.id ? "active" : ""} onClick={() => { select(item.id); onActiveItemChange("Collections"); }}><FolderOpen/><span>{item.name}</span></button><CollectionActions id={item.id} name={item.name}/></div>)}
         {loadError ? <div className="collections-hint" role="alert">{loadError}<button type="button" onClick={refresh}>Retry</button></div> : !collections.length && <p className="collections-hint">Your collections will appear here.</p>}
       </nav>
       <p className="sidebar-label activity-label">Background activity</p>
