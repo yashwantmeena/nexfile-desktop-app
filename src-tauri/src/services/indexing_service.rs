@@ -46,6 +46,7 @@ impl IndexingService {
                 .output
                 .search_keywords
                 .iter()
+                .filter(|keyword| !crate::utils::search_tags::is_blocked_search_tag(keyword))
                 .filter_map(|keyword| normalized_value(Some(keyword))),
         );
 

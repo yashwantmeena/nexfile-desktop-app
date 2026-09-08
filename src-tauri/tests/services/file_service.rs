@@ -73,7 +73,7 @@ fn fetches_all_types_by_filesystem_modified_time_with_pagination() {
     // A newer AI timestamp must not affect ordering, and sidecars are not files in the result.
     std::fs::write(
         directory.join("old.jpg.json"),
-        br#"{"updatedAtMs":9999999999,"classification":{"primary":[],"secondary":[],"tertiary":[]},"searchKeywords":[" landscape ","mountain","Landscape","","snow covered","snow_covered","snow-covered","Some","SOME","some snow","Different","DIFFERENT","different snow","item","Item","ITEM","group","Group","GROUP"]}"#,
+        br#"{"updatedAtMs":9999999999,"classification":{"primary":[],"secondary":[],"tertiary":[]},"searchKeywords":[" landscape ","mountain","Landscape","","snow covered","snow_covered","snow-covered","Some","SOME","some snow","Different","DIFFERENT","different snow","item","Item","ITEM","group","Group","GROUP","two","Three","four","4"]}"#,
     )
     .unwrap();
     std::fs::write(directory.join(".pending.importing"), b"pending").unwrap();

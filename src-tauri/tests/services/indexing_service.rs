@@ -79,7 +79,12 @@ async fn stores_searchable_image_fields_in_tantivy() {
                 },
             }],
         }),
-        search_keywords: vec!["Forest Trail".to_owned(), "red fox".to_owned()],
+        search_keywords: vec![
+            "Forest Trail".to_owned(),
+            "red fox".to_owned(),
+            "two".to_owned(),
+            "3".to_owned(),
+        ],
         classification: ImageClassificationOutput {
             primary: vec![prediction("visual")],
             secondary: vec![prediction("Nature & Outdoors")],
@@ -136,6 +141,13 @@ async fn stores_searchable_image_fields_in_tantivy() {
             1,
             "missing indexed value {value}"
         );
+    }
+    for value in ["two", "3"] {
+        let query = TermQuery::new(
+            Term::from_field_text(schema.get_field("search_keywords").unwrap(), value),
+            IndexRecordOption::Basic,
+        );
+        assert_eq!(searcher.search(&query, &Count).unwrap(), 0);
     }
 
     let file_query = TermQuery::new(

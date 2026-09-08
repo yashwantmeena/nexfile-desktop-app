@@ -100,7 +100,7 @@ fn extracts_single_word_candidates_from_a_detailed_caption() {
 #[test]
 fn extracts_individual_concepts_from_a_punctuated_caption_list() {
     let candidates = extract_keyword_candidates(
-        "This is an animated image. In this image we can also see many different trees, Some Different plants, SOME DIFFERENT flowers, some grass and sky with clouds. item Item ITEM. group Group GROUP.",
+        "This is an animated image. In this image we can also see many different trees, Some Different plants, SOME DIFFERENT flowers, some grass and sky with clouds. item Item ITEM. group Group GROUP. two Three FOUR 4.",
     );
 
     assert_eq!(
@@ -208,6 +208,8 @@ fn keeps_body_and_animal_part_words_as_candidates() {
 #[test]
 fn selects_highest_scoring_non_redundant_search_tags() {
     let tags = select_search_tags(vec![
+        ("two".to_owned(), 0.99),
+        ("3".to_owned(), 0.98),
         ("car".to_owned(), 0.34),
         ("red vintage car".to_owned(), 0.36),
         ("brick building".to_owned(), 0.33),

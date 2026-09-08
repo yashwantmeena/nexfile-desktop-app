@@ -62,7 +62,9 @@ fn is_clause_boundary(character: char) -> bool {
 }
 
 pub(crate) fn select_search_tags(mut scored_candidates: Vec<(String, f32)>) -> Vec<String> {
-    scored_candidates.retain(|(candidate, _)| candidate.split_whitespace().count() == 1);
+    scored_candidates.retain(|(candidate, _)| {
+        candidate.split_whitespace().count() == 1 && !is_blocked_search_tag(candidate)
+    });
     scored_candidates.sort_by(|left, right| {
         right
             .1
@@ -185,6 +187,33 @@ fn is_phrase_boundary(word: &str) -> bool {
             | "surrounded"
             | "contains"
             | "including"
+    ) || is_number_word(word)
+}
+
+pub(crate) fn is_blocked_search_tag(value: &str) -> bool {
+    let word = value.trim().to_lowercase();
+    word.is_empty()
+        || word.chars().all(char::is_numeric)
+        || is_phrase_boundary(&word)
+        || is_low_information_singleton(&word)
+}
+
+fn is_number_word(word: &str) -> bool {
+    matches!(
+        word,
+        "zero"
+            | "one"
+            | "two"
+            | "three"
+            | "four"
+            | "five"
+            | "six"
+            | "seven"
+            | "eight"
+            | "nine"
+            | "ten"
+            | "eleven"
+            | "twelve"
     )
 }
 

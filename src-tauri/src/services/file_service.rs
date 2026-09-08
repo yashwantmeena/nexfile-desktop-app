@@ -227,7 +227,7 @@ fn read_file_labels(path: &Path) -> (Vec<String>, Vec<String>) {
                 .map(str::to_owned)
                 .collect::<Vec<_>>()
         })
-        .filter(|tag| !tag.is_empty() && !["some", "different", "item", "group"].iter().any(|word| tag.eq_ignore_ascii_case(word)))
+        .filter(|tag| !crate::utils::search_tags::is_blocked_search_tag(tag))
         .fold(Vec::<String>::new(), |mut tags, tag| {
             if !tags
                 .iter()
