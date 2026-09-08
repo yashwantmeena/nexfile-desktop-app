@@ -1,4 +1,4 @@
-use nexfile_desktop_app_lib::FileType;
+
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use nexfile_desktop_app_lib::{
@@ -305,15 +305,6 @@ async fn consumes_an_image_into_the_mounted_system_drive_and_queues_processing()
         .get_storage_data()
         .await
         .expect("storage metadata should load");
-    assert_eq!(
-        storage_data
-            .file_type_counts
-            .iter()
-            .find(|entry| entry.file_type == FileType::Image)
-            .unwrap()
-            .count,
-        1
-    );
     let mounted = storage_data
         .drives
         .into_iter()
@@ -326,7 +317,6 @@ async fn consumes_an_image_into_the_mounted_system_drive_and_queues_processing()
             .expect("drive metadata should be readable"),
     )
     .expect("drive metadata should be valid JSON");
-    assert!(drive_metadata.get("fileTypeCounts").is_none());
     assert_eq!(drive_metadata["fileCount"], 1);
 
     let verification_pool = SqlitePoolOptions::new()
@@ -362,3 +352,6 @@ async fn consumes_an_image_into_the_mounted_system_drive_and_queues_processing()
     drop(search);
     std::fs::remove_dir_all(root).expect("test directory should be removable");
 }
+
+
+

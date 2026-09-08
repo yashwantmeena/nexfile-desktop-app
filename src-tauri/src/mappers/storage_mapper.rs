@@ -1,10 +1,10 @@
-use crate::models::file_model::FileTypeCount;
+
 use crate::models::storage_model::{DriveInfo, DriveMetadata, StorageData, StorageDrive};
 use crate::utils::percentage;
 
 pub(crate) fn storage_data(
     drives: Vec<StorageDrive>,
-    file_type_counts: Vec<FileTypeCount>,
+
 ) -> StorageData {
     let connected_drives = drives.iter().filter(|drive| drive.is_connected);
 
@@ -24,7 +24,7 @@ pub(crate) fn storage_data(
             .filter_map(|drive| drive.app_limit_bytes)
             .sum(),
         app_used_bytes: drives.iter().filter_map(|drive| drive.app_used_bytes).sum(),
-        file_type_counts,
+
         drives,
     }
 }

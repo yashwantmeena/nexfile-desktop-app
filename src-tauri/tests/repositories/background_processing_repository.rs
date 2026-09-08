@@ -32,13 +32,7 @@ async fn creates_background_processing_and_drives_tables_in_one_database() {
 
         storage
             .insert(&DriveMetadata {
-                file_type_counts: nexfile_desktop_app_lib::FileType::ALL
-                    .into_iter()
-                    .map(|file_type| nexfile_desktop_app_lib::FileTypeCount {
-                        file_type,
-                        count: 0,
-                    })
-                    .collect(),
+                
                 drive_id: "drive-1".to_owned(),
                 drive_name: "Test drive".to_owned(),
                 partition_name: "Test".to_owned(),
@@ -66,14 +60,14 @@ async fn creates_background_processing_and_drives_tables_in_one_database() {
     .await
     .expect("table names should load");
     table_names.sort();
-    assert_eq!(table_names, vec!["background_processes", "drives"]);
+    assert_eq!(table_names, vec!["background_processes", "collections", "drives"]);
 
     let applied_migrations =
         sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM _sqlx_migrations WHERE success = 1")
             .fetch_one(&pool)
             .await
             .expect("migration history should load");
-    assert_eq!(applied_migrations, 2);
+    assert_eq!(applied_migrations, 3);
 
     let columns = sqlx::query("PRAGMA table_info(background_processes)")
         .fetch_all(&pool)
@@ -93,6 +87,7 @@ async fn creates_background_processing_and_drives_tables_in_one_database() {
             "processed_items",
             "failed_items",
             "remark",
+            "collections",
             "created_at_ms",
             "updated_at_ms",
             "started_at_ms",
@@ -121,3 +116,5 @@ async fn creates_background_processing_and_drives_tables_in_one_database() {
 
     std::fs::remove_dir_all(root).expect("test directory should be removable");
 }
+
+

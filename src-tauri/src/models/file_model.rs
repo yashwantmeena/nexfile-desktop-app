@@ -34,7 +34,7 @@ pub struct FilePage {
     pub issues: Vec<FileCountIssue>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FileTypeCount {
     pub file_type: FileType,
@@ -56,3 +56,4 @@ pub struct FileCountIssue {
     pub drive_name: String,
     pub message: String,
 }
+

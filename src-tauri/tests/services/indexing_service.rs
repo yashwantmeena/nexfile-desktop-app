@@ -26,13 +26,7 @@ async fn stores_searchable_image_fields_in_tantivy() {
     std::fs::create_dir_all(&files).expect("managed files directory should be created");
 
     let drive = DriveMetadata {
-        file_type_counts: nexfile_desktop_app_lib::FileType::ALL
-            .into_iter()
-            .map(|file_type| nexfile_desktop_app_lib::FileTypeCount {
-                file_type,
-                count: 0,
-            })
-            .collect(),
+        
         drive_id: "drive-1".to_owned(),
         drive_name: "Test Drive".to_owned(),
         partition_name: "Test".to_owned(),

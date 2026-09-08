@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{AppError, AppResult, CounterOverflow};
 use crate::mappers::storage_mapper::{disconnected_drive, merge_connected_drive, storage_data};
-use crate::models::file_model::FileTypeCount;
+
 use crate::models::storage_model::{
     DriveConfigurationUpdate, DriveInfo, DriveMetadata, StorageData,
 };
@@ -104,7 +104,7 @@ impl StorageService {
                         let files_directory =
                             drive_storage_root(&drive, &self.system_metadata_root)
                                 .join(IMPORTED_FILES_DIRECTORY);
-                        let (file_count, app_used_bytes, file_type_counts) =
+                        let (file_count, app_used_bytes) =
                             calculate_managed_statistics(&files_directory)?;
                         if saved.file_count != file_count
                             || saved.app_used_bytes != app_used_bytes
@@ -114,7 +114,7 @@ impl StorageService {
                             let mut reconciled = saved.clone();
                             reconciled.file_count = file_count;
                             reconciled.app_used_bytes = app_used_bytes;
-                            reconciled.file_type_counts = file_type_counts;
+
                             let persisted = self
                                 .repository
                                 .update(&reconciled, |updated| {
@@ -148,14 +148,6 @@ impl StorageService {
             ));
         }
 
-        let file_type_counts = saved_drives.values().try_fold(
-            crate::mappers::file_mapper::normalize_counts(Vec::new())
-                .expect("empty counts are valid"),
-            |counts, drive| {
-                crate::services::file_service::add_counts(&counts, &drive.file_type_counts)
-                    .ok_or_else(|| AppError::internal(CounterOverflow))
-            },
-        )?;
         drives.extend(
             saved_drives
                 .into_values()
@@ -163,7 +155,7 @@ impl StorageService {
                 .map(disconnected_drive),
         );
 
-        Ok(storage_data(drives, file_type_counts))
+        Ok(storage_data(drives))
     }
 
     pub async fn mount_drive(
@@ -204,16 +196,7 @@ impl StorageService {
             .unwrap_or(0)
             .saturating_add(1);
         let was_saved = saved.is_some();
-        let mut metadata = metadata_for_mount(&drive, saved, metadata, next_priority);
-        // Recover local category counters from managed files when there is no matching
-        // database snapshot; they are deliberately absent from drive_metadata.json.
-        if metadata.file_type_counts.iter().try_fold(0_i64, |sum, entry| sum.checked_add(entry.count)) != Some(metadata.file_count) {
-            let (file_count, bytes, counts) = calculate_managed_statistics(
-                &drive_storage_root(&drive, &self.system_metadata_root).join(IMPORTED_FILES_DIRECTORY))?;
-            metadata.file_count = file_count;
-            metadata.app_used_bytes = bytes;
-            metadata.file_type_counts = counts;
-        }
+        let metadata = metadata_for_mount(&drive, saved, metadata, next_priority);
         let metadata_file_path = metadata_path(&drive, &self.system_metadata_root);
 
         if was_saved {
@@ -415,8 +398,7 @@ fn metadata_for_mount(
             metadata
         }
         _ => DriveMetadata {
-            file_type_counts: crate::mappers::file_mapper::normalize_counts(Vec::new())
-                .expect("empty counts are valid"),
+            
             // A drive with no metadata is new to NexFile.
             drive_id: uuid::Uuid::new_v4().to_string(),
             drive_name: drive.drive_name.clone(),
@@ -463,11 +445,10 @@ pub(crate) fn drive_storage_root(drive: &DriveInfo, system_metadata_root: &Path)
 
 pub(crate) fn calculate_managed_statistics(
     files_directory: &Path,
-) -> AppResult<(i64, i64, Vec<FileTypeCount>)> {
-    let mut counts =
-        crate::mappers::file_mapper::normalize_counts(Vec::new()).map_err(AppError::validation)?;
+) -> AppResult<(i64, i64)> {
+
     if !files_directory.try_exists()? {
-        return Ok((0, 0, counts));
+        return Ok((0, 0));
     }
 
     let mut file_count = 0_i64;
@@ -485,21 +466,12 @@ pub(crate) fn calculate_managed_statistics(
         file_count = file_count
             .checked_add(1)
             .ok_or_else(|| AppError::internal(CounterOverflow))?;
-        let file_type = crate::mappers::file_mapper::file_type_from_path(&path);
-        let entry_count = counts
-            .iter_mut()
-            .find(|entry| entry.file_type == file_type)
-            .expect("all file types are represented");
-        entry_count.count = entry_count
-            .count
-            .checked_add(1)
-            .ok_or_else(|| AppError::internal(CounterOverflow))?;
         let size = i64::try_from(metadata.len()).map_err(AppError::internal)?;
         app_used_bytes = app_used_bytes
             .checked_add(size)
             .ok_or_else(|| AppError::internal(CounterOverflow))?;
     }
-    Ok((file_count, app_used_bytes, counts))
+    Ok((file_count, app_used_bytes))
 }
 
 pub(crate) fn is_generated_image_sidecar(path: &Path) -> bool {

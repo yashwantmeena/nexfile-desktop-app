@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use super::file_model::FileTypeCount;
+
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -19,10 +19,7 @@ pub struct DriveMetadata {
     pub partition_name: String,
     pub app_limit_bytes: Option<i64>,
     pub file_count: i64,
-    #[sqlx(skip)]
-    // Category counters belong to SQLite/storage UI, not the on-drive verification file.
-    #[serde(skip, default = "crate::mappers::file_mapper::empty_file_type_counts")]
-    pub file_type_counts: Vec<FileTypeCount>,
+
     pub app_used_bytes: i64,
     #[serde(default)]
     pub priority: i64,
@@ -83,6 +80,6 @@ pub struct StorageData {
     pub file_indexed: i64,
     pub app_limit_bytes: i64,
     pub app_used_bytes: i64,
-    pub file_type_counts: Vec<FileTypeCount>,
     pub drives: Vec<StorageDrive>,
 }
+

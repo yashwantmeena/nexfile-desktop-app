@@ -9,7 +9,7 @@ use sqlx::SqlitePool;
 use tauri::async_runtime::Mutex;
 
 use crate::error::{AppError, AppResult, CounterOverflow};
-use crate::mappers::file_mapper::file_type_from_path;
+
 use crate::models::background_process_model::BackgroundProcess;
 use crate::models::file_model::ManagedFileMetadata;
 use crate::models::image_processing_model::ImageProcessingJob;
@@ -214,7 +214,7 @@ impl ImportService {
             ));
         }
         let file_size = i64::try_from(source_metadata.len()).map_err(AppError::internal)?;
-        let file_type = file_type_from_path(&job.path);
+
         let saved_drives = self.storage_repository.list().await?;
         let mut candidates = connected_drives
             .into_iter()
@@ -243,11 +243,11 @@ impl ImportService {
                 }
                 write_import_sidecar(&job, &destination)?;
                 self.save_selected_collections(&job, &drive_storage_root(&drive, &self.system_metadata_root), &saved.drive_id, &destination).await?;
-                let (file_count, app_used_bytes, counts) =
+                let (file_count, app_used_bytes) =
                     calculate_managed_statistics(&files_directory)?;
                 saved.file_count = file_count;
                 saved.app_used_bytes = app_used_bytes;
-                saved.file_type_counts = counts;
+
 
                 self.storage_repository
                     .update(&saved, |updated| {
@@ -290,15 +290,6 @@ impl ImportService {
             std::fs::rename(&temporary, &destination)?;
             write_import_sidecar(&job, &destination)?;
                 self.save_selected_collections(&job, &drive_storage_root(&drive, &self.system_metadata_root), &saved.drive_id, &destination).await?;
-            let mut counts = saved.file_type_counts.clone();
-            let category = counts
-                .iter_mut()
-                .find(|entry| entry.file_type == file_type)
-                .expect("all file types are represented");
-            category.count = category
-                .count
-                .checked_add(1)
-                .ok_or_else(|| AppError::internal(CounterOverflow))?;
             saved.file_count = saved
                 .file_count
                 .checked_add(1)
@@ -307,7 +298,7 @@ impl ImportService {
                 .app_used_bytes
                 .checked_add(file_size)
                 .ok_or_else(|| AppError::internal(CounterOverflow))?;
-            saved.file_type_counts = counts;
+
 
             self.storage_repository
                 .update(&saved, |updated| {
@@ -560,3 +551,4 @@ pub(crate) fn assign_import_collections(root: &Path, drive_id: &str, destination
     if metadata.collections.len() != count { super::collection_service::save(root, &metadata)?; }
     super::file_service::add_sidecar_collections(destination, &ids)
 }
+

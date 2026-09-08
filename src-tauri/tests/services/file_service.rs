@@ -1,5 +1,5 @@
-use crate::mappers::file_mapper::normalize_counts;
-use crate::models::{file_model::*, storage_model::*};
+
+use crate::models::storage_model::*;
 use crate::services::file_service::*;
 use crate::types::file_type::FileType;
 use crate::utils::constants::DRIVE_METADATA_FILE;
@@ -13,8 +13,7 @@ fn metadata() -> DriveMetadata {
     serde_json::from_value(serde_json::json!({
         "driveId": "drive-1", "driveName": "Test drive", "partitionName": "Test",
         "appLimitBytes": null, "fileCount": 3, "appUsedBytes": 10,
-        "createdAtMs": 1, "updatedAtMs": 1,
-        "fileTypeCounts": [{"fileType":"image","count":2},{"fileType":"document","count":1}]
+        "createdAtMs": 1, "updatedAtMs": 1
     }))
     .unwrap()
 }
@@ -22,67 +21,6 @@ fn metadata() -> DriveMetadata {
 #[test]
 fn accepts_matching_counts() {
     assert_eq!(validate_drive_counts(&snapshot(), &metadata()), None);
-}
-
-#[tokio::test]
-async fn loads_per_drive_counts_from_one_database_snapshot() {
-    use crate::repositories::storage_repository::SqliteStorageRepository;
-    use crate::types::file_type::FileType;
-    let root = std::env::temp_dir().join(format!("nexfile-file-db-{}", uuid::Uuid::new_v4()));
-    std::fs::create_dir_all(&root).unwrap();
-    let repository = SqliteStorageRepository::open(root.join("test.sqlite3"))
-        .await
-        .unwrap();
-    let mut drive = metadata();
-    drive.file_count = 0;
-    drive.file_type_counts = normalize_counts(Vec::new()).unwrap();
-    repository.insert(&drive).await.unwrap();
-    drive.file_count = 1;
-    drive.file_type_counts = vec![FileTypeCount {
-        file_type: FileType::Image,
-        count: 1,
-    }];
-    repository.update(&drive, |_| Ok(())).await.unwrap();
-    let rows = repository.list().await.unwrap();
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].drive_id, drive.drive_id);
-    assert_eq!(rows[0].file_count, 1);
-    assert_eq!(
-        rows[0]
-            .file_type_counts
-            .iter()
-            .find(|entry| entry.file_type == FileType::Image)
-            .unwrap()
-            .count,
-        1
-    );
-    assert_eq!(
-        rows[0]
-            .file_type_counts
-            .iter()
-            .find(|entry| entry.file_type == FileType::Document)
-            .unwrap()
-            .count,
-        0
-    );
-    repository.close().await;
-    std::fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
-fn accepts_matching_totals_regardless_of_category_counts() {
-    let mut data = metadata();
-    data.file_type_counts
-        .iter_mut()
-        .find(|entry| entry.file_type == FileType::Image)
-        .unwrap()
-        .count = 1;
-    data.file_type_counts
-        .iter_mut()
-        .find(|entry| entry.file_type == FileType::Video)
-        .unwrap()
-        .count = 1;
-    assert!(validate_drive_counts(&snapshot(), &data).is_none());
 }
 
 #[test]
@@ -260,7 +198,6 @@ fn reads_drive_metadata_without_modifying_it() {
     let path = root.join("nexfile").join(DRIVE_METADATA_FILE);
     let data = metadata();
     let mut value = serde_json::to_value(&data).unwrap();
-    value["fileTypeCounts"] = serde_json::to_value(&data.file_type_counts).unwrap();
     let bytes = serde_json::to_vec(&value).unwrap();
     std::fs::write(&path, &bytes).unwrap();
     let drive = DriveInfo {
@@ -278,17 +215,11 @@ fn reads_drive_metadata_without_modifying_it() {
     assert!(result.counts.is_none());
     assert_eq!(std::fs::read(&path).unwrap(), bytes);
 
-    // Per-type counters are optional legacy data, not part of verification.
-    value.as_object_mut().unwrap().remove("fileTypeCounts");
-    std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
-    let result = verify_file_counts(vec![snapshot()], vec![drive.clone()], &root);
-    assert_eq!(result.total_count, Some(3));
-    assert!(result.issues.is_empty());
-    value["fileTypeCounts"] = serde_json::json!("ignored obsolete field");
-    std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
-    assert_eq!(verify_file_counts(vec![snapshot()], vec![drive.clone()], &root).total_count, Some(3));
     value["fileCount"] = serde_json::json!(4);
     std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
     assert!(verify_file_counts(vec![snapshot()], vec![drive], &root).total_count.is_none());
     std::fs::remove_dir_all(root).unwrap();
 }
+
+
+

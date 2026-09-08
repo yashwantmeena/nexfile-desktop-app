@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::models::file_model::{FileCountIssue, FileCountSummary, FileTypeCount};
+use crate::models::file_model::{FileCountIssue, FileCountSummary};
 use crate::models::storage_model::{DriveInfo, DriveMetadata};
 use crate::services::storage_service::drive_storage_root;
 use crate::utils::constants::DRIVE_METADATA_FILE;
@@ -292,21 +292,6 @@ pub(crate) fn validate_drive_counts(
     None
 }
 
-pub(crate) fn add_counts(a: &[FileTypeCount], b: &[FileTypeCount]) -> Option<Vec<FileTypeCount>> {
-    let mut result = a.to_vec();
-    for entry in b {
-        if let Some(existing) = result
-            .iter_mut()
-            .find(|existing| existing.file_type == entry.file_type)
-        {
-            existing.count = existing.count.checked_add(entry.count)?;
-        } else {
-            result.push(*entry);
-        }
-    }
-    Some(result)
-}
-
 /// Read membership for one known sidecar; never enumerate the drive.
 pub(crate) fn sidecar_collection_ids(path: &Path) -> crate::error::AppResult<Vec<String>> {
     let bytes = match std::fs::read(path) {
@@ -331,3 +316,5 @@ pub(crate) fn add_sidecar_collections(file: &Path, ids: &[String]) -> crate::err
     crate::system::filesystem::write_file(path, serde_json::to_vec_pretty(&value).map_err(crate::error::AppError::serialization)?)?;
     Ok(())
 }
+
+

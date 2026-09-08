@@ -1,12 +1,12 @@
-use sqlx::{FromRow, Row};
-use std::collections::BTreeMap;
+
+
 use std::path::Path;
 
 use crate::error::{AppError, AppResult};
-use crate::mappers::file_mapper::normalize_counts;
-use crate::models::file_model::FileTypeCount;
+
+
 use crate::models::storage_model::DriveMetadata;
-use crate::types::file_type::FileType;
+
 
 use super::database_repository::SqliteDatabase;
 
@@ -30,7 +30,7 @@ impl SqliteStorageRepository {
             .begin()
             .await
             .map_err(AppError::database)?;
-        let mut saved = sqlx::query_as::<_, DriveMetadata>(
+        let saved = sqlx::query_as::<_, DriveMetadata>(
             "INSERT INTO drives (
                 drive_id,
                 drive_name,
@@ -54,9 +54,7 @@ impl SqliteStorageRepository {
         .fetch_one(&mut *transaction)
         .await
         .map_err(AppError::database)?;
-        saved.file_type_counts =
-            normalize_counts(drive.file_type_counts.clone()).map_err(AppError::validation)?;
-        persist_counts(&mut transaction, &saved).await?;
+
         transaction.commit().await.map_err(AppError::database)?;
         Ok(saved)
     }
@@ -69,16 +67,6 @@ impl SqliteStorageRepository {
     where
         F: FnOnce(&DriveMetadata) -> AppResult<()>,
     {
-        let counts =
-            normalize_counts(drive.file_type_counts.clone()).map_err(AppError::validation)?;
-        let total = counts
-            .iter()
-            .try_fold(0_i64, |sum, entry| sum.checked_add(entry.count));
-        if total != Some(drive.file_count) {
-            return Err(AppError::validation(
-                "Category counts must equal the drive's file count.",
-            ));
-        }
         let mut transaction = self
             .database
             .pool()
@@ -86,7 +74,7 @@ impl SqliteStorageRepository {
             .await
             .map_err(AppError::database)?;
         // The drive UPDATE holds SQLite's write lock through the metadata write.
-        let updated = update_drive(&mut transaction, drive, counts).await?;
+        let updated = update_drive(&mut transaction, drive).await?;
         if let Err(error) = persist_metadata(&updated) {
             transaction.rollback().await.map_err(AppError::database)?;
             return Err(error);
@@ -103,48 +91,9 @@ impl SqliteStorageRepository {
         self.fetch_drives(None).await
     }
 
-    // One joined query gives drive totals and category counts from the same snapshot.
     async fn fetch_drives(&self, drive_id: Option<&str>) -> AppResult<Vec<DriveMetadata>> {
-        let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
-            "SELECT drives.*, counts.file_type AS count_file_type, counts.count AS type_count
-             FROM drives LEFT JOIN drive_file_type_counts AS counts
-             ON counts.drive_id = drives.drive_id",
-        );
-        if let Some(drive_id) = drive_id {
-            query.push(" WHERE drives.drive_id = ").push_bind(drive_id);
-        }
-        let rows = query
-            .build()
-            .fetch_all(self.database.pool())
-            .await
-            .map_err(AppError::database)?;
-        let mut drives = BTreeMap::<String, DriveMetadata>::new();
-        for row in rows {
-            let id: String = row.try_get("drive_id").map_err(AppError::database)?;
-            let drive = match drives.entry(id) {
-                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    entry.insert(DriveMetadata::from_row(&row).map_err(AppError::database)?)
-                }
-            };
-            if let Some(file_type) = row
-                .try_get::<Option<FileType>, _>("count_file_type")
-                .map_err(AppError::database)?
-            {
-                drive.file_type_counts.push(FileTypeCount {
-                    file_type,
-                    count: row.try_get("type_count").map_err(AppError::database)?,
-                });
-            }
-        }
-        drives
-            .into_values()
-            .map(|mut drive| {
-                drive.file_type_counts =
-                    normalize_counts(drive.file_type_counts).map_err(AppError::validation)?;
-                Ok(drive)
-            })
-            .collect()
+        sqlx::query_as("SELECT * FROM drives WHERE (?1 IS NULL OR drive_id = ?1) ORDER BY drive_id")
+            .bind(drive_id).fetch_all(self.database.pool()).await.map_err(AppError::database)
     }
 
     pub async fn delete(&self, drive_id: &str) -> AppResult<bool> {
@@ -160,41 +109,12 @@ impl SqliteStorageRepository {
         self.database.close().await;
     }
 }
-async fn persist_counts(
-    transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
-    drive: &DriveMetadata,
-) -> AppResult<()> {
-    if drive.file_type_counts.is_empty() {
-        return Ok(());
-    }
-    let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
-        "INSERT INTO drive_file_type_counts (drive_id, file_type, count) ",
-    );
-    query.push_values(&drive.file_type_counts, |mut row, entry| {
-        row.push_bind(&drive.drive_id)
-            .push_bind(entry.file_type.as_str())
-            .push_bind(entry.count);
-    });
-    query.push(
-        " ON CONFLICT(drive_id, file_type) DO UPDATE SET
-            count = excluded.count,
-            updated_at_ms = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
-         WHERE drive_file_type_counts.count != excluded.count",
-    );
-    query
-        .build()
-        .execute(&mut **transaction)
-        .await
-        .map_err(AppError::database)?;
-    Ok(())
-}
-
 async fn update_drive(
     transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     drive: &DriveMetadata,
-    counts: Vec<FileTypeCount>,
+
 ) -> AppResult<DriveMetadata> {
-    let mut saved = sqlx::query_as::<_, DriveMetadata>(
+    let saved = sqlx::query_as::<_, DriveMetadata>(
         "UPDATE drives SET
                 drive_name = ?1,
                 partition_name = ?2,
@@ -221,7 +141,7 @@ async fn update_drive(
     .await
     .map_err(AppError::database)?;
 
-    saved.file_type_counts = counts;
-    persist_counts(transaction, &saved).await?;
+
+
     Ok(saved)
 }

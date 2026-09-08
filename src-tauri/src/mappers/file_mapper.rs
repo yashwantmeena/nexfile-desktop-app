@@ -1,15 +1,8 @@
 use std::path::Path;
 
 
-use crate::models::file_model::FileTypeCount;
-use crate::types::file_type::FileType;
 
-pub(crate) fn empty_file_type_counts() -> Vec<FileTypeCount> {
-    FileType::ALL
-        .into_iter()
-        .map(|file_type| FileTypeCount { file_type, count: 0 })
-        .collect()
-}
+use crate::types::file_type::FileType;
 
 pub fn file_type_from_path(path: impl AsRef<Path>) -> FileType {
     let Some(extension) = path
@@ -36,28 +29,4 @@ pub fn file_type_from_path(path: impl AsRef<Path>) -> FileType {
     }
 }
 
-#[cfg(test)]
-pub(crate) fn parse_counts(value: serde_json::Value) -> Result<Vec<FileTypeCount>, String> {
-    let entries =
-        serde_json::from_value::<Vec<FileTypeCount>>(value).map_err(|error| error.to_string())?;
-    normalize_counts(entries)
-}
 
-pub(crate) fn normalize_counts(entries: Vec<FileTypeCount>) -> Result<Vec<FileTypeCount>, String> {
-    let mut counts = std::collections::BTreeMap::new();
-    for entry in entries {
-        if entry.count < 0 {
-            return Err("File-type counts cannot be negative.".into());
-        }
-        if counts.insert(entry.file_type, entry.count).is_some() {
-            return Err("Duplicate file type in counts.".into());
-        }
-    }
-    Ok(FileType::ALL
-        .into_iter()
-        .map(|file_type| FileTypeCount {
-            file_type,
-            count: counts.remove(&file_type).unwrap_or(0),
-        })
-        .collect())
-}
