@@ -23,6 +23,7 @@ pub struct FetchedFile {
     pub modified_at_ms: Option<i64>,
     pub categories: Vec<String>,
     pub tags: Vec<String>,
+    pub collection_names: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]

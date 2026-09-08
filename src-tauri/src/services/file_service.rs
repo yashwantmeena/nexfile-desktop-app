@@ -28,7 +28,7 @@ pub(crate) fn fetch_matching_files(
     indexed_matches: Option<&std::collections::HashSet<(String, String)>>,
 ) -> crate::models::file_model::FilePage {
     use crate::models::file_model::{FetchedFile, FilePage};
-    use crate::services::storage_service::{is_generated_image_sidecar, read_drive_metadata};
+    use crate::services::storage_service::{drive_storage_root, is_generated_image_sidecar, read_drive_metadata};
     use crate::utils::constants::IMPORTED_FILES_DIRECTORY;
 
     let connected = connected
@@ -62,8 +62,8 @@ pub(crate) fn fetch_matching_files(
             }));
             continue;
         };
-        let directory =
-            drive_storage_root(drive, system_metadata_root).join(IMPORTED_FILES_DIRECTORY);
+        let storage_root = drive_storage_root(drive, system_metadata_root);
+        let directory = storage_root.join(IMPORTED_FILES_DIRECTORY);
         let entries = match std::fs::read_dir(&directory) {
             Ok(entries) => entries,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound && saved.file_count == 0 => {
@@ -111,6 +111,7 @@ pub(crate) fn fetch_matching_files(
             });
             let managed_name = entry.file_name().to_string_lossy().into_owned();
             let name = read_name(&path).unwrap_or_else(|| managed_name.clone());
+            let collection_names = read_collection_names(&path, &storage_root, &saved.drive_id);
             files.push(FetchedFile {
                 id: format!("{}:{}", saved.drive_id, managed_name),
                 drive_id: saved.drive_id.clone(),
@@ -121,6 +122,7 @@ pub(crate) fn fetch_matching_files(
                 modified_at_ms,
                 categories: Vec::new(),
                 tags: Vec::new(),
+                collection_names,
             });
         }
         if incomplete {
@@ -167,6 +169,22 @@ fn read_name(file_path: &Path) -> Option<String> {
     .ok()?;
     let name = metadata.name.trim();
     (!name.is_empty()).then(|| name.to_owned())
+}
+
+fn read_collection_names(file_path: &Path, storage_root: &Path, drive_id: &str) -> Vec<String> {
+    let ids = crate::services::file_service::sidecar_collection_ids(
+        &crate::services::image_processing_service::classification_output_path(file_path),
+    )
+    .unwrap_or_default();
+    if ids.is_empty() {
+        return Vec::new();
+    }
+    let Ok(metadata) = crate::services::collection_service::read(storage_root, drive_id) else {
+        return Vec::new();
+    };
+    ids.into_iter()
+        .filter_map(|id| metadata.collections.iter().find(|item| item.id == id).map(|item| item.name.clone()))
+        .collect()
 }
 
 fn read_file_labels(path: &Path) -> (Vec<String>, Vec<String>) {

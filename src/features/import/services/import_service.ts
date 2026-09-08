@@ -3,7 +3,12 @@ import { open } from "@tauri-apps/plugin-dialog";
 
 import type { BackgroundProcess } from "../types/background-process";
 
-export async function selectAndImportFiles(collectionIds: string[] = []): Promise<BackgroundProcess | null> {
+export interface ImportSelection {
+  paths: string[];
+  folder: boolean;
+}
+
+export async function selectImportFiles(): Promise<ImportSelection | null> {
   const selectedPaths = await open({
     directory: false,
     multiple: true,
@@ -15,10 +20,10 @@ export async function selectAndImportFiles(collectionIds: string[] = []): Promis
   const paths = Array.isArray(selectedPaths) ? selectedPaths : [selectedPaths];
   if (paths.length === 0) return null;
 
-  return invoke<BackgroundProcess>("import_file", { paths, collectionIds });
+  return { paths, folder: false };
 }
 
-export async function selectAndImportFolder(collectionIds: string[] = []): Promise<BackgroundProcess | null> {
+export async function selectImportFolder(): Promise<ImportSelection | null> {
   const selectedPath = await open({
     directory: true,
     multiple: false,
@@ -30,8 +35,16 @@ export async function selectAndImportFolder(collectionIds: string[] = []): Promi
   const path = Array.isArray(selectedPath) ? selectedPath[0] : selectedPath;
   if (!path) return null;
 
-  return invoke<BackgroundProcess>("import_folder", { path, collectionIds });
+  return { paths: [path], folder: true };
 }
+
+export const getImportPreviewCount = (selection: ImportSelection) =>
+  invoke<number>("preview_import", { paths: selection.paths, folder: selection.folder });
+
+export const importSelection = (selection: ImportSelection, collectionIds: string[] = []) =>
+  selection.folder
+    ? invoke<BackgroundProcess>("import_folder", { path: selection.paths[0], collectionIds })
+    : invoke<BackgroundProcess>("import_file", { paths: selection.paths, collectionIds });
 
 export function getImportErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;

@@ -68,6 +68,7 @@ pub fn run() {
             commands::collection_command::update_collection,
             commands::collection_command::delete_collection,
             commands::import_command::import_file,
+            commands::import_command::preview_import,
             commands::file_command::get_file_count,
             commands::file_command::fetch_files,
             commands::file_command::suggest_tags,

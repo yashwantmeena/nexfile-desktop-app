@@ -10,6 +10,7 @@ export interface FetchedFile {
   modifiedAtMs: number | null;
   categories: string[];
   tags: string[];
+  collectionNames: string[];
   imageUrl?: string;
 }
 

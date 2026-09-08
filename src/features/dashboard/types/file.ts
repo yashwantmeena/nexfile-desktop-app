@@ -3,7 +3,7 @@ export interface DashboardFile {
   sizeBytes?:number; fileType?:string;
   modifiedAtMs?:number | null;
   categories?:string[];
-  tags?:string[]; collection?:string;
+  tags?:string[]; collection?:string; collections?:string[];
   image?:string; duration?:string;
 }
 

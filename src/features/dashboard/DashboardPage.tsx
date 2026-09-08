@@ -8,7 +8,6 @@ import { AppToolbar, type SearchMode } from "@/components/layout/AppToolbar";
 import type { AppNavigationItem } from "@/types/navigation";
 import { CategoryFilters } from "./components/CategoryFilters";
 import { ModelCategoryFilter } from "./components/ModelCategoryFilter";
-import { CollectionFilter } from "./components/CollectionFilter";
 import { FileGrid } from "./components/FileGrid";
 import { FilePreviewModal } from "./components/FilePreviewModal";
 import { FilterBar } from "./components/FilterBar";
@@ -76,6 +75,7 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
     kind: file.name.includes(".") ? file.name.split(".").pop()!.toUpperCase() : file.fileType.toUpperCase(),
     time: file.modifiedAtMs === null ? "Unknown" : new Date(file.modifiedAtMs).toLocaleString(),
     image: file.imageUrl, sizeBytes: file.sizeBytes, categories: file.categories, tags: file.tags,
+    collections: file.collectionNames, collection: file.collectionNames[0],
   })), [fetched.files]);
   const modelCategories = [...new Set(loadedFiles.flatMap(file => file.categories ?? []))].sort();
   const files = isCollection ? [] : loadedFiles.filter(file => !modelCategory || file.categories?.includes(modelCategory));
@@ -98,7 +98,6 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
             <div className="category-toolbar">
               <CategoryFilters categories={categories} activeCategory={activeCategory} onCategoryChange={setActiveCategory}/>
               <ModelCategoryFilter categories={modelCategories} selected={modelCategory} onSelect={value => { setModelCategory(value); setPreviewIndex(null); }}/>
-              <CollectionFilter onSelect={id => { select(id); setPreviewIndex(null); onNavigationChange(id ? "Collections" : "Search"); }}/>
               <button className="results-sort category-sort" title="Filesystem modified time, descending">Modified: newest <ChevronDown /></button>
             </div>
             {isCollection ? <><div className="collection-page-heading"><div><p>COLLECTION</p><h1>{selected.name}</h1></div><div className="collection-header-actions"><span>0 files</span><CollectionActions id={selected.id} name={selected.name}/></div></div><div className="collection-empty"><div className="collection-symbol"><FolderOpen size={28}/></div><h2>A home for related files</h2><p>This collection is ready. Adding files to collections<br/>will be available when collection storage is connected.</p><button type="button" onClick={() => { select(null); onNavigationChange("Search"); }}>Browse all files</button></div></> : <>

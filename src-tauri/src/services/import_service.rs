@@ -45,6 +45,18 @@ pub struct ImportService {
 impl ImportService {
     pub(crate) fn collection_pool(&self) -> &SqlitePool { &self.queue_pool }
 
+    pub async fn preview_count(&self, paths: Vec<String>, folder: bool) -> AppResult<u64> {
+        let paths = if folder {
+            let path = paths.first().ok_or_else(|| AppError::validation("Select a folder."))?.clone();
+            tauri::async_runtime::spawn_blocking(move || collect_folder_files(Path::new(&path)))
+                .await
+                .map_err(AppError::internal)??
+        } else {
+            validate_file_paths(paths)?
+        };
+        u64::try_from(paths.len()).map_err(|_| AppError::validation("Too many files were selected."))
+    }
+
     pub async fn import_with_collections(&self, paths: Vec<String>, folder: bool, ids: Vec<String>) -> AppResult<BackgroundProcess> {
         let names = crate::repositories::collection_repository::selected_names(&self.queue_pool, &ids).await?;
         let paths = if folder {

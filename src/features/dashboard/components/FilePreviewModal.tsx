@@ -20,6 +20,7 @@ function readable(value:string){return value.replace(/[_-]/g," ");}
 
 export function FilePreviewModal({files,index,onIndexChange,onClose,onApplyFilter,hasMore,loadingMore,loadError,onLoadMore}:FilePreviewModalProps){
   const file=files[index];
+  const collections = file.collections?.length ? file.collections : file.collection ? [file.collection] : [];
   const [pendingNextFrom, setPendingNextFrom] = useState<DashboardFile["id"]|null>(null);
   const atLoadedEnd = index >= files.length - 1;
   const next = useCallback(() => {
@@ -101,9 +102,9 @@ export function FilePreviewModal({files,index,onIndexChange,onClose,onApplyFilte
         <div className="preview-info-grid">
           <section className="preview-info-card"><h3><File/>File information</h3><dl><div><dt>Type</dt><dd>{readable(type)}</dd></div><div><dt>Format</dt><dd>{file.kind}</dd></div><div><dt>Size</dt><dd>{formatSize(file.sizeBytes)}</dd></div></dl></section>
           <section className="preview-info-card"><h3><Clock3/>Timestamps</h3><dl><div><dt>Modified</dt><dd>{file.time}</dd></div><div><dt>Imported</dt><dd>{file.time}</dd></div></dl></section>
-          <section className="preview-info-card"><h3><Tag/>Category</h3><div className="preview-card-tags">{file.categories?.[0]?<button onClick={()=>onApplyFilter(file.categories![0])}>{readable(file.categories[0])}</button>:<span>Uncategorized</span>}</div></section>
-          <section className="preview-info-card"><h3><FolderOpen/>Collections</h3><div className="preview-collection-value">{file.collection?<button className="preview-filter-button" onClick={()=>onApplyFilter(file.collection!)}>{file.collection}</button>:"Not in a collection"}</div></section>
-          <section className="preview-info-card"><h3><Tag/>Keywords & tags</h3><div className="preview-card-tags">{file.tags?.length?file.tags.map(tag=><button key={tag} onClick={()=>onApplyFilter(tag)}>{readable(tag)}</button>):<span>None</span>}</div></section>
+          <section className="preview-info-card"><h3><Tag/>Category</h3><div className="preview-card-tags">{file.categories?.[0]?<button className="preview-metadata-chip" onClick={()=>onApplyFilter(file.categories![0])}>{readable(file.categories[0])}</button>:<span className="preview-metadata-chip">Uncategorized</span>}</div></section>
+          <section className="preview-info-card"><h3><FolderOpen/>Collections</h3><div className="preview-collection-value">{collections.length?<div className="preview-collection-tags">{collections.map(collection=><span className="preview-metadata-chip" key={collection}>{collection}</span>)}</div>:"Not in a collection"}</div></section>
+          <section className="preview-info-card"><h3><Tag/>Keywords & tags</h3><div className="preview-card-tags">{file.tags?.length?file.tags.map(tag=><button className="preview-metadata-chip" key={tag} onClick={()=>onApplyFilter(tag)}>{readable(tag)}</button>):<span className="preview-metadata-chip">None</span>}</div></section>
           <section className="preview-info-card preview-path-card"><h3><FolderOpen/>Path</h3><div className="preview-card-path"><span title={file.path}>{file.path}</span><button onClick={copyPath} aria-label="Copy path"><Copy/></button></div></section>
           <section className="preview-info-card preview-actions-card"><h3><Wrench/>Actions</h3><div className="preview-action-buttons"><button className="primary"><ExternalLink/>Open</button><button><FolderOpen/>Open folder</button><button onClick={copyPath}><Copy/>{copied?"Copied":"Copy path"}</button><button aria-label="More actions"><MoreHorizontal/></button></div></section>
         </div>
