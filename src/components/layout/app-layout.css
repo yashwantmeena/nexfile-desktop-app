@@ -1,4 +1,4 @@
-.nexfile-app { --nf-blue:#2563eb; --nf-line:#e3e7ed; --nf-muted:#697386; min-height:100vh; display:grid; grid-template-columns:226px minmax(0,1fr); overflow:hidden; background:#f8f9fb; color:#111827; font-family:"Segoe UI Variable Text","Segoe UI Variable",Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; font-size:14px; line-height:1.4; font-synthesis:none; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+.nexfile-app { --nf-blue:#2563eb; --nf-line:#e3e7ed; --nf-muted:#697386; --nf-metadata-chip-border:#cbdcf4; --nf-metadata-chip-text:#2257a1; --nf-metadata-chip-background:#f3f7fd; --nf-metadata-chip-action:#61748f; --nf-metadata-chip-action-hover:#284f86; --nf-metadata-chip-hover:#e2ebf8; min-height:100vh; display:grid; grid-template-columns:226px minmax(0,1fr); overflow:hidden; background:#f8f9fb; color:#111827; font-family:"Segoe UI Variable Text","Segoe UI Variable",Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; font-size:14px; line-height:1.4; font-synthesis:none; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
 .nexfile-app button { font:inherit; }
 .nf-sidebar { position:fixed; inset:0 auto 0 0; width:226px; z-index:10; display:flex; flex-direction:column; padding:0 14px 16px; color:#263142; background:#fff; border-right:1px solid #e1e6ec; box-shadow:1px 0 0 rgba(17,24,39,.015); overflow-y:auto; scrollbar-width:none; }
 .nf-brand { height:73px; flex:none; padding:0 10px; display:grid; grid-template-columns:24px minmax(0,1fr); align-items:center; column-gap:10px; }
@@ -92,15 +92,16 @@
 .import-section-heading p { margin:3px 0 0; color:#8994a4; font-size:11px; line-height:15px; }
 .import-selected-collections { min-height:29px; margin-bottom:8px; padding:0; display:flex; flex-wrap:wrap; align-items:center; gap:5px; }
 .import-collection-chip-list { display:contents; }
-.import-collection-chip { max-width:100%; min-height:27px; padding:0 4px 0 9px; display:inline-flex; align-items:center; gap:4px; border:1px solid #cbdcf4; border-radius:8px; color:#2257a1; background:#f3f7fd; font-size:11.5px; line-height:16px; }
+.import-collection-chip { max-width:100%; min-height:27px; padding:0 4px 0 9px; display:inline-flex; align-items:center; gap:4px; border:1px solid var(--nf-metadata-chip-border); border-radius:8px; color:var(--nf-metadata-chip-text); background:var(--nf-metadata-chip-background); font-size:11.5px; line-height:16px; }
 .import-collection-chip>span { max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.import-collection-chip button { width:20px; height:20px; padding:0; display:grid; place-items:center; border:0; border-radius:5px; color:#61748f; background:transparent; cursor:pointer; }
-.import-collection-chip button:hover:not(:disabled) { color:#284f86; background:#e2ebf8; }
+.import-collection-chip button { width:20px; height:20px; padding:0; display:grid; place-items:center; border:0; border-radius:5px; color:var(--nf-metadata-chip-action); background:transparent; cursor:pointer; }
+.import-collection-chip button:hover:not(:disabled) { color:var(--nf-metadata-chip-action-hover); background:var(--nf-metadata-chip-hover); }
 .import-collection-chip button:disabled { opacity:.45; cursor:default; }
 .import-collection-chip svg { width:13px; height:13px; }
-.import-collection-add { width:29px; height:29px; padding:0; display:grid; place-items:center; flex:none; border:1px solid #cbdcf4; border-radius:8px; color:#2257a1; background:#f3f7fd; cursor:pointer; }
+.import-collection-add { width:29px; height:29px; padding:0; display:grid; place-items:center; flex:none; border:1px solid var(--nf-metadata-chip-border); border-radius:8px; color:var(--nf-metadata-chip-text); background:var(--nf-metadata-chip-background); cursor:pointer; }
 .import-collection-add:hover:not(:disabled),.import-collection-add:focus-visible { border-color:#8db3e8; outline:0; color:#245eaf; background:#f4f8fe; }
 .import-collection-add svg { width:16px; }
+.import-collection-add.with-label { width:auto; padding:0 10px; display:inline-flex; gap:6px; font:inherit; font-size:12px; }
 .import-collection-add:disabled { opacity:.55; cursor:default; }
 .import-collection-menu { z-index:120; width:min(360px,calc(100vw - 48px)); padding:7px; border:1px solid #dce3ec; border-radius:12px; color:#405068; background:#fff; box-shadow:0 18px 46px rgba(15,23,42,.18); }
 .import-collection-search { height:35px; margin:0 0 6px; padding:0 9px; display:flex; align-items:center; gap:8px; border:1px solid #dce2ea; border-radius:8px; color:#8995a6; background:#fbfcfe; }

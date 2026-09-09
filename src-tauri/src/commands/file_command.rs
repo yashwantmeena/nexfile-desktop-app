@@ -13,12 +13,137 @@ pub async fn suggest_tags(state: State<'_, AppState>, prefix: String) -> AppResu
 }
 
 #[tauri::command]
+pub async fn update_file_metadata(
+    state: State<'_, AppState>,
+    drive_id: String,
+    path: String,
+    name: Option<String>,
+    category: Option<String>,
+    tags: Option<Vec<String>>,
+    collection_ids: Option<Vec<String>>,
+    favorite: Option<bool>,
+) -> AppResult<()> {
+    let updates_labels =
+        name.is_some() || category.is_some() || tags.is_some() || collection_ids.is_some();
+    if !updates_labels && favorite.is_none() {
+        return Err(crate::error::AppError::validation(
+            "No file metadata changes were provided.",
+        ));
+    }
+    let (name, category, tags, collection_ids) = if updates_labels {
+        let name = name
+            .ok_or_else(|| crate::error::AppError::validation("A file name is required."))?
+            .trim()
+            .to_owned();
+        if name.is_empty() || name.chars().count() > 255 || name.chars().any(char::is_control) {
+            return Err(crate::error::AppError::validation(
+                "File names must contain 1–255 characters without control characters.",
+            ));
+        }
+        let category = category
+            .ok_or_else(|| crate::error::AppError::validation("A category update is required."))?
+            .trim()
+            .to_owned();
+        if category.chars().count() > 80 || category.chars().any(char::is_control) {
+            return Err(crate::error::AppError::validation(
+                "Categories must contain at most 80 characters without control characters.",
+            ));
+        }
+        let tags = tags
+            .ok_or_else(|| crate::error::AppError::validation("A tags update is required."))?
+            .into_iter()
+            .flat_map(|tag| {
+                tag.split(|character: char| {
+                    character.is_whitespace() || character == '_' || character == '-'
+                })
+                .map(str::trim)
+                .filter(|tag| !tag.is_empty())
+                .map(str::to_lowercase)
+                .collect::<Vec<_>>()
+            })
+            .fold(Vec::<String>::new(), |mut tags, tag| {
+                if !tags
+                    .iter()
+                    .any(|existing| existing.eq_ignore_ascii_case(&tag))
+                {
+                    tags.push(tag);
+                }
+                tags
+            });
+        if tags.len() > 100 {
+            return Err(crate::error::AppError::validation(
+                "A file can have at most 100 tags.",
+            ));
+        }
+        if tags
+            .iter()
+            .any(|tag| tag.chars().count() > 80 || tag.chars().any(char::is_control))
+        {
+            return Err(crate::error::AppError::validation(
+                "Tags must contain at most 80 characters without control characters.",
+            ));
+        }
+        let collection_ids = collection_ids.ok_or_else(|| {
+            crate::error::AppError::validation("A collections update is required.")
+        })?;
+        (Some(name), Some(category), Some(tags), Some(collection_ids))
+    } else {
+        (None, None, None, None)
+    };
+    let collection_names = if let Some(collection_ids) = collection_ids {
+        Some(
+            crate::repositories::collection_repository::selected_names(
+                state.imports.collection_pool(),
+                &collection_ids,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
+    let _guard = state.imports.metadata_lock().lock().await;
+    let (sidecar, file_id, current_name, current_collection_ids, labels_updated) = state
+        .storage
+        .update_file_metadata(
+            drive_id.clone(),
+            std::path::PathBuf::from(&path),
+            name,
+            category,
+            tags,
+            collection_names,
+            favorite,
+        )
+        .await?;
+    if labels_updated {
+        crate::services::indexing_service::IndexingService::new(state.search.clone())
+            .process_path(sidecar)
+            .await?
+    } else {
+        let favorite = favorite.expect("favorite-only metadata updates are validated above");
+        let index = state.search.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            index.index_filename(
+                &drive_id,
+                &file_id,
+                &current_name,
+                &current_collection_ids,
+                favorite,
+            )
+        })
+        .await
+        .map_err(crate::error::AppError::internal)??;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn get_file_count(
     state: State<'_, AppState>,
     query: Option<String>,
     search_mode: Option<String>,
     tags: Option<Vec<String>>,
     collection: Option<String>,
+    favorite_only: Option<bool>,
 ) -> AppResult<FileCountSummary> {
     let _guard = state.imports.metadata_lock().lock().await;
     state
@@ -29,6 +154,7 @@ pub async fn get_file_count(
             search_mode.unwrap_or_else(|| "tags".into()),
             tags.unwrap_or_default(),
             collection,
+            favorite_only.unwrap_or(false),
         )
         .await
 }
@@ -44,6 +170,7 @@ pub async fn fetch_files(
     search_mode: Option<String>,
     tags: Option<Vec<String>>,
     collection: Option<String>,
+    favorite_only: Option<bool>,
 ) -> AppResult<crate::models::file_model::FilePage> {
     let _guard = state.imports.metadata_lock().lock().await;
     let query = query.unwrap_or_default();
@@ -64,6 +191,7 @@ pub async fn fetch_files(
                 limit.unwrap_or(60),
                 media_type,
                 collection,
+                favorite_only.unwrap_or(false),
             )
             .await?
     };

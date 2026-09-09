@@ -49,6 +49,28 @@ fn no_saved_drives_returns_verified_zero() {
 }
 
 #[test]
+fn persists_favorite_in_file_metadata_json() {
+    let root = std::env::temp_dir().join(format!("nexfile-favorite-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&root).unwrap();
+    let sidecar = root.join("photo.jpg.json");
+    std::fs::write(
+        &sidecar,
+        br#"{"version":1,"name":"photo.jpg","collectionIds":["travel"],"custom":42}"#,
+    )
+    .unwrap();
+
+    let metadata = replace_sidecar_metadata(&sidecar, None, None, None, None, Some(true)).unwrap();
+    assert!(metadata.favorite);
+    assert_eq!(metadata.collection_ids, ["travel"]);
+    let value: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&sidecar).unwrap()).unwrap();
+    assert_eq!(value["favorite"], true);
+    assert_eq!(value["custom"], 42);
+
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn fetches_all_types_by_filesystem_modified_time_with_pagination() {
     use std::time::{Duration, UNIX_EPOCH};
     let root = std::env::temp_dir().join(format!("nexfile-fetch-{}", uuid::Uuid::new_v4()));
@@ -149,6 +171,7 @@ fn fetches_all_types_by_filesystem_modified_time_with_pagination() {
     );
     assert_eq!(images.total_count, 1);
     assert_eq!(images.files[0].name, "old.jpg");
+    assert!(!images.files[0].favorite);
     assert_eq!(images.files[0].tags, ["landscape", "mountain", "snow", "covered"]);
     for (primary, secondary, expected) in [
         ("visual", Some("nature"), vec!["nature"]),

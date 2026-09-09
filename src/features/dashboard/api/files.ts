@@ -11,6 +11,7 @@ export interface FetchedFile {
   categories: string[];
   tags: string[];
   collectionNames: string[];
+  favorite: boolean;
   imageUrl?: string;
 }
 
@@ -25,8 +26,8 @@ export interface FilePage {
  * Refresh from offset zero after imports/deletions, which can shift page offsets.
  * Search text and tags are filtered before pagination.
  */
-export async function fetchFiles(offset = 0, limit = 60, mediaType?: string, query = "", searchMode = "tags", tags: string[] = [], collection?: string): Promise<FilePage> {
-  const page = await invoke<FilePage>("fetch_files", { offset, limit, mediaType, query, searchMode, tags, collection });
+export async function fetchFiles(offset = 0, limit = 60, mediaType?: string, query = "", searchMode = "tags", tags: string[] = [], collection?: string, favoriteOnly = false): Promise<FilePage> {
+  const page = await invoke<FilePage>("fetch_files", { offset, limit, mediaType, query, searchMode, tags, collection, favoriteOnly });
   return {
     ...page,
     files: page.files.map(file => ({
@@ -34,4 +35,16 @@ export async function fetchFiles(offset = 0, limit = 60, mediaType?: string, que
       imageUrl: file.fileType === "image" || file.fileType === "video" ? convertFileSrc(file.path) : undefined,
     })),
   };
+}
+
+interface FileMetadataChanges {
+  name?: string;
+  category?: string;
+  tags?: string[];
+  collectionIds?: string[];
+  favorite?: boolean;
+}
+
+export async function updateFileMetadata(file: { driveId: string; path: string }, changes: FileMetadataChanges): Promise<void> {
+  await invoke("update_file_metadata", { driveId: file.driveId, path: file.path, ...changes });
 }

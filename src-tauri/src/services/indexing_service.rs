@@ -83,6 +83,7 @@ impl IndexingService {
             secondary_labels: secondary_labels.into_iter().collect(),
             categories: categories.into_iter().collect(),
             collection_ids: source.collection_ids,
+            favorite: source.output.favorite,
         })
     }
 }

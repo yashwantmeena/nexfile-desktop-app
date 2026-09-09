@@ -33,6 +33,7 @@ struct IndexFields {
     secondary_labels: Field,
     categories: Field,
     collection_ids: Field,
+    favorite: Field,
     name: Field,
 }
 
@@ -47,11 +48,13 @@ pub struct TantivyIndexingRepository {
 impl TantivyIndexingRepository {
     pub fn open(app_data_dir: impl AsRef<Path>) -> AppResult<Self> {
         let index_path = app_data_dir.as_ref().join(SEARCH_INDEX_DIRECTORY);
+        let previous_index_path = app_data_dir.as_ref().join("search-index-v3");
         std::fs::create_dir_all(&index_path)?;
 
         let (schema, fields) = build_schema();
         let directory = MmapDirectory::open(&index_path).map_err(AppError::internal)?;
-        let index = if Index::exists(&directory).map_err(AppError::internal)? {
+        let index_existed = Index::exists(&directory).map_err(AppError::internal)?;
+        let index = if index_existed {
             let index = Index::open(directory).map_err(AppError::internal)?;
             if index.schema() != schema {
                 return Err(AppError::validation(
@@ -76,12 +79,57 @@ impl TantivyIndexingRepository {
             .reload_policy(ReloadPolicy::Manual)
             .try_into()
             .map_err(AppError::internal)?;
-        Ok(Self {
+        let repository = Self {
             index,
             writer: Arc::new(Mutex::new(writer)),
             fields,
             reader,
-        })
+        };
+        if !index_existed && previous_index_path != index_path && previous_index_path.is_dir() {
+            repository.migrate_previous_index(&previous_index_path)?;
+        }
+        Ok(repository)
+    }
+
+    fn migrate_previous_index(&self, path: &Path) -> AppResult<()> {
+        let directory = MmapDirectory::open(path).map_err(AppError::internal)?;
+        if !Index::exists(&directory).map_err(AppError::internal)? {
+            return Ok(());
+        }
+        let previous = Index::open(directory).map_err(AppError::internal)?;
+        let previous_schema = previous.schema();
+        let reader = previous.reader().map_err(AppError::internal)?;
+        let searcher = reader.searcher();
+        let addresses = searcher
+            .search(&AllQuery, &DocSetCollector)
+            .map_err(AppError::internal)?;
+        if addresses.is_empty() {
+            return Ok(());
+        }
+        let current_schema = self.index.schema();
+        let mut writer = self.writer.lock().map_err(|_| {
+            AppError::internal(std::io::Error::other(
+                "Search index writer lock is poisoned.",
+            ))
+        })?;
+        for address in addresses {
+            let previous_document: TantivyDocument =
+                searcher.doc(address).map_err(AppError::internal)?;
+            let mut document = TantivyDocument::default();
+            for (field, value) in previous_document.iter_fields_and_values() {
+                let name = previous_schema.get_field_name(field);
+                if name == "favorite" {
+                    continue;
+                }
+                if let Ok(target) = current_schema.get_field(name) {
+                    document.add_field_value(target, value);
+                }
+            }
+            document.add_bool(self.fields.favorite, false);
+            writer.add_document(document).map_err(AppError::internal)?;
+        }
+        writer.commit().map_err(AppError::internal)?;
+        self.reader.reload().map_err(AppError::internal)
     }
 
     pub fn upsert(&self, source: IndexDocument) -> AppResult<()> {
@@ -117,6 +165,7 @@ impl TantivyIndexingRepository {
                 document.add_text(self.fields.collection_ids, collection_id);
             }
         }
+        document.add_bool(self.fields.favorite, source.favorite);
 
         let mut writer = self.writer.lock().map_err(|_| {
             AppError::internal(std::io::Error::other(
@@ -229,6 +278,7 @@ impl TantivyIndexingRepository {
         file: &str,
         name: &str,
         collection_ids: &[String],
+        favorite: bool,
     ) -> AppResult<()> {
         let name_field = self.fields.name;
         let mut writer = self.writer.lock().map_err(|_| {
@@ -239,7 +289,10 @@ impl TantivyIndexingRepository {
         let mut document = TantivyDocument::default();
         if let Some(existing) = self.existing_document(drive, file)? {
             for (field, value) in existing.iter_fields_and_values() {
-                if field != name_field && field != self.fields.collection_ids {
+                if field != name_field
+                    && field != self.fields.collection_ids
+                    && field != self.fields.favorite
+                {
                     document.add_field_value(field, value);
                 }
             }
@@ -259,6 +312,7 @@ impl TantivyIndexingRepository {
                 document.add_text(self.fields.collection_ids, collection_id);
             }
         }
+        document.add_bool(self.fields.favorite, favorite);
         writer
             .delete_query(Box::new(self.identity_query(drive, file)))
             .map_err(AppError::internal)?;
@@ -324,7 +378,10 @@ impl TantivyIndexingRepository {
         tags: &[String],
         collection_ids: Option<&[(String, String)]>,
     ) -> AppResult<HashSet<(String, String)>> {
-        self.matching_files(self.filtered_query(query, mode, tags, collection_ids)?.as_ref())
+        self.matching_files(
+            self.filtered_query(query, mode, tags, collection_ids, false)?
+                .as_ref(),
+        )
     }
 
     fn filtered_query(
@@ -333,6 +390,7 @@ impl TantivyIndexingRepository {
         mode: &str,
         tags: &[String],
         collection_ids: Option<&[(String, String)]>,
+        favorite_only: bool,
     ) -> AppResult<Box<dyn Query>> {
         let base = match mode {
             "tags" => self.tag_query(query, tags)?,
@@ -343,13 +401,24 @@ impl TantivyIndexingRepository {
             ])),
             _ => return Err(AppError::validation("Unknown search mode.")),
         };
-        match self.collection_query(collection_ids)? {
-            Some(collection) => Ok(Box::new(BooleanQuery::new(vec![
-                (Occur::Must, base),
-                (Occur::Must, collection),
-            ]))),
-            None => Ok(base),
+        let collection = self.collection_query(collection_ids)?;
+        if collection.is_none() && !favorite_only {
+            return Ok(base);
         }
+        let mut filters = vec![(Occur::Must, base)];
+        if let Some(collection) = collection {
+            filters.push((Occur::Must, collection));
+        }
+        if favorite_only {
+            filters.push((
+                Occur::Must,
+                Box::new(TermQuery::new(
+                    Term::from_field_bool(self.fields.favorite, true),
+                    IndexRecordOption::Basic,
+                )),
+            ));
+        }
+        Ok(Box::new(BooleanQuery::new(filters)))
     }
 
     fn collection_query(
@@ -402,9 +471,23 @@ impl TantivyIndexingRepository {
         HashSet<(String, String)>,
         crate::models::file_model::FileCountSummary,
     )> {
+        self.indexed_results_filtered(query, mode, tags, collection_ids, false)
+    }
+
+    pub fn indexed_results_filtered(
+        &self,
+        query: &str,
+        mode: &str,
+        tags: &[String],
+        collection_ids: Option<&[(String, String)]>,
+        favorite_only: bool,
+    ) -> AppResult<(
+        HashSet<(String, String)>,
+        crate::models::file_model::FileCountSummary,
+    )> {
         use crate::models::file_model::{FileCountSummary, FileTypeCount};
         use crate::types::file_type::FileType;
-        let query = self.filtered_query(query, mode, tags, collection_ids)?;
+        let query = self.filtered_query(query, mode, tags, collection_ids, favorite_only)?;
         let searcher = self.reader.searcher();
         let hits = searcher
             .search(query.as_ref(), &DocSetCollector)
@@ -567,6 +650,7 @@ fn build_schema() -> (Schema, IndexFields) {
         secondary_labels: builder.add_text_field("secondary_labels", STRING | STORED),
         categories: builder.add_text_field("categories", STRING | STORED),
         collection_ids: builder.add_text_field("collection_ids", STRING | STORED),
+        favorite: builder.add_bool_field("favorite", INDEXED | FAST | STORED),
         name: builder.add_text_field("name", STRING | STORED),
     };
     (builder.build(), fields)

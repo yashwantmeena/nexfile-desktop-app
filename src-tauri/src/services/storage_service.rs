@@ -17,10 +17,116 @@ pub struct StorageService {
 }
 
 impl StorageService {
+    pub async fn update_file_metadata(
+        &self,
+        drive_id: String,
+        path: PathBuf,
+        name: Option<String>,
+        category: Option<String>,
+        tags: Option<Vec<String>>,
+        collection_names: Option<Vec<String>>,
+        favorite: Option<bool>,
+    ) -> AppResult<(PathBuf, String, String, Vec<String>, bool)> {
+        let root = self.system_metadata_root.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let (drive, drive_metadata) = get_drives()
+                .into_iter()
+                .filter_map(|drive| {
+                    let metadata = read_drive_metadata(&drive, &root)?;
+                    (metadata.drive_id == drive_id).then_some((drive, metadata))
+                })
+                .next()
+                .ok_or_else(|| AppError::storage_unavailable("The file's drive is not currently connected."))?;
+            let files_directory = drive_storage_root(&drive, &root).join(IMPORTED_FILES_DIRECTORY);
+            let canonical_files_directory = files_directory.canonicalize()?;
+            let canonical_path = path.canonicalize()?;
+            if canonical_path.parent() != Some(canonical_files_directory.as_path()) {
+                return Err(AppError::validation("The selected file is outside NexFile's managed files."));
+            }
+            let sidecar = crate::services::image_processing_service::classification_output_path(&canonical_path);
+            if !sidecar.is_file() {
+                return Err(AppError::validation("The selected file has no metadata."));
+            }
+            let labels_updated = name.is_some()
+                || category.is_some()
+                || tags.is_some()
+                || collection_names.is_some();
+            if labels_updated
+                && (name.is_none()
+                    || category.is_none()
+                    || tags.is_none()
+                    || collection_names.is_none())
+            {
+                return Err(AppError::validation(
+                    "Name, category, tags, and collections must be updated together.",
+                ));
+            }
+            if labels_updated {
+                let sidecar_bytes = std::fs::read(&sidecar)?;
+                serde_json::from_slice::<crate::models::image_processing_model::ImageProcessingOutput>(&sidecar_bytes)
+                    .map_err(|_| AppError::validation("Image analysis is still in progress. Try again shortly."))?;
+            }
+
+            let storage_root = drive_storage_root(&drive, &root);
+            let mut collection_metadata = crate::services::collection_service::read(&storage_root, &drive_metadata.drive_id)?;
+            let mut resolved_collection_ids = None;
+            let mut definitions_changed = false;
+            if let Some(collection_names) = collection_names {
+                let mut collection_ids = Vec::with_capacity(collection_names.len());
+                for name in collection_names {
+                    let name = name.trim();
+                    if name.is_empty() {
+                        continue;
+                    }
+                    if let Some(collection) = collection_metadata
+                        .collections
+                        .iter()
+                        .find(|collection| collection.name.eq_ignore_ascii_case(name))
+                    {
+                        collection_ids.push(collection.id.clone());
+                    } else {
+                        let id = collection_metadata.create(name)?;
+                        collection_ids.push(id);
+                        definitions_changed = true;
+                    }
+                }
+                resolved_collection_ids = Some(collection_ids);
+            }
+            if definitions_changed {
+                crate::services::collection_service::save(&storage_root, &collection_metadata)?;
+            }
+
+            let metadata = crate::services::file_service::replace_sidecar_metadata(
+                &sidecar,
+                name.as_deref(),
+                category.as_deref(),
+                tags.as_deref(),
+                resolved_collection_ids.as_deref(),
+                favorite,
+            )?;
+            let file_id = canonical_path
+                .file_stem()
+                .and_then(|value| value.to_str())
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| AppError::validation("The selected file has no file ID."))?
+                .to_owned();
+            Ok((
+                sidecar,
+                file_id,
+                metadata.name,
+                metadata.collection_ids,
+                labels_updated,
+            ))
+        })
+        .await
+        .map_err(AppError::internal)?
+    }
+
     pub async fn search_files(
         &self, index: crate::repositories::indexing_repository::TantivyIndexingRepository,
         query: String, mode: String, tags: Vec<String>, offset: usize, limit: usize,
         media_type: Option<crate::types::file_type::FileType>, collection: Option<String>,
+        favorite_only: bool,
     ) -> AppResult<crate::models::file_model::FilePage> {
         if !(1..=200).contains(&limit) {
             return Err(AppError::validation("The file page size must be between 1 and 200."));
@@ -41,11 +147,12 @@ impl StorageService {
                     )
                 })
                 .transpose()?;
-            let (matches, _) = index.indexed_results(
+            let (matches, _) = index.indexed_results_filtered(
                 &query,
                 &mode,
                 &tags,
                 collection_ids.as_deref(),
+                favorite_only,
             )?;
             if matches.is_empty() {
                 return Ok(crate::models::file_model::FilePage {
@@ -64,6 +171,7 @@ impl StorageService {
         mode: String,
         tags: Vec<String>,
         collection: Option<String>,
+        favorite_only: bool,
     ) -> AppResult<crate::models::file_model::FileCountSummary> {
         let snapshots = self.repository.list().await?;
         let root = self.system_metadata_root.clone();
@@ -82,11 +190,12 @@ impl StorageService {
                 })
                 .transpose()?;
             index
-                .indexed_results(
+                .indexed_results_filtered(
                     &query,
                     &mode,
                     &tags,
                     collection_ids.as_deref(),
+                    favorite_only,
                 )
                 .map(|(_, counts)| counts)
         })

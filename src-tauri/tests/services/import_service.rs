@@ -296,6 +296,7 @@ async fn consumes_an_image_into_the_mounted_system_drive_and_queues_processing()
     .expect("file metadata should be valid JSON");
     assert_eq!(file_metadata["version"], 1);
     assert_eq!(file_metadata["name"], "photo.avip");
+    assert_eq!(file_metadata["favorite"], false);
     assert!(file_metadata.get("originalName").is_none());
     let matches = search.search_files("PHOTO.AVIP", "name", &[], None).unwrap();
     assert_eq!(matches.len(), 1);

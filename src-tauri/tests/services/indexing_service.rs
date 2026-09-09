@@ -52,6 +52,7 @@ async fn stores_searchable_image_fields_in_tantivy() {
         name: "photo.jpg".to_owned(),
         created_at_ms: 1_788_331_200_000,
         updated_at_ms: 1_788_331_300_000,
+        favorite: true,
         metadata: ImageMetadata {
             media_type: Some("image/jpeg".to_owned()),
             size_bytes: 245_000,
@@ -174,6 +175,7 @@ async fn stores_searchable_image_fields_in_tantivy() {
     assert_eq!(stored["drive_id"][0], "drive-1");
     assert_eq!(stored["created_at_ms"][0], 1_788_331_200_000_u64);
     assert_eq!(stored["updated_at_ms"][0], 1_788_331_300_000_u64);
+    assert_eq!(stored["favorite"][0], true);
     assert_eq!(stored["media_type"][0], "image/jpeg");
     assert_eq!(stored["size_bytes"][0], 245_000);
     assert_eq!(stored["latitude"][0], 12.971_599);

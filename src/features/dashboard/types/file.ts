@@ -1,9 +1,10 @@
 export interface DashboardFile {
-  id:string | number; name:string; path:string; kind:string; time:string;
+  id:string | number; driveId?:string; name:string; path:string; kind:string; time:string;
   sizeBytes?:number; fileType?:string;
   modifiedAtMs?:number | null;
   categories?:string[];
   tags?:string[]; collection?:string; collections?:string[];
+  favorite?:boolean;
   image?:string; duration?:string;
 }
 

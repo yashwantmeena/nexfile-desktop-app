@@ -19,6 +19,7 @@ fn namespaces_categories_objects_and_search_keywords() {
         name: "photo.jpg".to_owned(),
         created_at_ms: 0,
         updated_at_ms: 0,
+        favorite: false,
         metadata: Default::default(),
         caption: None,
         ocr: None,

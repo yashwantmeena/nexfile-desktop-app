@@ -72,6 +72,7 @@ pub fn run() {
             commands::file_command::get_file_count,
             commands::file_command::fetch_files,
             commands::file_command::suggest_tags,
+            commands::file_command::update_file_metadata,
             commands::import_command::import_folder,
             commands::import_command::get_background_activities,
             commands::storage_command::get_storage_data,

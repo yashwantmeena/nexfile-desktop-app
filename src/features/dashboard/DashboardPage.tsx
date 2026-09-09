@@ -18,7 +18,7 @@ import "./dashboard.css";
 interface DashboardPageProps { activeNavigation:AppNavigationItem; onNavigationChange:(item:AppNavigationItem)=>void; }
 
 export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardPageProps) {
-  const { selected } = useCollections();
+  const { selected, collections } = useCollections();
   const activeCollection = activeNavigation === "Collections" ? selected : undefined;
   const [modelCategory, setModelCategory] = useState<string | undefined>();
   const [homeCounts, setHomeCounts] = useState<HomeCounts | null>(null);
@@ -29,7 +29,8 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
   const [searchMode, setSearchMode] = useState<SearchMode>("tags");
   const tagsKey = JSON.stringify(tags);
   const [refreshKey, setRefreshKey] = useState(0);
-  const fetched = useFiles(activeCategory === "All" ? undefined : activeCategory.toLowerCase(), query, searchMode, tags, refreshKey, activeCollection?.name);
+  const favoriteOnly = activeNavigation === "Favorites";
+  const fetched = useFiles(activeCategory === "All" ? undefined : activeCategory.toLowerCase(), query, searchMode, tags, refreshKey, activeCollection?.name, favoriteOnly);
   const resultsPaneRef = useRef<HTMLDivElement>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const [showBackToTop,setShowBackToTop]=useState(false);
@@ -50,7 +51,7 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
     setCountsError(null);
     const load = async () => {
       try {
-        const result = await invoke<HomeCounts>("get_file_count", { query, searchMode, tags: JSON.parse(tagsKey), collection: activeCollection?.name });
+        const result = await invoke<HomeCounts>("get_file_count", { query, searchMode, tags: JSON.parse(tagsKey), collection: activeCollection?.name, favoriteOnly });
         if (!cancelled) setHomeCounts(result);
       } catch {
         if (!cancelled) setCountsError("Unable to count indexed files. Please try again.");
@@ -61,7 +62,7 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [query, searchMode, tagsKey, refreshKey, activeCollection?.name]);
+  }, [query, searchMode, tagsKey, refreshKey, activeCollection?.name, favoriteOnly]);
   const counts = homeCounts?.counts;
   const categories = [
     { label: "All", count: homeCounts?.totalCount },
@@ -69,12 +70,12 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
   ].map(({ label, count }) => ({ label, count: count == null ? "—" : count.toLocaleString() }));
   const [previewIndex,setPreviewIndex]=useState<number|null>(null);
   const loadedFiles = useMemo<DashboardFile[]>(() => fetched.files.map(file => ({
-    id: file.id, name: file.name, path: file.path, fileType: file.fileType,
+    id: file.id, driveId: file.driveId, name: file.name, path: file.path, fileType: file.fileType,
     modifiedAtMs: file.modifiedAtMs,
     kind: file.name.includes(".") ? file.name.split(".").pop()!.toUpperCase() : file.fileType.toUpperCase(),
     time: file.modifiedAtMs === null ? "Unknown" : new Date(file.modifiedAtMs).toLocaleString(),
     image: file.imageUrl, sizeBytes: file.sizeBytes, categories: file.categories, tags: file.tags,
-    collections: file.collectionNames, collection: file.collectionNames[0],
+    collections: file.collectionNames, collection: file.collectionNames[0], favorite: file.favorite,
   })), [fetched.files]);
   const modelCategories = [...new Set(loadedFiles.flatMap(file => file.categories ?? []))].sort();
   const files = loadedFiles.filter(file => !modelCategory || file.categories?.includes(modelCategory));
@@ -123,7 +124,7 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
             </div>}
         </section>
       </main>
-      {previewIndex!==null&&files[previewIndex]&&<FilePreviewModal files={files} index={previewIndex} onIndexChange={setPreviewIndex} hasMore={nextOffset!==null} loadingMore={loading} loadError={error} onLoadMore={loadMore} onClose={()=>setPreviewIndex(null)} onApplyFilter={value=>{setTags(current=>current.includes(value)?current:[...current,value]);setPreviewIndex(null);}}/>}
+      {previewIndex!==null&&files[previewIndex]&&<FilePreviewModal files={files} index={previewIndex} collections={collections} categories={modelCategories} onMetadataSaved={()=>setRefreshKey(current=>current+1)} onFavoriteSaved={(id,favorite)=>{fetched.updateFavorite(String(id),favorite);if(favoriteOnly&&!favorite){setPreviewIndex(null);setRefreshKey(current=>current+1);}}} onIndexChange={setPreviewIndex} hasMore={nextOffset!==null} loadingMore={loading} loadError={error} onLoadMore={loadMore} onClose={()=>setPreviewIndex(null)} onApplyFilter={value=>{setTags(current=>current.includes(value)?current:[...current,value]);setPreviewIndex(null);}}/>}
     </div>
   );
 }

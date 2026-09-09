@@ -36,21 +36,31 @@ fn counts_indexed_matches_across_types_search_and_tags() {
         secondary_labels: vec![],
         categories: vec!["travel".into()],
         collection_ids: vec!["local-delhi-a".into()],
+        favorite: true,
     };
     repository.upsert(source.clone()).unwrap();
     source.file_id = "report".into();
     source.drive_id = "drive-b".into();
     source.name = "Beach report.pdf".into();
     source.collection_ids = vec!["local-delhi-b".into()];
+    source.favorite = false;
     source.media_type = Some("application/pdf".into());
     source.updated_at_ms = 200;
     repository.upsert(source.clone()).unwrap();
     repository
-        .index_filename("drive-a", "song", "Music.mp3", &[])
+        .index_filename("drive-a", "song", "Music.mp3", &[], false)
         .unwrap();
     let (files, summary) = repository.indexed_results("", "tags", &[], None).unwrap();
     assert_eq!(files.len(), 3);
     assert_eq!(summary.total_count, Some(3));
+    let (favorites, favorite_summary) = repository
+        .indexed_results_filtered("", "tags", &[], None, true)
+        .unwrap();
+    assert_eq!(
+        favorites,
+        std::collections::HashSet::from([("drive-a".to_owned(), "photo".to_owned())])
+    );
+    assert_eq!(favorite_summary.total_count, Some(1));
     let delhi_ids = vec![
         ("drive-a".to_owned(), "local-delhi-a".to_owned()),
         ("drive-b".to_owned(), "local-delhi-b".to_owned()),
@@ -158,6 +168,7 @@ fn suggests_unique_live_prefix_tags_with_limits_and_refresh() {
         secondary_labels: vec!["beaver".into()],
         categories: vec!["beauty".into()],
         collection_ids: vec![],
+        favorite: false,
     };
     repository.upsert(document.clone()).unwrap();
     let one = std::collections::HashSet::from([("drive".to_owned(), "one".to_owned())]);
@@ -186,7 +197,7 @@ fn suggests_unique_live_prefix_tags_with_limits_and_refresh() {
         .unwrap()
         .is_empty());
     repository
-        .index_filename("drive", "one", "Beach (2026).JPG", &[])
+        .index_filename("drive", "one", "Beach (2026).JPG", &[], false)
         .unwrap();
     assert_eq!(
         repository.search_files("(2026).jpg", "name", &[], None).unwrap(),
@@ -211,7 +222,7 @@ fn suggests_unique_live_prefix_tags_with_limits_and_refresh() {
         .search_files(&"a".repeat(257), "tags", &[], None)
         .is_err());
     repository
-        .index_filename("drive", "one", "Renamed.jpg", &[])
+        .index_filename("drive", "one", "Renamed.jpg", &[], false)
         .unwrap();
     assert!(repository
         .search_files("beach", "name", &[], None)
@@ -281,6 +292,7 @@ fn opens_index_with_expected_schema() {
         "secondary_labels",
         "categories",
         "collection_ids",
+        "favorite",
     ] {
         assert!(schema.get_field(field_name).is_ok(), "missing {field_name}");
     }
@@ -307,6 +319,50 @@ fn opens_index_with_expected_schema() {
 }
 
 #[test]
+fn migrates_v3_documents_with_favorites_off_by_default() {
+    use tantivy::collector::Count;
+    use tantivy::query::AllQuery;
+    use tantivy::schema::{Schema, STORED, STRING};
+    use tantivy::{Index, TantivyDocument};
+
+    let root = temporary_directory("favorite-index-migration");
+    let old_path = root.join("search-index-v3");
+    std::fs::create_dir_all(&old_path).unwrap();
+    let mut schema = Schema::builder();
+    let drive_id = schema.add_text_field("drive_id", STRING | STORED);
+    let file_id = schema.add_text_field("file_id", STRING | STORED);
+    let name = schema.add_text_field("name", STRING | STORED);
+    let old = Index::create_in_dir(&old_path, schema.build()).unwrap();
+    let mut writer = old.writer::<TantivyDocument>(15_000_000).unwrap();
+    let mut document = TantivyDocument::default();
+    document.add_text(drive_id, "drive");
+    document.add_text(file_id, "photo");
+    document.add_text(name, "photo.jpg");
+    writer.add_document(document).unwrap();
+    writer.commit().unwrap();
+    drop(writer);
+    drop(old);
+
+    let repository = TantivyIndexingRepository::open(&root).unwrap();
+    assert!(root.join("search-index-v4").is_dir());
+    assert_eq!(
+        repository.search_files("photo", "name", &[], None).unwrap(),
+        std::collections::HashSet::from([("drive".to_owned(), "photo".to_owned())])
+    );
+    assert!(repository
+        .indexed_results_filtered("", "tags", &[], None, true)
+        .unwrap()
+        .0
+        .is_empty());
+    let reader = repository.index().reader().unwrap();
+    assert_eq!(reader.searcher().search(&AllQuery, &Count).unwrap(), 1);
+
+    drop(reader);
+    drop(repository);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn rejects_an_outdated_schema() {
     use tantivy::Index;
     let template_root = temporary_directory("schema-template");
@@ -321,7 +377,7 @@ fn rejects_an_outdated_schema() {
     std::fs::remove_dir_all(template_root).unwrap();
 
     let root = temporary_directory("outdated-schema");
-    let path = root.join("search-index-v3");
+    let path = root.join("search-index-v4");
     std::fs::create_dir_all(&path).unwrap();
     drop(Index::create_in_dir(&path, schema).unwrap());
 

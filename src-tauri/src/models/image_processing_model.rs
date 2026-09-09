@@ -58,6 +58,8 @@ pub struct ImageProcessingOutput {
     #[serde(default)]
     pub updated_at_ms: u64,
     #[serde(default)]
+    pub favorite: bool,
+    #[serde(default)]
     pub metadata: ImageMetadata,
     pub caption: Option<String>,
     pub ocr: Option<ImageOcrOutput>,

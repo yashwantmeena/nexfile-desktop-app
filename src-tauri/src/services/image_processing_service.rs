@@ -266,11 +266,13 @@ impl ImageProcessingService {
                 .map(|name| name.to_string_lossy().into_owned())
                 .unwrap_or_default()
         });
+        let favorite = existing_sidecar_favorite(&output_path);
         let output = ImageProcessingOutput {
             version: IMAGE_PROCESSING_OUTPUT_VERSION,
             name,
             created_at_ms,
             updated_at_ms,
+            favorite,
             metadata: extract_image_metadata(&job.path, &prepared_image)?,
             caption,
             ocr,
@@ -345,6 +347,14 @@ fn existing_sidecar_name(path: &Path) -> Option<String> {
         serde_json::from_slice::<crate::models::file_model::ManagedFileMetadata>(&bytes).ok()?;
     let name = metadata.name.trim();
     (!name.is_empty()).then(|| name.to_owned())
+}
+
+fn existing_sidecar_favorite(path: &Path) -> bool {
+    std::fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .and_then(|value| value.get("favorite").and_then(serde_json::Value::as_bool))
+        .unwrap_or(false)
 }
 
 fn current_time_ms() -> u64 {

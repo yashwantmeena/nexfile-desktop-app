@@ -8,6 +8,8 @@ pub struct ManagedFileMetadata {
     #[serde(alias = "originalName")]
     pub name: String,
     #[serde(default)]
+    pub favorite: bool,
+    #[serde(default)]
     pub collection_ids: Vec<String>,
 }
 
@@ -24,6 +26,7 @@ pub struct FetchedFile {
     pub categories: Vec<String>,
     pub tags: Vec<String>,
     pub collection_names: Vec<String>,
+    pub favorite: bool,
 }
 
 #[derive(Debug, Serialize)]

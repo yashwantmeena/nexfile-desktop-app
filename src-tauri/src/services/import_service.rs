@@ -106,11 +106,13 @@ impl ImportService {
             let drive = drive.to_owned();
             let file = job.file_id.clone();
             let name = job.path.file_name().unwrap_or_default().to_string_lossy().into_owned();
-            let collection_ids = crate::services::file_service::sidecar_collection_ids(
+            let sidecar = crate::services::file_service::read_managed_file_metadata(
                 &classification_output_path(destination),
             )?;
+            let collection_ids = sidecar.collection_ids;
+            let favorite = sidecar.favorite;
             tauri::async_runtime::spawn_blocking(move || {
-                search.index_filename(&drive, &file, &name, &collection_ids)
+                search.index_filename(&drive, &file, &name, &collection_ids, favorite)
             })
                 .await
                 .map_err(AppError::internal)??;
@@ -447,6 +449,7 @@ fn write_import_sidecar(job: &ImportFileJob, destination: &Path) -> AppResult<()
     let bytes = serde_json::to_vec(&ManagedFileMetadata {
         version: 1,
         name,
+        favorite: false,
         collection_ids: Vec::new(),
     })
     .map_err(AppError::serialization)?;

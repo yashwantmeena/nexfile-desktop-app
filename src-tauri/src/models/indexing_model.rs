@@ -25,4 +25,5 @@ pub struct IndexDocument {
     pub secondary_labels: Vec<String>,
     pub categories: Vec<String>,
     pub collection_ids: Vec<String>,
+    pub favorite: bool,
 }

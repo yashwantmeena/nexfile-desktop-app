@@ -110,7 +110,17 @@ pub(crate) fn fetch_matching_files(
                 }
             });
             let managed_name = entry.file_name().to_string_lossy().into_owned();
-            let name = read_name(&path).unwrap_or_else(|| managed_name.clone());
+            let managed_metadata = read_managed_file_metadata(
+                &crate::services::image_processing_service::classification_output_path(&path),
+            )
+            .ok();
+            let name = managed_metadata
+                .as_ref()
+                .map(|metadata| metadata.name.trim())
+                .filter(|name| !name.is_empty())
+                .map(str::to_owned)
+                .unwrap_or_else(|| managed_name.clone());
+            let favorite = managed_metadata.is_some_and(|metadata| metadata.favorite);
             let collection_names = read_collection_names(&path, &storage_root, &saved.drive_id);
             files.push(FetchedFile {
                 id: format!("{}:{}", saved.drive_id, managed_name),
@@ -123,6 +133,7 @@ pub(crate) fn fetch_matching_files(
                 categories: Vec::new(),
                 tags: Vec::new(),
                 collection_names,
+                favorite,
             });
         }
         if incomplete {
@@ -161,14 +172,11 @@ pub(crate) fn fetch_matching_files(
     }
 }
 
-fn read_name(file_path: &Path) -> Option<String> {
-    let path = crate::services::image_processing_service::classification_output_path(file_path);
-    let metadata = serde_json::from_slice::<crate::models::file_model::ManagedFileMetadata>(
-        &std::fs::read(path).ok()?,
-    )
-    .ok()?;
-    let name = metadata.name.trim();
-    (!name.is_empty()).then(|| name.to_owned())
+pub(crate) fn read_managed_file_metadata(
+    path: &Path,
+) -> crate::error::AppResult<crate::models::file_model::ManagedFileMetadata> {
+    serde_json::from_slice(&std::fs::read(path)?)
+        .map_err(crate::error::AppError::serialization)
 }
 
 pub(crate) fn read_collection_names(file_path: &Path, storage_root: &Path, drive_id: &str) -> Vec<String> {
@@ -333,6 +341,71 @@ pub(crate) fn add_sidecar_collections(file: &Path, ids: &[String]) -> crate::err
     object.insert("collectionIds".into(), serde_json::to_value(existing).map_err(crate::error::AppError::serialization)?);
     crate::system::filesystem::write_file(path, serde_json::to_vec_pretty(&value).map_err(crate::error::AppError::serialization)?)?;
     Ok(())
+}
+
+/// Update any requested user metadata fields while preserving model output.
+pub(crate) fn replace_sidecar_metadata(
+    sidecar: &Path,
+    name: Option<&str>,
+    category: Option<&str>,
+    tags: Option<&[String]>,
+    collection_ids: Option<&[String]>,
+    favorite: Option<bool>,
+) -> crate::error::AppResult<crate::models::file_model::ManagedFileMetadata> {
+    let bytes = std::fs::read(sidecar)?;
+    let mut value: serde_json::Value = serde_json::from_slice(&bytes)
+        .map_err(crate::error::AppError::serialization)?;
+    let object = value
+        .as_object_mut()
+        .ok_or_else(|| crate::error::AppError::validation("File metadata must be a JSON object."))?;
+    if let Some(name) = name {
+        object.insert("name".into(), serde_json::Value::String(name.to_owned()));
+    }
+    if let Some(category) = category {
+        let secondary = object
+            .get_mut("classification")
+            .and_then(serde_json::Value::as_object_mut)
+            .and_then(|classification| classification.get_mut("secondary"))
+            .and_then(serde_json::Value::as_array_mut)
+            .ok_or_else(|| {
+                crate::error::AppError::validation("Image category metadata is unavailable.")
+            })?;
+        if category.is_empty() {
+            secondary.clear();
+        } else {
+            if let Some(prediction) =
+                secondary.first_mut().and_then(serde_json::Value::as_object_mut)
+            {
+                prediction.insert(
+                    "label".into(),
+                    serde_json::Value::String(category.to_owned()),
+                );
+            } else {
+                secondary.push(
+                    serde_json::json!({ "label": category, "parentLabel": null, "score": 1.0 }),
+                );
+            }
+        }
+    }
+    if let Some(tags) = tags {
+        object.insert(
+            "searchKeywords".into(),
+            serde_json::to_value(tags).map_err(crate::error::AppError::serialization)?,
+        );
+    }
+    if let Some(collection_ids) = collection_ids {
+        object.insert(
+            "collectionIds".into(),
+            serde_json::to_value(collection_ids).map_err(crate::error::AppError::serialization)?,
+        );
+    }
+    if let Some(favorite) = favorite {
+        object.insert("favorite".into(), serde_json::Value::Bool(favorite));
+    }
+    let bytes = serde_json::to_vec_pretty(&value).map_err(crate::error::AppError::serialization)?;
+    let metadata = serde_json::from_slice(&bytes).map_err(crate::error::AppError::serialization)?;
+    crate::system::filesystem::write_file(sidecar, bytes)?;
+    Ok(metadata)
 }
 
 
