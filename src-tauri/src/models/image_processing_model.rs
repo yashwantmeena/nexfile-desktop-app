@@ -27,6 +27,7 @@ pub(crate) struct ClassificationSettings {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImageProcessingJob {
+    pub process_id: String,
     pub path: PathBuf,
 }
 

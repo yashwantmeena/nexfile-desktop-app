@@ -6,6 +6,7 @@ use tauri::async_runtime::{channel, JoinHandle, Mutex, Sender};
 use crate::error::AppResult;
 use crate::models::indexing_model::IndexingJob;
 use crate::repositories::database_repository::SqliteDatabase;
+use crate::repositories::background_processing_repository::SqliteBackgroundProcessingRepository;
 use crate::services::indexing_service::IndexingService;
 use crate::utils::constants::{INDEXING_QUEUE, INDEXING_WORKER};
 
@@ -17,6 +18,7 @@ pub struct IndexingWorker {
 impl IndexingWorker {
     pub fn start(database: &SqliteDatabase, service: IndexingService) -> Self {
         let queue_pool = database.pool().clone();
+        let repository = SqliteBackgroundProcessingRepository::new(database.clone());
         let (shutdown, mut shutdown_receiver) = channel(1);
         let shutdown_signal = async move {
             let _ = shutdown_receiver.recv().await;
@@ -28,18 +30,27 @@ impl IndexingWorker {
                 let backend =
                     SqliteStorage::<IndexingJob, (), ()>::new_in_queue(&queue_pool, INDEXING_QUEUE);
                 let handler_service = service.clone();
+                let handler_repository = repository.clone();
                 let worker =
                     WorkerBuilder::new(format!("{}-{}", INDEXING_WORKER, uuid::Uuid::new_v4()))
                         .backend(backend)
                         .concurrency(1)
                         .build(move |job: IndexingJob| {
                             let service = handler_service.clone();
+                            let repository = handler_repository.clone();
                             async move {
                                 let subject = job.path.display().to_string();
-                                super::retry::retry_and_ack(INDEXING_QUEUE, &subject, || {
+                                repository.mark_running(&job.process_id).await?;
+                                let outcome = super::retry::retry_and_ack(INDEXING_QUEUE, &subject, || {
                                     consume_indexing_job(job.clone(), service.clone())
                                 })
-                                .await
+                                .await?;
+                                let failure = match &outcome {
+                                    super::retry::JobOutcome::Completed => None,
+                                    super::retry::JobOutcome::Failed(message) => Some(message.as_str()),
+                                };
+                                repository.finish_item(&job.process_id, failure).await?;
+                                Ok::<(), crate::error::AppError>(())
                             }
                         });
                 let stop = shutdown_signal.clone();

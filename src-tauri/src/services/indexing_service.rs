@@ -19,14 +19,18 @@ impl IndexingService {
     }
 
     pub async fn process(&self, job: IndexingJob) -> AppResult<()> {
+        self.process_path(job.path).await
+    }
+
+    pub async fn process_path(&self, path: PathBuf) -> AppResult<()> {
         let service = self.clone();
-        tauri::async_runtime::spawn_blocking(move || service.process_blocking(job))
+        tauri::async_runtime::spawn_blocking(move || service.process_blocking(&path))
             .await
             .map_err(AppError::internal)?
     }
 
-    fn process_blocking(&self, job: IndexingJob) -> AppResult<()> {
-        let source = IndexSource::read(&job.path)?;
+    fn process_blocking(&self, path: &Path) -> AppResult<()> {
+        let source = IndexSource::read(path)?;
         let media_type = normalized_value(source.output.metadata.media_type.as_deref());
         let location = source.output.metadata.location.filter(valid_location);
 

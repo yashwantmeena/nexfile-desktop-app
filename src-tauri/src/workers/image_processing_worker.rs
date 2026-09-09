@@ -3,15 +3,15 @@ use std::path::PathBuf;
 use apalis::prelude::*;
 use apalis_sqlite::SqliteStorage;
 use futures::FutureExt;
-use sqlx::SqlitePool;
 use tauri::async_runtime::{channel, JoinHandle, Mutex, Sender};
 
 use crate::error::{AppError, AppResult};
 use crate::models::image_processing_model::ImageProcessingJob;
-use crate::models::indexing_model::IndexingJob;
+use crate::repositories::background_processing_repository::SqliteBackgroundProcessingRepository;
 use crate::repositories::database_repository::SqliteDatabase;
 use crate::services::image_processing_service::ImageProcessingService;
-use crate::utils::constants::{IMAGE_PROCESSING_QUEUE, IMAGE_PROCESSING_WORKER, INDEXING_QUEUE};
+use crate::services::indexing_service::IndexingService;
+use crate::utils::constants::{IMAGE_PROCESSING_QUEUE, IMAGE_PROCESSING_WORKER};
 
 pub struct ImageProcessingWorker {
     shutdown: Sender<()>,
@@ -24,6 +24,7 @@ impl ImageProcessingWorker {
         clip_model_directory: PathBuf,
         florence2_model_directory: PathBuf,
         configs_directory: PathBuf,
+        indexing: IndexingService,
     ) -> Self {
         let service = ImageProcessingService::new(
             clip_model_directory,
@@ -31,6 +32,7 @@ impl ImageProcessingWorker {
             configs_directory,
         );
         let queue_pool = database.pool().clone();
+        let repository = SqliteBackgroundProcessingRepository::new(database.clone());
         let (shutdown, mut shutdown_receiver) = channel(1);
         let shutdown_signal = async move {
             let _ = shutdown_receiver.recv().await;
@@ -44,7 +46,8 @@ impl ImageProcessingWorker {
                     IMAGE_PROCESSING_QUEUE,
                 );
                 let handler_service = service.clone();
-                let handler_pool = queue_pool.clone();
+                let handler_repository = repository.clone();
+                let handler_indexing = indexing.clone();
                 let worker = WorkerBuilder::new(format!(
                     "{}-{}",
                     IMAGE_PROCESSING_WORKER,
@@ -54,17 +57,25 @@ impl ImageProcessingWorker {
                 .concurrency(1)
                 .build(move |job: ImageProcessingJob| {
                     let service = handler_service.clone();
-                    let queue_pool = handler_pool.clone();
+                    let repository = handler_repository.clone();
+                    let indexing = handler_indexing.clone();
                     async move {
                         let subject = job.path.display().to_string();
-                        super::retry::retry_and_ack(IMAGE_PROCESSING_QUEUE, &subject, || {
+                        repository.mark_running(&job.process_id).await?;
+                        let outcome = super::retry::retry_and_ack(IMAGE_PROCESSING_QUEUE, &subject, || {
                             consume_image_processing_job(
                                 job.clone(),
                                 service.clone(),
-                                queue_pool.clone(),
+                                indexing.clone(),
                             )
                         })
-                        .await
+                        .await?;
+                        let failure = match &outcome {
+                            super::retry::JobOutcome::Completed => None,
+                            super::retry::JobOutcome::Failed(message) => Some(message.as_str()),
+                        };
+                        repository.finish_item(&job.process_id, failure).await?;
+                        Ok::<(), AppError>(())
                     }
                 });
                 let stop = shutdown_signal.clone();
@@ -105,7 +116,7 @@ impl ImageProcessingWorker {
 pub(crate) async fn consume_image_processing_job(
     job: ImageProcessingJob,
     service: ImageProcessingService,
-    queue_pool: SqlitePool,
+    indexing: IndexingService,
 ) -> AppResult<()> {
     let path = job.path.clone();
     if !path.is_file() {
@@ -118,7 +129,7 @@ pub(crate) async fn consume_image_processing_job(
 
     match service.process(job).await {
         Ok(output_path) => {
-            publish_for_indexing(&queue_pool, &output_path).await?;
+            indexing.process_path(output_path.clone()).await?;
             eprintln!(
                 "[image-processing-queue][ACK] {} | output={}",
                 path.display(),
@@ -141,12 +152,4 @@ pub(crate) async fn consume_image_processing_job(
             Err(error)
         }
     }
-}
-
-async fn publish_for_indexing(queue_pool: &SqlitePool, path: &PathBuf) -> AppResult<()> {
-    let mut queue = SqliteStorage::<IndexingJob, (), ()>::new_in_queue(queue_pool, INDEXING_QUEUE);
-    queue
-        .push(IndexingJob { path: path.clone() })
-        .await
-        .map_err(AppError::database)
 }

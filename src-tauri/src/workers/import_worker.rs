@@ -29,18 +29,27 @@ impl ImportWorker {
                     IMPORT_FILE_QUEUE,
                 );
                 let handler_service = service.clone();
+                let handler_repository = service.background_processes().clone();
                 let worker =
                     WorkerBuilder::new(format!("{}-{}", IMPORT_FILE_WORKER, uuid::Uuid::new_v4()))
                         .backend(backend)
                         .concurrency(1)
                         .build(move |job: ImportFileJob| {
                             let service = handler_service.clone();
+                            let repository = handler_repository.clone();
                             async move {
                                 let subject = job.path.display().to_string();
-                                super::retry::retry_and_ack(IMPORT_FILE_QUEUE, &subject, || {
+                                repository.mark_running(&job.process_id).await?;
+                                let outcome = super::retry::retry_and_ack(IMPORT_FILE_QUEUE, &subject, || {
                                     consume_import_file(job.clone(), service.clone())
                                 })
-                                .await
+                                .await?;
+                                let failure = match &outcome {
+                                    super::retry::JobOutcome::Completed => None,
+                                    super::retry::JobOutcome::Failed(message) => Some(message.as_str()),
+                                };
+                                repository.finish_item(&job.process_id, failure).await?;
+                                Ok::<(), crate::error::AppError>(())
                             }
                         });
                 let stop = shutdown_signal.clone();

@@ -110,6 +110,22 @@ fn extracts_individual_concepts_from_a_punctuated_caption_list() {
 }
 
 #[test]
+fn skips_few_which_and_looks_from_caption_keywords() {
+    let candidates = extract_keyword_candidates(
+        "A few birds which are perched on a branch; one looks toward the sky.",
+    );
+
+    assert!(candidates.contains(&"birds".to_owned()));
+    assert!(candidates.contains(&"perched".to_owned()));
+    assert!(candidates.contains(&"branch".to_owned()));
+    assert!(!candidates.iter().any(|candidate| {
+        candidate
+            .split_whitespace()
+            .any(|word| word == "few" || word == "which" || word == "looks")
+    }));
+}
+
+#[test]
 fn parses_florence_object_labels_and_boxes_in_original_image_coordinates() {
     let detections = parse_object_detections(
         "<s><od>Tree<loc_0><loc_100><loc_500><loc_900>Flower<loc_250><loc_300><loc_750><loc_800></od></s>",
@@ -553,6 +569,7 @@ async fn bundled_models_write_binary_analysis_and_tags_for_real_images() {
     for image_path in [avip_path, ico_path, svg_path, heic_path, heif_path] {
         let output_path = service
             .process(ImageProcessingJob {
+                process_id: "process-1".into(),
                 path: image_path.clone(),
             })
             .await

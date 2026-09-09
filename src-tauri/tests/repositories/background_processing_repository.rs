@@ -117,4 +117,63 @@ async fn creates_background_processing_and_drives_tables_in_one_database() {
     std::fs::remove_dir_all(root).expect("test directory should be removable");
 }
 
+#[tokio::test]
+async fn merges_active_work_by_stage_and_import_collections() {
+    let root = test_root();
+    std::fs::create_dir_all(&root).expect("test directory should be created");
+    let database = SqliteDatabase::open(root.join("nexfile.sqlite3"))
+        .await
+        .expect("database should open");
+    let repository = SqliteBackgroundProcessingRepository::new(database.clone());
+
+    let first = repository
+        .acquire_import("import_file", 40, &["Delhi".to_owned()])
+        .await
+        .expect("first import should create a process");
+    let merged = repository
+        .acquire_import("import_folder", 60, &["Delhi".to_owned()])
+        .await
+        .expect("matching collections should reuse the process");
+    assert_eq!(merged.process_id, first.process_id);
+    assert_eq!(merged.total_items, 100);
+
+    let separate = repository
+        .acquire_import("import_file", 10, &["Kedarnath".to_owned()])
+        .await
+        .expect("different collections should create a process");
+    assert_ne!(separate.process_id, first.process_id);
+
+    let ai = repository
+        .acquire_stage("image_processing", 40)
+        .await
+        .expect("AI work should create a process");
+    let merged_ai = repository
+        .acquire_stage("image_processing", 60)
+        .await
+        .expect("AI work should reuse its active process");
+    assert_eq!(merged_ai.process_id, ai.process_id);
+    assert_eq!(merged_ai.total_items, 100);
+
+    repository
+        .mark_running(&first.process_id)
+        .await
+        .expect("process should start");
+    repository
+        .finish_item(&first.process_id, None)
+        .await
+        .expect("one item should finish");
+    let active = repository.list_active().await.expect("activity should load");
+    let updated = active
+        .iter()
+        .find(|process| process.process_id == first.process_id)
+        .expect("partially completed import should remain active");
+    assert_eq!(updated.status, nexfile_desktop_app_lib::BackgroundProcessStatus::Running);
+    assert_eq!(updated.processed_items, 1);
+    assert_eq!(updated.total_items, 100);
+
+    repository.close().await;
+    drop(database);
+    std::fs::remove_dir_all(root).expect("test directory should be removable");
+}
+
 

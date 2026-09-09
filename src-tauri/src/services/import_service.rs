@@ -23,11 +23,10 @@ use crate::services::storage_service::{
     calculate_managed_statistics, drive_storage_root, read_drive_metadata, write_drive_metadata,
 };
 use crate::system::filesystem::get_drives;
-use crate::types::background_process_status::BackgroundProcessStatus;
 use crate::utils::constants::{
-    APALIS_MIGRATION_TABLE, IMAGE_PROCESSING_QUEUE, IMPORTED_FILES_DIRECTORY,
-    IMPORT_FILE_ID_ALPHABET, IMPORT_FILE_ID_LENGTH, IMPORT_FILE_PROCESS_TYPE, IMPORT_FILE_QUEUE,
-    IMPORT_FOLDER_PROCESS_TYPE,
+    APALIS_MIGRATION_TABLE, IMAGE_PROCESSING_PROCESS_TYPE, IMAGE_PROCESSING_QUEUE,
+    IMPORTED_FILES_DIRECTORY, IMPORT_FILE_ID_ALPHABET, IMPORT_FILE_ID_LENGTH,
+    IMPORT_FILE_PROCESS_TYPE, IMPORT_FILE_QUEUE, IMPORT_FOLDER_PROCESS_TYPE,
 };
 use crate::utils::image_decoder::is_supported_image;
 
@@ -44,6 +43,10 @@ pub struct ImportService {
 
 impl ImportService {
     pub(crate) fn collection_pool(&self) -> &SqlitePool { &self.queue_pool }
+
+    pub(crate) fn background_processes(&self) -> &SqliteBackgroundProcessingRepository {
+        &self.repository
+    }
 
     pub async fn preview_count(&self, paths: Vec<String>, folder: bool) -> AppResult<u64> {
         let paths = if folder {
@@ -171,27 +174,8 @@ impl ImportService {
     async fn queue_files_with_collections(&self, paths: Vec<PathBuf>, process_type: &str, names: Vec<String>) -> AppResult<BackgroundProcess> {
         let total_items = u64::try_from(paths.len())
             .map_err(|_| AppError::validation("Too many files were selected."))?;
-        let process = BackgroundProcess {
-            process_id: uuid::Uuid::new_v4().to_string(),
-            process_type: process_type.to_owned(),
-            status: BackgroundProcessStatus::Queued,
-            priority: 0,
-            total_items,
-            processed_items: 0,
-            failed_items: 0,
-            remark: None,
-            created_at_ms: 0,
-            updated_at_ms: 0,
-            started_at_ms: None,
-            finished_at_ms: None,
-        };
-        let process = self.repository.insert(&process).await?;
+        let process = self.repository.acquire_import(process_type, total_items, &names).await?;
         let process_id = process.process_id.clone();
-        if !names.is_empty() {
-            sqlx::query("UPDATE background_processes SET collections = ?2 WHERE process_id = ?1")
-                .bind(&process_id).bind(serde_json::to_string(&names).map_err(AppError::serialization)?)
-                .execute(&self.queue_pool).await.map_err(AppError::database)?;
-        }
         let mut jobs = stream::iter(paths.into_iter().map(|path| {
             Task::builder(ImportFileJob {
                 process_id: process_id.clone(),
@@ -205,7 +189,7 @@ impl ImportService {
             IMPORT_FILE_QUEUE,
         );
         if let Err(error) = queue.push_all(&mut jobs).await {
-            let _ = self.repository.delete(&process.process_id).await;
+            let _ = self.repository.rollback_items(&process.process_id, total_items).await;
             return Err(AppError::database(error));
         }
         Ok(process)
@@ -341,12 +325,18 @@ impl ImportService {
             &self.queue_pool,
             IMAGE_PROCESSING_QUEUE,
         );
-        queue
+        let process = self.repository.acquire_stage(IMAGE_PROCESSING_PROCESS_TYPE, 1).await?;
+        if let Err(error) = queue
             .push(ImageProcessingJob {
+                process_id: process.process_id.clone(),
                 path: path.to_path_buf(),
             })
             .await
-            .map_err(AppError::database)
+        {
+            let _ = self.repository.rollback_items(&process.process_id, 1).await;
+            return Err(AppError::database(error));
+        }
+        Ok(())
     }
 
     pub async fn close(&self) {

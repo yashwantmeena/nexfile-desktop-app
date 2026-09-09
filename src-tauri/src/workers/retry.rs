@@ -6,12 +6,18 @@ use futures::FutureExt;
 
 use crate::error::AppResult;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum JobOutcome {
+    Completed,
+    Failed(String),
+}
+
 /// One initial attempt and three retries. Returning Ok acknowledges exhausted jobs.
 pub(super) async fn retry_and_ack<F, Fut>(
     scope: &str,
     subject: &str,
     mut process: F,
-) -> AppResult<()>
+) -> AppResult<JobOutcome>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = AppResult<()>>,
@@ -21,18 +27,19 @@ where
             .catch_unwind()
             .await
         {
-            Ok(Ok(())) => return Ok(()),
+            Ok(Ok(())) => return Ok(JobOutcome::Completed),
             Ok(Err(error)) => format!("{error:?}"),
             Err(_) => "job handler panicked".to_owned(),
         };
         if attempt == 3 {
             eprintln!("[{scope}][ACK-FAILED] {subject} | exhausted three retries | {failure}");
+            return Ok(JobOutcome::Failed(failure));
         } else {
             eprintln!("[{scope}][RETRY {}/3] {subject} | {failure}", attempt + 1);
             tokio::time::sleep(Duration::from_millis(100 * (attempt + 1))).await;
         }
     }
-    Ok(())
+    unreachable!("the retry loop returns after success or the final attempt")
 }
 
 #[cfg(test)]

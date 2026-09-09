@@ -36,3 +36,10 @@ pub async fn import_folder(
         .import_with_collections(vec![path], true, collection_ids.unwrap_or_default())
         .await
 }
+
+#[tauri::command]
+pub async fn get_background_activities(
+    state: State<'_, AppState>,
+) -> AppResult<Vec<BackgroundProcess>> {
+    state.imports.background_processes().list_active().await
+}

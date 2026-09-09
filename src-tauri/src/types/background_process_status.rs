@@ -22,4 +22,16 @@ impl BackgroundProcessStatus {
             Self::Cancelled => "cancelled",
         }
     }
+
+    pub fn from_str(value: &str) -> Option<Self> {
+        match value {
+            "queued" => Some(Self::Queued),
+            "running" => Some(Self::Running),
+            "paused" => Some(Self::Paused),
+            "completed" => Some(Self::Completed),
+            "failed" => Some(Self::Failed),
+            "cancelled" => Some(Self::Cancelled),
+            _ => None,
+        }
+    }
 }

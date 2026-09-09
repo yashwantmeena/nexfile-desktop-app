@@ -334,6 +334,7 @@ async fn consumes_an_image_into_the_mounted_system_drive_and_queues_processing()
     .expect("image-processing job should be queued");
     let queued_job = serde_json::from_slice::<ImageProcessingJob>(&queued_job)
         .expect("image-processing job should decode");
+    assert!(!queued_job.process_id.is_empty());
     assert_eq!(queued_job.path, destination);
 
     let document = root.join("Quarterly report.pdf");

@@ -10,6 +10,7 @@ pub(crate) const MAX_MODEL_IMAGE_DIMENSION: u32 = 2048;
 pub(crate) const MODEL_IMAGE_TEMP_DIRECTORY: &str = "nexfile-image-processing";
 pub(crate) const MODEL_JPEG_QUALITY: u8 = 90;
 pub(crate) const IMAGE_PROCESSING_QUEUE: &str = "image-processing";
+pub(crate) const IMAGE_PROCESSING_PROCESS_TYPE: &str = "image_processing";
 pub(crate) const IMAGE_PROCESSING_WORKER: &str = "image-processing-worker";
 pub(crate) const IMAGE_PROCESSING_OUTPUT_VERSION: u32 = 25;
 pub(crate) const INDEXING_QUEUE: &str = "indexing";

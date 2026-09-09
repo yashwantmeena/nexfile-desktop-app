@@ -46,6 +46,7 @@ pub fn initialize<R: tauri::Runtime>(app: &tauri::App<R>) -> AppResult<()> {
             .join(AI_MODELS_DIRECTORY)
             .join(FLORENCE2_MODEL_DIRECTORY),
         config.resources_dir.join(AI_CONFIGS_DIRECTORY),
+        indexing.clone(),
     );
     let indexing_worker = IndexingWorker::start(&database, indexing);
 

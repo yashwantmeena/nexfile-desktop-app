@@ -107,7 +107,7 @@ async fn stores_searchable_image_fields_in_tantivy() {
         TantivyIndexingRepository::open(&app_data).expect("indexing repository should open");
     let indexing = IndexingService::new(repository.clone());
     indexing
-        .process(IndexingJob { path: sidecar_path })
+        .process(IndexingJob { process_id: "process-1".into(), path: sidecar_path })
         .await
         .expect("sidecar should be indexed");
     assert_eq!(repository.search_files("PHOTO.JPG", "name", &[], None).unwrap(),
