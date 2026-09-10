@@ -44,6 +44,7 @@ pub use repositories::storage_repository::SqliteStorageRepository;
 pub use services::import_service::ImportService;
 pub use services::indexing_service::IndexingService;
 pub use services::storage_service::StorageService;
+pub use services::trash_service::TrashService;
 pub use system::filesystem::read_file;
 pub use types::background_process_status::BackgroundProcessStatus;
 pub use types::file_type::FileType;

@@ -15,6 +15,8 @@ pub struct ManagedFileMetadata {
     pub is_deleted: bool,
     #[serde(default)]
     pub collection_ids: Vec<String>,
+    #[serde(default)]
+    pub captured_at_ms: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -27,6 +29,7 @@ pub struct FetchedFile {
     pub file_type: FileType,
     pub size_bytes: u64,
     pub modified_at_ms: Option<i64>,
+    pub captured_at_ms: Option<i64>,
     pub categories: Vec<String>,
     pub tags: Vec<String>,
     pub collection_names: Vec<String>,

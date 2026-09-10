@@ -1,5 +1,5 @@
 import { CollectionActions } from "./CollectionActions";
-import { Clock3, FolderOpen, HardDrive, Files, Plus, Settings, ShieldCheck, Star, Trash2 } from "lucide-react";
+import { Clock3, FolderOpen, HardDrive, Files, Plus, ShieldCheck, Star, Trash2 } from "lucide-react";
 import { useCollections } from "./CollectionsProvider";
 import type { AppNavigationItem } from "@/types/navigation";
 import { BackgroundActivities } from "@/features/background-activity/components/BackgroundActivities";
@@ -36,7 +36,6 @@ export function AppSidebar({ activeItem, onActiveItemChange }: AppSidebarProps) 
       <p className="sidebar-label activity-label">Background activity</p>
       <BackgroundActivities />
       <div className="sidebar-bottom">
-        <button onClick={() => onActiveItemChange("Settings")}><Settings /><span>Settings</span></button>
         <button className={activeItem === "Storage" ? "active" : ""} aria-current={activeItem === "Storage" ? "page" : undefined} onClick={() => onActiveItemChange("Storage")}><HardDrive /><span>Storage</span></button>
         <div className="local-card"><ShieldCheck /><div><strong>100% Local</strong><p>Your files never leave<br />this device.</p></div></div>
       </div>

@@ -58,6 +58,8 @@ pub struct ImageProcessingOutput {
     #[serde(default)]
     pub updated_at_ms: u64,
     #[serde(default)]
+    pub captured_at_ms: Option<i64>,
+    #[serde(default)]
     pub favorite: bool,
     #[serde(default)]
     pub is_trashed: bool,
@@ -79,6 +81,9 @@ pub struct ImageMetadata {
     pub size_bytes: u64,
     pub width: u32,
     pub height: u32,
+    /// Internal extraction value, persisted on `ImageProcessingOutput` at the sidecar root.
+    #[serde(skip)]
+    pub captured_at_ms: Option<i64>,
     pub location: Option<ImageLocation>,
     /// A 64-bit DCT perceptual hash encoded as 16 lowercase hexadecimal digits.
     pub perceptual_hash: String,

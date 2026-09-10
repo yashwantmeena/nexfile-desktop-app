@@ -52,6 +52,7 @@ async fn stores_searchable_image_fields_in_tantivy() {
         name: "photo.jpg".to_owned(),
         created_at_ms: 1_788_331_200_000,
         updated_at_ms: 1_788_331_300_000,
+        captured_at_ms: Some(1_788_331_100_000),
         favorite: true,
         is_trashed: false,
         is_deleted: false,
@@ -60,6 +61,7 @@ async fn stores_searchable_image_fields_in_tantivy() {
             size_bytes: 245_000,
             width: 100,
             height: 100,
+            captured_at_ms: None,
             location: Some(ImageLocation {
                 latitude: 12.971_599,
                 longitude: 77.594_566,

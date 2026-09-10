@@ -146,6 +146,7 @@ pub async fn get_file_count(
     collection: Option<String>,
     favorite_only: Option<bool>,
     trash_only: Option<bool>,
+    model_category: Option<String>,
 ) -> AppResult<FileCountSummary> {
     let _guard = state.imports.metadata_lock().lock().await;
     state
@@ -158,6 +159,7 @@ pub async fn get_file_count(
             collection,
             favorite_only.unwrap_or(false),
             trash_only.unwrap_or(false),
+            model_category,
         )
         .await
 }
@@ -175,6 +177,7 @@ pub async fn fetch_files(
     collection: Option<String>,
     favorite_only: Option<bool>,
     trash_only: Option<bool>,
+    model_category: Option<String>,
 ) -> AppResult<crate::models::file_model::FilePage> {
     let _guard = state.imports.metadata_lock().lock().await;
     let query = query.unwrap_or_default();
@@ -197,6 +200,7 @@ pub async fn fetch_files(
                 collection,
                 favorite_only.unwrap_or(false),
                 trash_only.unwrap_or(false),
+                model_category,
             )
             .await?
     };
@@ -217,5 +221,5 @@ pub async fn fetch_files(
 #[tauri::command]
 pub async fn empty_trash(state: State<'_, AppState>) -> AppResult<()> {
     let _guard = state.imports.metadata_lock().lock().await;
-    state.imports.empty_trash().await
+    state.trash.empty_trash().await
 }

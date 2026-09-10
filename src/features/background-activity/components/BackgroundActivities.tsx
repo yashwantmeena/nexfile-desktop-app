@@ -5,7 +5,7 @@ const activityTypes = [
   { label: "Importing files", types: ["import_file", "import_folder"], icon: Download },
   { label: "AI processing", types: ["image_processing"], icon: Sparkles },
   { label: "Indexing files", types: ["indexing"], icon: Search },
-  { label: "Emptying Trash", types: ["delete_file"], icon: Trash2 },
+  { label: "Cleaning up Trash", types: ["delete_file"], icon: Trash2 },
 ] as const;
 
 export function BackgroundActivities() {

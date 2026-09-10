@@ -392,7 +392,7 @@ impl TantivyIndexingRepository {
         collection_ids: Option<&[(String, String)]>,
     ) -> AppResult<HashSet<(String, String)>> {
         self.matching_files(
-            self.filtered_query(query, mode, tags, collection_ids, false)?
+            self.filtered_query(query, mode, tags, collection_ids, false, None)?
                 .as_ref(),
         )
     }
@@ -404,6 +404,7 @@ impl TantivyIndexingRepository {
         tags: &[String],
         collection_ids: Option<&[(String, String)]>,
         favorite_only: bool,
+        model_category: Option<&str>,
     ) -> AppResult<Box<dyn Query>> {
         let base = match mode {
             "tags" => self.tag_query(query, tags)?,
@@ -415,7 +416,11 @@ impl TantivyIndexingRepository {
             _ => return Err(AppError::validation("Unknown search mode.")),
         };
         let collection = self.collection_query(collection_ids)?;
-        if collection.is_none() && !favorite_only {
+        let model_category = model_category
+            .map(str::trim)
+            .filter(|category| !category.is_empty())
+            .map(|category| category.to_lowercase());
+        if collection.is_none() && !favorite_only && model_category.is_none() {
             return Ok(base);
         }
         let mut filters = vec![(Occur::Must, base)];
@@ -427,6 +432,15 @@ impl TantivyIndexingRepository {
                 Occur::Must,
                 Box::new(TermQuery::new(
                     Term::from_field_bool(self.fields.favorite, true),
+                    IndexRecordOption::Basic,
+                )),
+            ));
+        }
+        if let Some(category) = model_category {
+            filters.push((
+                Occur::Must,
+                Box::new(TermQuery::new(
+                    Term::from_field_text(self.fields.categories, &category),
                     IndexRecordOption::Basic,
                 )),
             ));
@@ -498,9 +512,38 @@ impl TantivyIndexingRepository {
         HashSet<(String, String)>,
         crate::models::file_model::FileCountSummary,
     )> {
+        self.indexed_results_filtered_with_category(
+            query,
+            mode,
+            tags,
+            collection_ids,
+            favorite_only,
+            None,
+        )
+    }
+
+    pub fn indexed_results_filtered_with_category(
+        &self,
+        query: &str,
+        mode: &str,
+        tags: &[String],
+        collection_ids: Option<&[(String, String)]>,
+        favorite_only: bool,
+        model_category: Option<&str>,
+    ) -> AppResult<(
+        HashSet<(String, String)>,
+        crate::models::file_model::FileCountSummary,
+    )> {
         use crate::models::file_model::{FileCountSummary, FileTypeCount};
         use crate::types::file_type::FileType;
-        let query = self.filtered_query(query, mode, tags, collection_ids, favorite_only)?;
+        let query = self.filtered_query(
+            query,
+            mode,
+            tags,
+            collection_ids,
+            favorite_only,
+            model_category,
+        )?;
         let searcher = self.reader.searcher();
         let hits = searcher
             .search(query.as_ref(), &DocSetCollector)

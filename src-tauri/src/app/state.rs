@@ -1,5 +1,6 @@
 use crate::services::import_service::ImportService;
 use crate::services::storage_service::StorageService;
+use crate::services::trash_service::TrashService;
 use crate::workers::image_processing_worker::ImageProcessingWorker;
 use crate::workers::import_worker::ImportWorker;
 use crate::workers::indexing_worker::IndexingWorker;
@@ -13,4 +14,5 @@ pub struct AppState {
     pub delete_worker: DeleteWorker,
     pub imports: ImportService,
     pub storage: StorageService,
+    pub trash: TrashService,
 }

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchFiles, type FilePage, type FetchedFile } from "../api/files";
 
 
-export function useFiles(mediaType?: string, query = "", searchMode = "tags", tags: string[] = [], refreshKey = 0, collection?: string, favoriteOnly = false, trashOnly = false) {
+export function useFiles(mediaType?: string, query = "", searchMode = "tags", tags: string[] = [], refreshKey = 0, collection?: string, favoriteOnly = false, trashOnly = false, modelCategory?: string) {
   const tagsKey = JSON.stringify(tags);
   const [files, setFiles] = useState<FetchedFile[]>([]);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
@@ -24,7 +24,7 @@ export function useFiles(mediaType?: string, query = "", searchMode = "tags", ta
     setLoading(true);
     setError(null);
     try {
-      const page = await fetchFiles(offset, 60, mediaType, query, searchMode, JSON.parse(tagsKey), collection, favoriteOnly, trashOnly);
+      const page = await fetchFiles(offset, 60, mediaType, query, searchMode, JSON.parse(tagsKey), collection, favoriteOnly, trashOnly, modelCategory);
       if (request !== generation.current) return;
       setFiles(previous => reset ? page.files : [...new Map([...previous, ...page.files].map(file => [file.id, file])).values()]);
       setNextOffset(page.nextOffset);
@@ -40,7 +40,7 @@ export function useFiles(mediaType?: string, query = "", searchMode = "tags", ta
         setLoading(false);
       }
     }
-  }, [mediaType, query, searchMode, tagsKey, collection, favoriteOnly, trashOnly]);
+  }, [mediaType, query, searchMode, tagsKey, collection, favoriteOnly, trashOnly, modelCategory]);
   useEffect(() => {
     // Returning to the app must not replace loaded pages with page one:
     // shrinking the virtual grid would clamp the user's scroll position.

@@ -5,6 +5,7 @@ use std::io::{BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use chrono::{Local, NaiveDateTime, TimeZone};
 use image::{codecs::jpeg::JpegEncoder, imageops::FilterType, DynamicImage};
 
 use crate::ai_models::clip::{ClipModel, ClipModelPaths, Embedding};
@@ -269,15 +270,17 @@ impl ImageProcessingService {
         let favorite = existing_sidecar_favorite(&output_path);
         let is_trashed = existing_sidecar_is_trashed(&output_path);
         let is_deleted = existing_sidecar_is_deleted(&output_path);
+        let metadata = extract_image_metadata(&job.path, &prepared_image)?;
         let output = ImageProcessingOutput {
             version: IMAGE_PROCESSING_OUTPUT_VERSION,
             name,
             created_at_ms,
             updated_at_ms,
+            captured_at_ms: metadata.captured_at_ms,
             favorite,
             is_trashed,
             is_deleted,
-            metadata: extract_image_metadata(&job.path, &prepared_image)?,
+            metadata,
             caption,
             ocr,
             object_detection,
@@ -306,14 +309,19 @@ pub(crate) fn extract_image_metadata(
             exif::Reader::new()
                 .read_from_container(&mut BufReader::new(file))
                 .ok()
-        });
+    });
     let location = exif_metadata.as_ref().and_then(exif_location);
+    let captured_at_ms = exif_metadata
+        .as_ref()
+        .and_then(exif_captured_at_ms)
+        .unwrap_or_else(|| fallback_captured_at_ms(&filesystem));
 
     Ok(ImageMetadata {
         media_type: format.map(|format| format.to_mime_type().to_owned()),
         size_bytes: filesystem.len(),
         width: prepared.original_width(),
         height: prepared.original_height(),
+        captured_at_ms: Some(captured_at_ms),
         location,
         perceptual_hash: format_phash(prepared.perceptual_hash),
     })
@@ -397,6 +405,58 @@ fn exif_location(metadata: &exif::Exif) -> Option<ImageLocation> {
         latitude,
         longitude,
     })
+}
+
+/// Reads the camera's original EXIF time as Unix milliseconds. `DateTimeOriginal` is canonical;
+/// the other fields support cameras and editors that omit it.
+fn exif_captured_at_ms(metadata: &exif::Exif) -> Option<i64> {
+    [
+        exif::Tag::DateTimeOriginal,
+        exif::Tag::DateTimeDigitized,
+        exif::Tag::DateTime,
+    ]
+    .into_iter()
+    .find_map(|tag| exif_ascii_value(metadata, tag))
+    .and_then(|value| NaiveDateTime::parse_from_str(value, "%Y:%m:%d %H:%M:%S").ok())
+    .and_then(|value| {
+        exif_ascii_value(metadata, exif::Tag::OffsetTimeOriginal)
+            .and_then(|offset| {
+                chrono::DateTime::parse_from_str(
+                    &format!("{} {}", value.format("%Y:%m:%d %H:%M:%S"), offset),
+                    "%Y:%m:%d %H:%M:%S %:z",
+                )
+                .ok()
+                .map(|value| value.timestamp_millis())
+            })
+            .or_else(|| {
+                Local
+                    .from_local_datetime(&value)
+                    .single()
+                    .or_else(|| Local.from_local_datetime(&value).earliest())
+                    .map(|value| value.timestamp_millis())
+            })
+    })
+}
+
+fn exif_ascii_value(metadata: &exif::Exif, tag: exif::Tag) -> Option<&str> {
+    let field = metadata.fields().find(|field| field.tag == tag)?;
+    let exif::Value::Ascii(values) = &field.value else {
+        return None;
+    };
+    let value = std::str::from_utf8(values.first()?).ok()?.trim();
+    (!value.is_empty()).then_some(value)
+}
+
+/// EXIF dates are not guaranteed. Use the source file's creation time, then modified time, and
+/// finally the import time so every managed image has a capture-time value.
+fn fallback_captured_at_ms(metadata: &std::fs::Metadata) -> i64 {
+    let time = metadata
+        .created()
+        .or_else(|_| metadata.modified())
+        .unwrap_or_else(|_| std::time::SystemTime::now());
+    system_time_ms(time)
+        .and_then(|value| i64::try_from(value).ok())
+        .unwrap_or_default()
 }
 
 fn gps_coordinate(metadata: &exif::Exif, tag: exif::Tag) -> Option<f64> {

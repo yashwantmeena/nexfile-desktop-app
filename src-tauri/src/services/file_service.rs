@@ -169,6 +169,10 @@ pub(crate) fn fetch_matching_files_with_trash(
                 path,
                 size_bytes: metadata.len(),
                 modified_at_ms,
+                captured_at_ms: managed_metadata
+                    .as_ref()
+                    .and_then(|metadata| metadata.captured_at_ms)
+                    .or_else(|| Some(fallback_captured_at_ms(&metadata))),
                 categories: Vec::new(),
                 tags: Vec::new(),
                 collection_names,
@@ -218,6 +222,19 @@ pub(crate) fn read_managed_file_metadata(
 ) -> crate::error::AppResult<crate::models::file_model::ManagedFileMetadata> {
     serde_json::from_slice(&std::fs::read(path)?)
         .map_err(crate::error::AppError::serialization)
+}
+
+fn fallback_captured_at_ms(metadata: &std::fs::Metadata) -> i64 {
+    let time = metadata
+        .created()
+        .or_else(|_| metadata.modified())
+        .unwrap_or_else(|_| std::time::SystemTime::now());
+    match time.duration_since(std::time::UNIX_EPOCH) {
+        Ok(duration) => i64::try_from(duration.as_millis()).unwrap_or_default(),
+        Err(error) => i64::try_from(error.duration().as_millis())
+            .map(|milliseconds| -milliseconds)
+            .unwrap_or_default(),
+    }
 }
 
 pub(crate) fn read_collection_names(file_path: &Path, storage_root: &Path, drive_id: &str) -> Vec<String> {

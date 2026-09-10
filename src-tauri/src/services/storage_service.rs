@@ -130,7 +130,7 @@ impl StorageService {
         &self, index: crate::repositories::indexing_repository::TantivyIndexingRepository,
         query: String, mode: String, tags: Vec<String>, offset: usize, limit: usize,
         media_type: Option<crate::types::file_type::FileType>, collection: Option<String>,
-        favorite_only: bool, trash_only: bool,
+        favorite_only: bool, trash_only: bool, model_category: Option<String>,
     ) -> AppResult<crate::models::file_model::FilePage> {
         if !(1..=200).contains(&limit) {
             return Err(AppError::validation("The file page size must be between 1 and 200."));
@@ -156,12 +156,13 @@ impl StorageService {
                     )
                 })
                 .transpose()?;
-            let (matches, _) = index.indexed_results_filtered(
+            let (matches, _) = index.indexed_results_filtered_with_category(
                 &query,
                 &mode,
                 &tags,
                 collection_ids.as_deref(),
                 favorite_only,
+                model_category.as_deref(),
             )?;
             if matches.is_empty() {
                 return Ok(crate::models::file_model::FilePage {
@@ -182,6 +183,7 @@ impl StorageService {
         collection: Option<String>,
         favorite_only: bool,
         trash_only: bool,
+        model_category: Option<String>,
     ) -> AppResult<crate::models::file_model::FileCountSummary> {
         let snapshots = self.repository.list().await?;
         let root = self.system_metadata_root.clone();
@@ -209,12 +211,13 @@ impl StorageService {
                     )
                 })
                 .transpose()?;
-            let (matches, _) = index.indexed_results_filtered(
+            let (matches, _) = index.indexed_results_filtered_with_category(
                 &query,
                 &mode,
                 &tags,
                 collection_ids.as_deref(),
                 favorite_only,
+                model_category.as_deref(),
             )?;
             let page = crate::services::file_service::fetch_matching_files_with_trash(
                 snapshots, connected, &root, None, 0, usize::MAX, Some(&matches), false,

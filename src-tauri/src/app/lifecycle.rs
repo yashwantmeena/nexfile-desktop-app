@@ -8,6 +8,7 @@ use crate::repositories::storage_repository::SqliteStorageRepository;
 use crate::services::import_service::ImportService;
 use crate::services::indexing_service::IndexingService;
 use crate::services::storage_service::StorageService;
+use crate::services::trash_service::TrashService;
 use crate::utils::constants::{
     AI_CONFIGS_DIRECTORY, AI_MODELS_DIRECTORY, CLIP_MODEL_DIRECTORY, FLORENCE2_MODEL_DIRECTORY,
 };
@@ -50,7 +51,13 @@ pub fn initialize<R: tauri::Runtime>(app: &tauri::App<R>) -> AppResult<()> {
         indexing.clone(),
     );
     let indexing_worker = IndexingWorker::start(&database, indexing);
-    let storage = StorageService::new(storage_repository, config.app_data_dir);
+    let storage = StorageService::new(storage_repository, config.app_data_dir.clone());
+    let trash = TrashService::new(
+        SqliteBackgroundProcessingRepository::new(database.clone()),
+        SqliteStorageRepository::new(database.clone()),
+        &database,
+        config.app_data_dir.clone(),
+    );
     let delete_worker = DeleteWorker::start(&database, storage.clone(), indexing_repository.clone());
 
     app.manage(AppState {
@@ -61,6 +68,7 @@ pub fn initialize<R: tauri::Runtime>(app: &tauri::App<R>) -> AppResult<()> {
         delete_worker,
         imports,
         storage,
+        trash,
     });
     Ok(())
 }

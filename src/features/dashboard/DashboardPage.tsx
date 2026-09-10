@@ -30,10 +30,11 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
   const [searchMode, setSearchMode] = useState<SearchMode>("tags");
   const tagsKey = JSON.stringify(tags);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [countRefreshKey, setCountRefreshKey] = useState(0);
   const favoriteOnly = activeNavigation === "Favorites";
   const trashOnly = activeNavigation === "Trash";
   const [emptyingTrash, setEmptyingTrash] = useState(false);
-  const fetched = useFiles(activeCategory === "All" ? undefined : activeCategory.toLowerCase(), query, searchMode, tags, refreshKey, activeCollection?.name, favoriteOnly, trashOnly);
+  const fetched = useFiles(activeCategory === "All" ? undefined : activeCategory.toLowerCase(), query, searchMode, tags, refreshKey, activeCollection?.name, favoriteOnly, trashOnly, modelCategory);
   const resultsPaneRef = useRef<HTMLDivElement>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const [showBackToTop,setShowBackToTop]=useState(false);
@@ -54,7 +55,7 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
     setCountsError(null);
     const load = async () => {
       try {
-        const result = await invoke<HomeCounts>("get_file_count", { query, searchMode, tags: JSON.parse(tagsKey), collection: activeCollection?.name, favoriteOnly, trashOnly });
+        const result = await invoke<HomeCounts>("get_file_count", { query, searchMode, tags: JSON.parse(tagsKey), collection: activeCollection?.name, favoriteOnly, trashOnly, modelCategory });
         if (!cancelled) setHomeCounts(result);
       } catch {
         if (!cancelled) setCountsError("Unable to count indexed files. Please try again.");
@@ -65,7 +66,7 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [query, searchMode, tagsKey, refreshKey, activeCollection?.name, favoriteOnly, trashOnly]);
+  }, [query, searchMode, tagsKey, refreshKey, countRefreshKey, activeCollection?.name, favoriteOnly, trashOnly, modelCategory]);
   const counts = homeCounts?.counts;
   const categories = [
     { label: "All", count: homeCounts?.totalCount },
@@ -75,20 +76,31 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
   const loadedFiles = useMemo<DashboardFile[]>(() => fetched.files.map(file => ({
     id: file.id, driveId: file.driveId, name: file.name, path: file.path, fileType: file.fileType,
     modifiedAtMs: file.modifiedAtMs,
+    capturedAtMs: file.capturedAtMs,
     kind: file.name.includes(".") ? file.name.split(".").pop()!.toUpperCase() : file.fileType.toUpperCase(),
     time: file.modifiedAtMs === null ? "Unknown" : new Date(file.modifiedAtMs).toLocaleString(),
     image: file.imageUrl, sizeBytes: file.sizeBytes, categories: file.categories, tags: file.tags,
     collections: file.collectionNames, collection: file.collectionNames[0], favorite: file.favorite, isTrashed: file.isTrashed,
   })), [fetched.files]);
   const modelCategories = [...new Set(loadedFiles.flatMap(file => file.categories ?? []))].sort();
-  const files = loadedFiles.filter(file => !modelCategory || file.categories?.includes(modelCategory));
+  const files = loadedFiles;
   return (
     <div className="nexfile-app">
       <AppSidebar activeItem={activeNavigation} onActiveItemChange={onNavigationChange}/>
       <main className="nf-main search-main">
         <AppToolbar query={draftQuery}
           onQueryChange={value => { setDraftQuery(value); if (searchMode === "name") setQuery(value); }}
-          onQuerySubmit={value => { setDraftQuery(value); setQuery(value.trim()); }}
+          onQuerySubmit={value => {
+            const submitted = value.trim();
+            if (searchMode === "tags") {
+              if (submitted) setTags(current => current.some(tag => tag.toLowerCase() === submitted.toLowerCase()) ? current : [...current, submitted]);
+              setDraftQuery("");
+              setQuery("");
+              return;
+            }
+            setDraftQuery(value);
+            setQuery(submitted);
+          }}
           searchMode={searchMode} onSearchModeChange={mode => { setSearchMode(mode); setDraftQuery(query); }}/>
         <FilterBar tags={tags} onTagsChange={setTags} onReset={()=>setTags([])}/>
         <section className="content-shell">
@@ -101,7 +113,7 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
             <div className="category-toolbar">
               <CategoryFilters categories={categories} activeCategory={activeCategory} onCategoryChange={setActiveCategory}/>
               <ModelCategoryFilter categories={modelCategories} selected={modelCategory} onSelect={value => { setModelCategory(value); setPreviewIndex(null); }}/>
-              {trashOnly && <button className="empty-trash-button" disabled={emptyingTrash || !fetched.files.length} onClick={()=>void (async()=>{setEmptyingTrash(true);try{await emptyTrash();setPreviewIndex(null);fetched.clearFiles();}finally{setEmptyingTrash(false);}})()}>{emptyingTrash?"Emptying…":"Empty trash"}</button>}
+              {trashOnly && <button className="empty-trash-button" disabled={emptyingTrash || !fetched.files.length} onClick={()=>void (async()=>{setEmptyingTrash(true);try{await emptyTrash();setPreviewIndex(null);fetched.clearFiles();setCountRefreshKey(current=>current+1);}finally{setEmptyingTrash(false);}})()}>{emptyingTrash?"Emptying…":"Empty Trash"}</button>}
               <button className="results-sort category-sort" title="Filesystem modified time, descending">Modified: newest <ChevronDown /></button>
             </div>
             {(fetched.error || fetched.issues.length > 0) && <div className="count-warning" role="alert">
@@ -128,7 +140,7 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
             </div>}
         </section>
       </main>
-      {previewIndex!==null&&files[previewIndex]&&<FilePreviewModal files={files} index={previewIndex} collections={collections} categories={modelCategories} trashOnly={trashOnly} onMetadataSaved={()=>setRefreshKey(current=>current+1)} onDeleted={()=>{const nextIndex=previewIndex<files.length-1?previewIndex:previewIndex>0?previewIndex-1:null;fetched.removeFile(String(files[previewIndex].id));setPreviewIndex(nextIndex);}} onFavoriteSaved={(id,favorite)=>{fetched.updateFavorite(String(id),favorite);if(favoriteOnly&&!favorite){setPreviewIndex(null);setRefreshKey(current=>current+1);}}} onIndexChange={setPreviewIndex} hasMore={nextOffset!==null} loadingMore={loading} loadError={error} onLoadMore={loadMore} onClose={()=>setPreviewIndex(null)} onApplyFilter={value=>{setTags(current=>current.includes(value)?current:[...current,value]);setPreviewIndex(null);}}/>}
+      {previewIndex!==null&&files[previewIndex]&&<FilePreviewModal files={files} index={previewIndex} collections={collections} categories={modelCategories} trashOnly={trashOnly} onMetadataSaved={()=>setRefreshKey(current=>current+1)} onDeleted={()=>{const nextIndex=previewIndex<files.length-1?previewIndex:previewIndex>0?previewIndex-1:null;fetched.removeFile(String(files[previewIndex].id));setPreviewIndex(nextIndex);setCountRefreshKey(current=>current+1);}} onFavoriteSaved={(id,favorite)=>{fetched.updateFavorite(String(id),favorite);setCountRefreshKey(current=>current+1);if(favoriteOnly&&!favorite){setPreviewIndex(null);setRefreshKey(current=>current+1);}}} onIndexChange={setPreviewIndex} hasMore={nextOffset!==null} loadingMore={loading} loadError={error} onLoadMore={loadMore} onClose={()=>setPreviewIndex(null)} onApplyFilter={value=>{setTags(current=>current.includes(value)?current:[...current,value]);setPreviewIndex(null);}}/>}
     </div>
   );
 }

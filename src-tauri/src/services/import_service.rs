@@ -11,7 +11,6 @@ use tauri::async_runtime::Mutex;
 use crate::error::{AppError, AppResult, CounterOverflow};
 
 use crate::models::background_process_model::BackgroundProcess;
-use crate::models::delete_model::DeleteFileJob;
 use crate::models::file_model::ManagedFileMetadata;
 use crate::models::image_processing_model::ImageProcessingJob;
 use crate::models::import_model::ImportFileJob;
@@ -28,7 +27,6 @@ use crate::utils::constants::{
     APALIS_MIGRATION_TABLE, IMAGE_PROCESSING_PROCESS_TYPE, IMAGE_PROCESSING_QUEUE,
     IMPORTED_FILES_DIRECTORY, IMPORT_FILE_ID_ALPHABET, IMPORT_FILE_ID_LENGTH,
     IMPORT_FILE_PROCESS_TYPE, IMPORT_FILE_QUEUE, IMPORT_FOLDER_PROCESS_TYPE,
-    DELETE_FILE_PROCESS_TYPE, DELETE_FILE_QUEUE,
 };
 use crate::utils::image_decoder::is_supported_image;
 
@@ -343,42 +341,6 @@ impl ImportService {
         Ok(())
     }
 
-    /// Publish every soft-deleted managed file to the durable deletion queue.
-    /// The worker rechecks the flag before it removes anything, so an item restored
-    /// between this scan and consumption remains safe.
-    pub async fn empty_trash(&self) -> AppResult<()> {
-        let snapshots = self.storage_repository.list().await?;
-        let root = self.system_metadata_root.clone();
-        let jobs = tauri::async_runtime::spawn_blocking(move || {
-            collect_deleted_file_jobs(snapshots, get_drives(), &root)
-        })
-        .await
-        .map_err(AppError::internal)??;
-        let total_items = u64::try_from(jobs.len())
-            .map_err(|_| AppError::validation("Too many files are in Trash."))?;
-        if total_items == 0 {
-            return Ok(());
-        }
-        let process = self
-            .repository
-            .acquire_stage(DELETE_FILE_PROCESS_TYPE, total_items)
-            .await?;
-        let process_id = process.process_id.clone();
-        let mut jobs = stream::iter(jobs.into_iter().map(|mut job| {
-            job.process_id = process_id.clone();
-            Task::builder(job).build()
-        }));
-        let mut queue = SqliteStorage::<DeleteFileJob, (), ()>::new_in_queue(
-            &self.queue_pool,
-            DELETE_FILE_QUEUE,
-        );
-        if let Err(error) = queue.push_all(&mut jobs).await {
-            let _ = self.repository.rollback_items(&process.process_id, total_items).await;
-            return Err(AppError::database(error));
-        }
-        Ok(())
-    }
-
     pub async fn close(&self) {
         self.repository.close().await;
     }
@@ -491,6 +453,7 @@ fn write_import_sidecar(job: &ImportFileJob, destination: &Path) -> AppResult<()
         is_trashed: false,
         is_deleted: false,
         collection_ids: Vec::new(),
+        captured_at_ms: None,
     })
     .map_err(AppError::serialization)?;
     std::fs::write(&temporary, bytes)?;
@@ -503,52 +466,6 @@ fn write_import_sidecar(job: &ImportFileJob, destination: &Path) -> AppResult<()
         return Err(error.into());
     }
     Ok(())
-}
-
-fn collect_deleted_file_jobs(
-    snapshots: Vec<DriveMetadata>,
-    connected: Vec<DriveInfo>,
-    system_metadata_root: &Path,
-) -> AppResult<Vec<DeleteFileJob>> {
-    let mut jobs = Vec::new();
-    for saved in snapshots {
-        let Some(drive) = connected.iter().find(|drive| {
-            read_drive_metadata(drive, system_metadata_root)
-                .is_some_and(|metadata| metadata.drive_id == saved.drive_id)
-        }).cloned() else {
-            continue;
-        };
-        let directory = drive_storage_root(&drive, system_metadata_root).join(IMPORTED_FILES_DIRECTORY);
-        let Ok(entries) = std::fs::read_dir(directory) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !entry.file_type().is_ok_and(|file_type| file_type.is_file())
-                || entry.file_name().to_string_lossy().starts_with('.')
-                || crate::services::storage_service::is_generated_image_sidecar(&path)
-            {
-                continue;
-            }
-            let sidecar = classification_output_path(&path);
-            let Ok(metadata) = crate::services::file_service::read_managed_file_metadata(&sidecar) else {
-                continue;
-            };
-            if !metadata.is_trashed || metadata.is_deleted {
-                continue;
-            }
-            let Some(file_id) = path.file_stem().and_then(|value| value.to_str()).filter(|value| !value.is_empty()) else {
-                continue;
-            };
-            jobs.push(DeleteFileJob {
-                process_id: String::new(),
-                drive_id: saved.drive_id.clone(),
-                file_id: file_id.to_owned(),
-                path,
-            });
-        }
-    }
-    Ok(jobs)
 }
 
 fn copy_to_temporary(

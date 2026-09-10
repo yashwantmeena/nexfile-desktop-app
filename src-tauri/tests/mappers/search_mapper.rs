@@ -19,6 +19,7 @@ fn namespaces_categories_objects_and_search_keywords() {
         name: "photo.jpg".to_owned(),
         created_at_ms: 0,
         updated_at_ms: 0,
+        captured_at_ms: None,
         favorite: false,
         is_trashed: false,
         is_deleted: false,

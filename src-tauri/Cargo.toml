@@ -42,6 +42,7 @@ sysinfo = { version = "0.39.6", default-features = false, features = ["disk"] }
 uuid = { version = "1", features = ["v4"] }
 image = { version = "0.25", default-features = false, features = ["bmp", "gif", "ico", "jpeg", "png", "tiff", "webp"] }
 kamadak-exif = "0.6"
+chrono = "0.4"
 avif-decode = "1.0.2"
 heif-oxide = "0.1.0"
 ndarray = "0.17"

@@ -8,6 +8,7 @@ export interface FetchedFile {
   fileType: string;
   sizeBytes: number;
   modifiedAtMs: number | null;
+  capturedAtMs: number | null;
   categories: string[];
   tags: string[];
   collectionNames: string[];
@@ -27,8 +28,8 @@ export interface FilePage {
  * Refresh from offset zero after imports/deletions, which can shift page offsets.
  * Search text and tags are filtered before pagination.
  */
-export async function fetchFiles(offset = 0, limit = 60, mediaType?: string, query = "", searchMode = "tags", tags: string[] = [], collection?: string, favoriteOnly = false, trashOnly = false): Promise<FilePage> {
-  const page = await invoke<FilePage>("fetch_files", { offset, limit, mediaType, query, searchMode, tags, collection, favoriteOnly, trashOnly });
+export async function fetchFiles(offset = 0, limit = 60, mediaType?: string, query = "", searchMode = "tags", tags: string[] = [], collection?: string, favoriteOnly = false, trashOnly = false, modelCategory?: string): Promise<FilePage> {
+  const page = await invoke<FilePage>("fetch_files", { offset, limit, mediaType, query, searchMode, tags, collection, favoriteOnly, trashOnly, modelCategory });
   return {
     ...page,
     files: page.files.map(file => ({
