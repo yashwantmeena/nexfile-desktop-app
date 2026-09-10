@@ -49,7 +49,7 @@ fn no_saved_drives_returns_verified_zero() {
 }
 
 #[test]
-fn persists_favorite_in_file_metadata_json() {
+fn persists_favorite_and_trash_state_in_file_metadata_json() {
     let root = std::env::temp_dir().join(format!("nexfile-favorite-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&root).unwrap();
     let sidecar = root.join("photo.jpg.json");
@@ -59,12 +59,16 @@ fn persists_favorite_in_file_metadata_json() {
     )
     .unwrap();
 
-    let metadata = replace_sidecar_metadata(&sidecar, None, None, None, None, Some(true)).unwrap();
+    let metadata = replace_sidecar_metadata(&sidecar, None, None, None, None, Some(true), Some(true), None).unwrap();
     assert!(metadata.favorite);
+    assert!(metadata.is_trashed);
+    assert!(!metadata.is_deleted);
     assert_eq!(metadata.collection_ids, ["travel"]);
     let value: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&sidecar).unwrap()).unwrap();
     assert_eq!(value["favorite"], true);
+    assert_eq!(value["isTrashed"], true);
+    assert!(value.get("isDeleted").is_none());
     assert_eq!(value["custom"], 42);
 
     std::fs::remove_dir_all(root).unwrap();

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { Archive, ChevronLeft, ChevronRight, Clock3, Copy, ExternalLink, File, FileCode2, FileText, Film, FolderOpen, Mic2, MoreHorizontal, Pencil, Star, Tag, Wrench, X } from "lucide-react";
+import { Archive, ChevronLeft, ChevronRight, Clock3, Copy, File, FileCode2, FileText, Film, FolderOpen, Mic2, MoreHorizontal, Pencil, RotateCcw, Star, Tag, Trash2, X } from "lucide-react";
 import type { Collection } from "@/features/collections/api/collections";
 import { updateFileMetadata } from "../api/files";
 import { CollectionPicker } from "@/components/layout/CollectionPicker";
@@ -11,7 +11,9 @@ interface FilePreviewModalProps {
   index:number;
   collections:Collection[];
   categories:string[];
+  trashOnly:boolean;
   onMetadataSaved:()=>void;
+  onDeleted:()=>void;
   onFavoriteSaved:(id:DashboardFile["id"],favorite:boolean)=>void;
   onIndexChange:(index:number)=>void;
   onClose:()=>void;
@@ -25,7 +27,7 @@ interface FilePreviewModalProps {
 function formatSize(bytes?:number){if(bytes===undefined)return "Unknown";if(bytes<1024)return `${bytes} B`;const units=["KB","MB","GB","TB"];let value=bytes/1024,unit=0;while(value>=1024&&unit<units.length-1){value/=1024;unit++;}return `${value>=10?value.toFixed(0):value.toFixed(1)} ${units[unit]}`;}
 function readable(value:string){return value.replace(/[_-]/g," ");}
 
-export function FilePreviewModal({files,index,collections,categories,onMetadataSaved,onFavoriteSaved,onIndexChange,onClose,onApplyFilter,hasMore,loadingMore,loadError,onLoadMore}:FilePreviewModalProps){
+export function FilePreviewModal({files,index,collections,categories,trashOnly,onMetadataSaved,onDeleted,onFavoriteSaved,onIndexChange,onClose,onApplyFilter,hasMore,loadingMore,loadError,onLoadMore}:FilePreviewModalProps){
   const file=files[index];
   const [pendingNextFrom, setPendingNextFrom] = useState<DashboardFile["id"]|null>(null);
   const atLoadedEnd = index >= files.length - 1;
@@ -68,6 +70,8 @@ export function FilePreviewModal({files,index,collections,categories,onMetadataS
   const [favorite,setFavorite]=useState(file.favorite ?? false);
   const [favoriteSaving,setFavoriteSaving]=useState(false);
   const [favoriteError,setFavoriteError]=useState("");
+  const [deleteSaving,setDeleteSaving]=useState(false);
+  const [deleteError,setDeleteError]=useState("");
   const [copied,setCopied]=useState(false);
   const [editingMetadata,setEditingMetadata]=useState(false);
   const [draftName,setDraftName]=useState(file.name);
@@ -78,7 +82,7 @@ export function FilePreviewModal({files,index,collections,categories,onMetadataS
   const [metadataSaving,setMetadataSaving]=useState(false);
   const [metadataError,setMetadataError]=useState("");
   const initialCollectionIds = () => collections.filter(collection => collectionsForFile(file).some(name => name.toLowerCase() === collection.name.toLowerCase())).map(collection => collection.id);
-  useEffect(()=>{setFavorite(file.favorite ?? false);setFavoriteSaving(false);setFavoriteError("");setEditingMetadata(false);},[file.id,file.favorite]);
+  useEffect(()=>{setFavorite(file.favorite ?? false);setFavoriteSaving(false);setFavoriteError("");setDeleteSaving(false);setDeleteError("");setEditingMetadata(false);},[file.id,file.favorite]);
   useEffect(()=>{
     setDraftName(file.name);
     setDraftCategory(file.categories?.[0] ?? "");
@@ -143,6 +147,33 @@ export function FilePreviewModal({files,index,collections,categories,onMetadataS
       setFavoriteSaving(false);
     }
   };
+  const deleteFile = async () => {
+    if (!file.driveId || deleteSaving) return;
+    if (!window.confirm(`Move “${file.name}” to Trash?`)) return;
+    setDeleteSaving(true);
+    setDeleteError("");
+    try {
+      await updateFileMetadata({ driveId:file.driveId, path:file.path }, { isTrashed:true });
+      onDeleted();
+    } catch {
+      setDeleteError("Unable to move this file to Trash. Please try again.");
+    } finally {
+      setDeleteSaving(false);
+    }
+  };
+  const restoreFile = async () => {
+    if (!file.driveId || deleteSaving) return;
+    setDeleteSaving(true);
+    setDeleteError("");
+    try {
+      await updateFileMetadata({ driveId:file.driveId, path:file.path }, { isTrashed:false });
+      onDeleted();
+    } catch {
+      setDeleteError("Unable to restore this file. Please try again.");
+    } finally {
+      setDeleteSaving(false);
+    }
+  };
   return <div className="file-preview-backdrop" role="dialog" aria-modal="true" aria-label={`Preview ${file.name}`} onMouseDown={event=>{if(event.target===event.currentTarget)onClose();}}>
     <section className={`file-preview-modal ${infoOpen?"preview-info-open":"preview-info-collapsed"}`}>
       {!infoOpen&&<button className="preview-close" aria-label="Close preview" onClick={onClose}><X/></button>}
@@ -150,6 +181,9 @@ export function FilePreviewModal({files,index,collections,categories,onMetadataS
         <div className="preview-canvas">
           <div className="preview-top-actions">
             <button aria-label={favorite?"Remove from favorites":"Add to favorites"} title={favorite?"Remove from favorites":"Add to favorites"} aria-pressed={favorite} aria-busy={favoriteSaving} disabled={!file.driveId || favoriteSaving} className={favorite?"active":""} onClick={()=>void toggleFavorite()}><Star/></button>
+            {trashOnly
+              ? <button className="restore" aria-label="Restore file" title="Restore file" disabled={!file.driveId || deleteSaving} aria-busy={deleteSaving} onClick={()=>void restoreFile()}><RotateCcw/></button>
+              : <button className="delete" aria-label="Move file to Trash" title="Move file to Trash" disabled={!file.driveId || deleteSaving} aria-busy={deleteSaving} onClick={()=>void deleteFile()}><Trash2/></button>}
             <button ref={infoToggleRef} aria-label={infoOpen?"Hide file information":"Show file information"} title={infoOpen?"Hide file information":"Show file information"} aria-controls={infoId} aria-expanded={infoOpen} onClick={()=>{if(infoOpen){cancelMetadataEdit();setInfoOpen(false);}else setInfoOpen(true);}}><MoreHorizontal/></button>
           </div>
           {file.image?<OriginalMediaPreview key={`${file.id}:${file.image}`} src={file.image} name={file.name} type={type==="video"?"video":"image"}/>:<div className="preview-fallback"><FallbackIcon/><strong>{file.name}</strong></div>}
@@ -158,6 +192,7 @@ export function FilePreviewModal({files,index,collections,categories,onMetadataS
           {atLoadedEnd && loadingMore && <div className="preview-pagination-status" role="status">Loading more files…</div>}
           {atLoadedEnd && loadError && <div className="preview-pagination-status" role="alert">Couldn’t load more files. <button onClick={next}>Retry</button></div>}
           {favoriteError && <div className="preview-pagination-status" role="alert">{favoriteError}</div>}
+          {deleteError && <div className="preview-pagination-status" role="alert">{deleteError}</div>}
         </div>
       </div>
       {infoOpen && <aside id={infoId} className="preview-details" aria-label="File information">
@@ -169,8 +204,7 @@ export function FilePreviewModal({files,index,collections,categories,onMetadataS
           <section className="preview-info-card"><h3><Tag/>Category</h3>{editingMetadata?<select className="preview-category-select" aria-label="Category" value={draftCategory} onChange={event=>setDraftCategory(event.target.value)}><option value="">Uncategorized</option>{[...new Set([...(file.categories??[]),...categories])].filter(Boolean).map(category=><option value={category} key={category}>{readable(category)}</option>)}</select>:<div className="preview-card-tags">{file.categories?.[0]?<button className="preview-metadata-chip" onClick={()=>onApplyFilter(file.categories![0])}>{readable(file.categories[0])}</button>:<span className="preview-metadata-chip">Uncategorized</span>}</div>}</section>
           <section className="preview-info-card"><div className="preview-info-card-heading"><h3><FolderOpen/>Collections</h3></div><div className="preview-collection-value">{editingMetadata ? (collections.length ? <CollectionPicker collections={collections} selectedIds={draftCollectionIds} onChange={setDraftCollectionIds} disabled={metadataSaving} addLabel="Add" /> : <p className="preview-metadata-empty">No collections available.</p>) : collectionsForFile(file).length?<div className="preview-collection-tags">{collectionsForFile(file).map(collection=><span className="preview-metadata-chip" key={collection}>{collection}</span>)}</div>:"Not in a collection"}</div></section>
           <section className="preview-info-card preview-tags-card-wide"><div className="preview-info-card-heading"><h3><Tag/>Keywords & tags</h3></div>{editingMetadata?<div className="preview-tag-editor"><div className="preview-card-tags">{draftTags.map(tag=><span className="preview-metadata-chip" key={tag}><span>{readable(tag)}</span><button type="button" disabled={metadataSaving} aria-label={`Remove ${tag}`} onClick={()=>setDraftTags(current=>current.filter(value=>value!==tag))}><X/></button></span>)}</div><input value={tagInput} disabled={metadataSaving} aria-label="Add tag" placeholder="Add a tag and press Enter" onChange={event=>setTagInput(event.target.value)} onKeyDown={event=>{if(event.key === "Enter" || event.key === ","){event.preventDefault();addTags(tagInput);}if(event.key === "Backspace"&&!tagInput&&draftTags.length)setDraftTags(current=>current.slice(0,-1));}} onBlur={()=>{if(tagInput.trim())addTags(tagInput);}} /></div>:<div className="preview-card-tags">{file.tags?.length?file.tags.map(tag=><button className="preview-metadata-chip" key={tag} onClick={()=>onApplyFilter(tag)}>{readable(tag)}</button>):<span className="preview-metadata-chip">None</span>}</div>}</section>
-          <section className="preview-info-card preview-path-card"><h3><FolderOpen/>Path</h3><div className="preview-card-path"><span title={file.path}>{file.path}</span><button onClick={copyPath} aria-label="Copy path"><Copy/></button></div></section>
-          <section className="preview-info-card preview-actions-card"><h3><Wrench/>Actions</h3><div className="preview-action-buttons"><button className="primary"><ExternalLink/>Open</button><button><FolderOpen/>Open folder</button><button onClick={copyPath}><Copy/>{copied?"Copied":"Copy path"}</button><button aria-label="More actions"><MoreHorizontal/></button></div></section>
+          <section className="preview-info-card preview-path-card"><h3><FolderOpen/>Path</h3><div className="preview-card-path"><span title={file.path}>{file.path}</span><button onClick={copyPath} aria-label={copied?"Path copied":"Copy path"} title={copied?"Path copied":"Copy path"}><Copy/></button></div></section>
         </div>
         {editingMetadata&&<div className="preview-metadata-actions">{metadataError&&<p role="alert">{metadataError}</p>}<div><button type="button" disabled={metadataSaving} onClick={cancelMetadataEdit}>Cancel</button><button type="button" className="primary" disabled={metadataSaving || !draftName.trim() || (collectionsForFile(file).length > 0 && collections.length === 0)} onClick={()=>void saveMetadata()}>{metadataSaving?"Saving…":"Save changes"}</button></div></div>}
       </aside>}

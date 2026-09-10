@@ -11,6 +11,7 @@ use crate::repositories::storage_repository::SqliteStorageRepository;
 use crate::system::filesystem::{get_drives, read_file, write_file};
 use crate::utils::constants::{DRIVE_METADATA_FILE, IMPORTED_FILES_DIRECTORY, NEXFILE_DIRECTORY};
 
+#[derive(Clone)]
 pub struct StorageService {
     repository: SqliteStorageRepository,
     system_metadata_root: PathBuf,
@@ -26,6 +27,7 @@ impl StorageService {
         tags: Option<Vec<String>>,
         collection_names: Option<Vec<String>>,
         favorite: Option<bool>,
+        is_trashed: Option<bool>,
     ) -> AppResult<(PathBuf, String, String, Vec<String>, bool)> {
         let root = self.system_metadata_root.clone();
         tauri::async_runtime::spawn_blocking(move || {
@@ -103,6 +105,8 @@ impl StorageService {
                 tags.as_deref(),
                 resolved_collection_ids.as_deref(),
                 favorite,
+                is_trashed,
+                None,
             )?;
             let file_id = canonical_path
                 .file_stem()
@@ -126,7 +130,7 @@ impl StorageService {
         &self, index: crate::repositories::indexing_repository::TantivyIndexingRepository,
         query: String, mode: String, tags: Vec<String>, offset: usize, limit: usize,
         media_type: Option<crate::types::file_type::FileType>, collection: Option<String>,
-        favorite_only: bool,
+        favorite_only: bool, trash_only: bool,
     ) -> AppResult<crate::models::file_model::FilePage> {
         if !(1..=200).contains(&limit) {
             return Err(AppError::validation("The file page size must be between 1 and 200."));
@@ -135,6 +139,11 @@ impl StorageService {
         let root = self.system_metadata_root.clone();
         tauri::async_runtime::spawn_blocking(move || {
             let connected = get_drives();
+            if trash_only {
+                return Ok(crate::services::file_service::fetch_matching_files_with_trash(
+                    snapshots, connected, &root, media_type, offset, limit, None, true,
+                ));
+            }
             let collection_ids = collection
                 .as_deref()
                 .filter(|name| !name.trim().is_empty())
@@ -159,8 +168,8 @@ impl StorageService {
                     files: Vec::new(), total_count: 0, next_offset: None, issues: Vec::new(),
                 });
             }
-            Ok(crate::services::file_service::fetch_matching_files(
-                snapshots, connected, &root, media_type, offset, limit, Some(&matches)))
+            Ok(crate::services::file_service::fetch_matching_files_with_trash(
+                snapshots, connected, &root, media_type, offset, limit, Some(&matches), false))
         }).await.map_err(AppError::internal)?
     }
 
@@ -172,11 +181,22 @@ impl StorageService {
         tags: Vec<String>,
         collection: Option<String>,
         favorite_only: bool,
+        trash_only: bool,
     ) -> AppResult<crate::models::file_model::FileCountSummary> {
         let snapshots = self.repository.list().await?;
         let root = self.system_metadata_root.clone();
         tauri::async_runtime::spawn_blocking(move || {
             let connected = get_drives();
+            if trash_only {
+                let page = crate::services::file_service::fetch_matching_files_with_trash(
+                    snapshots, connected, &root, None, 0, usize::MAX, None, true,
+                );
+                return Ok(crate::models::file_model::FileCountSummary {
+                    counts: None,
+                    total_count: i64::try_from(page.total_count).ok(),
+                    issues: page.issues,
+                });
+            }
             let collection_ids = collection
                 .as_deref()
                 .filter(|name| !name.trim().is_empty())
@@ -189,15 +209,30 @@ impl StorageService {
                     )
                 })
                 .transpose()?;
-            index
-                .indexed_results_filtered(
-                    &query,
-                    &mode,
-                    &tags,
-                    collection_ids.as_deref(),
-                    favorite_only,
-                )
-                .map(|(_, counts)| counts)
+            let (matches, _) = index.indexed_results_filtered(
+                &query,
+                &mode,
+                &tags,
+                collection_ids.as_deref(),
+                favorite_only,
+            )?;
+            let page = crate::services::file_service::fetch_matching_files_with_trash(
+                snapshots, connected, &root, None, 0, usize::MAX, Some(&matches), false,
+            );
+            let mut counts = crate::types::file_type::FileType::ALL
+                .into_iter()
+                .map(|file_type| crate::models::file_model::FileTypeCount { file_type, count: 0 })
+                .collect::<Vec<_>>();
+            for file in &page.files {
+                if let Some(entry) = counts.iter_mut().find(|entry| entry.file_type == file.file_type) {
+                    entry.count = entry.count.saturating_add(1);
+                }
+            }
+            Ok(crate::models::file_model::FileCountSummary {
+                counts: Some(counts),
+                total_count: i64::try_from(page.total_count).ok(),
+                issues: page.issues,
+            })
         })
         .await
         .map_err(AppError::internal)?
@@ -237,6 +272,69 @@ impl StorageService {
         })
         .await
         .map_err(AppError::internal)
+    }
+
+    /// Permanently remove one queued Trash item after confirming it is still soft-deleted.
+    pub async fn permanently_delete_file(
+        &self,
+        drive_id: String,
+        file_id: String,
+        path: PathBuf,
+    ) -> AppResult<()> {
+        let root = self.system_metadata_root.clone();
+        let (drive, metadata, file_count, app_used_bytes) = tauri::async_runtime::spawn_blocking(move || {
+            let (drive, mut metadata) = get_drives()
+                .into_iter()
+                .filter_map(|drive| {
+                    let metadata = read_drive_metadata(&drive, &root)?;
+                    (metadata.drive_id == drive_id).then_some((drive, metadata))
+                })
+                .next()
+                .ok_or_else(|| AppError::storage_unavailable("The file's drive is not currently connected."))?;
+            let files_directory = drive_storage_root(&drive, &root).join(IMPORTED_FILES_DIRECTORY);
+            let canonical_files_directory = files_directory.canonicalize()?;
+            let parent = path.parent().ok_or_else(|| AppError::validation("The queued file has no parent folder."))?.canonicalize()?;
+            if parent != canonical_files_directory {
+                return Err(AppError::validation("The queued file is outside NexFile's managed files."));
+            }
+            if path.file_stem().and_then(|value| value.to_str()) != Some(file_id.as_str()) {
+                return Err(AppError::validation("The queued file ID does not match its path."));
+            }
+            let sidecar = crate::services::image_processing_service::classification_output_path(&path);
+            let file_exists = path.try_exists()?;
+            if file_exists && !sidecar.is_file() {
+                return Err(AppError::validation("The queued file no longer has its Trash metadata."));
+            }
+            if sidecar.is_file() {
+                let sidecar_metadata = crate::services::file_service::read_managed_file_metadata(&sidecar)?;
+                if !sidecar_metadata.is_trashed {
+                    return Err(AppError::validation("The queued file was restored from Trash."));
+                }
+                if !sidecar_metadata.is_deleted {
+                    crate::services::file_service::replace_sidecar_metadata(
+                        &sidecar, None, None, None, None, None, None, Some(true),
+                    )?;
+                }
+            }
+            if file_exists {
+                std::fs::remove_file(&path)?;
+            }
+            if sidecar.try_exists()? {
+                std::fs::remove_file(&sidecar)?;
+            }
+            let (file_count, app_used_bytes) = calculate_managed_statistics(&canonical_files_directory)?;
+            metadata.file_count = file_count;
+            metadata.app_used_bytes = app_used_bytes;
+            Ok((drive, metadata, file_count, app_used_bytes))
+        })
+        .await
+        .map_err(AppError::internal)??;
+        debug_assert_eq!(metadata.file_count, file_count);
+        debug_assert_eq!(metadata.app_used_bytes, app_used_bytes);
+        self.repository
+            .update(&metadata, |updated| write_drive_metadata(&drive, &self.system_metadata_root, updated))
+            .await?;
+        Ok(())
     }
 
     pub fn new(repository: SqliteStorageRepository, system_metadata_root: PathBuf) -> Self {

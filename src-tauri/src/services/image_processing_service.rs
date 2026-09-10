@@ -267,12 +267,16 @@ impl ImageProcessingService {
                 .unwrap_or_default()
         });
         let favorite = existing_sidecar_favorite(&output_path);
+        let is_trashed = existing_sidecar_is_trashed(&output_path);
+        let is_deleted = existing_sidecar_is_deleted(&output_path);
         let output = ImageProcessingOutput {
             version: IMAGE_PROCESSING_OUTPUT_VERSION,
             name,
             created_at_ms,
             updated_at_ms,
             favorite,
+            is_trashed,
+            is_deleted,
             metadata: extract_image_metadata(&job.path, &prepared_image)?,
             caption,
             ocr,
@@ -354,6 +358,22 @@ fn existing_sidecar_favorite(path: &Path) -> bool {
         .ok()
         .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
         .and_then(|value| value.get("favorite").and_then(serde_json::Value::as_bool))
+        .unwrap_or(false)
+}
+
+fn existing_sidecar_is_deleted(path: &Path) -> bool {
+    std::fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .and_then(|value| value.get("isDeleted").and_then(serde_json::Value::as_bool))
+        .unwrap_or(false)
+}
+
+fn existing_sidecar_is_trashed(path: &Path) -> bool {
+    std::fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .and_then(|value| value.get("isTrashed").and_then(serde_json::Value::as_bool))
         .unwrap_or(false)
 }
 

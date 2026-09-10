@@ -60,6 +60,10 @@ pub struct ImageProcessingOutput {
     #[serde(default)]
     pub favorite: bool,
     #[serde(default)]
+    pub is_trashed: bool,
+    #[serde(default)]
+    pub is_deleted: bool,
+    #[serde(default)]
     pub metadata: ImageMetadata,
     pub caption: Option<String>,
     pub ocr: Option<ImageOcrOutput>,

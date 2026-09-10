@@ -5,6 +5,7 @@ export interface DashboardFile {
   categories?:string[];
   tags?:string[]; collection?:string; collections?:string[];
   favorite?:boolean;
+  isTrashed?:boolean;
   image?:string; duration?:string;
 }
 

@@ -13,7 +13,7 @@ const navigation = [
   ["Search", Files],
   ["Recent", Clock3],
   ["Favorites", Star],
-  ["Storage", HardDrive],
+  ["Trash", Trash2],
 ] as const;
 
 export function AppSidebar({ activeItem, onActiveItemChange }: AppSidebarProps) {
@@ -37,7 +37,7 @@ export function AppSidebar({ activeItem, onActiveItemChange }: AppSidebarProps) 
       <BackgroundActivities />
       <div className="sidebar-bottom">
         <button onClick={() => onActiveItemChange("Settings")}><Settings /><span>Settings</span></button>
-        <button onClick={() => onActiveItemChange("Trash")}><Trash2 /><span>Trash</span></button>
+        <button className={activeItem === "Storage" ? "active" : ""} aria-current={activeItem === "Storage" ? "page" : undefined} onClick={() => onActiveItemChange("Storage")}><HardDrive /><span>Storage</span></button>
         <div className="local-card"><ShieldCheck /><div><strong>100% Local</strong><p>Your files never leave<br />this device.</p></div></div>
       </div>
     </aside>

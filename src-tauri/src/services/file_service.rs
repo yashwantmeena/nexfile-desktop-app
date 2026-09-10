@@ -15,9 +15,19 @@ pub(crate) fn fetch_files(
     offset: usize,
     limit: usize,
 ) -> crate::models::file_model::FilePage {
-    fetch_matching_files(snapshots, connected, system_metadata_root, media_type, offset, limit, None)
+    fetch_matching_files_with_trash(
+        snapshots,
+        connected,
+        system_metadata_root,
+        media_type,
+        offset,
+        limit,
+        None,
+        false,
+    )
 }
 
+#[allow(dead_code)] // Retained as the default active-files helper for integration tests.
 pub(crate) fn fetch_matching_files(
     snapshots: Vec<DriveMetadata>,
     connected: Vec<DriveInfo>,
@@ -26,6 +36,28 @@ pub(crate) fn fetch_matching_files(
     offset: usize,
     limit: usize,
     indexed_matches: Option<&std::collections::HashSet<(String, String)>>,
+) -> crate::models::file_model::FilePage {
+    fetch_matching_files_with_trash(
+        snapshots,
+        connected,
+        system_metadata_root,
+        media_type,
+        offset,
+        limit,
+        indexed_matches,
+        false,
+    )
+}
+
+pub(crate) fn fetch_matching_files_with_trash(
+    snapshots: Vec<DriveMetadata>,
+    connected: Vec<DriveInfo>,
+    system_metadata_root: &Path,
+    media_type: Option<crate::types::file_type::FileType>,
+    offset: usize,
+    limit: usize,
+    indexed_matches: Option<&std::collections::HashSet<(String, String)>>,
+    trash_only: bool,
 ) -> crate::models::file_model::FilePage {
     use crate::models::file_model::{FetchedFile, FilePage};
     use crate::services::storage_service::{drive_storage_root, is_generated_image_sidecar, read_drive_metadata};
@@ -120,7 +152,14 @@ pub(crate) fn fetch_matching_files(
                 .filter(|name| !name.is_empty())
                 .map(str::to_owned)
                 .unwrap_or_else(|| managed_name.clone());
-            let favorite = managed_metadata.is_some_and(|metadata| metadata.favorite);
+            let favorite = managed_metadata.as_ref().is_some_and(|metadata| metadata.favorite);
+            let is_trashed = managed_metadata.as_ref().is_some_and(|metadata| metadata.is_trashed);
+            let is_deleted = managed_metadata.as_ref().is_some_and(|metadata| metadata.is_deleted);
+            if (trash_only && (!is_trashed || is_deleted))
+                || (!trash_only && (is_trashed || is_deleted))
+            {
+                continue;
+            }
             let collection_names = read_collection_names(&path, &storage_root, &saved.drive_id);
             files.push(FetchedFile {
                 id: format!("{}:{}", saved.drive_id, managed_name),
@@ -134,6 +173,8 @@ pub(crate) fn fetch_matching_files(
                 tags: Vec::new(),
                 collection_names,
                 favorite,
+                is_trashed,
+                is_deleted,
             });
         }
         if incomplete {
@@ -351,6 +392,8 @@ pub(crate) fn replace_sidecar_metadata(
     tags: Option<&[String]>,
     collection_ids: Option<&[String]>,
     favorite: Option<bool>,
+    is_trashed: Option<bool>,
+    is_deleted: Option<bool>,
 ) -> crate::error::AppResult<crate::models::file_model::ManagedFileMetadata> {
     let bytes = std::fs::read(sidecar)?;
     let mut value: serde_json::Value = serde_json::from_slice(&bytes)
@@ -401,6 +444,12 @@ pub(crate) fn replace_sidecar_metadata(
     }
     if let Some(favorite) = favorite {
         object.insert("favorite".into(), serde_json::Value::Bool(favorite));
+    }
+    if let Some(is_trashed) = is_trashed {
+        object.insert("isTrashed".into(), serde_json::Value::Bool(is_trashed));
+    }
+    if let Some(is_deleted) = is_deleted {
+        object.insert("isDeleted".into(), serde_json::Value::Bool(is_deleted));
     }
     let bytes = serde_json::to_vec_pretty(&value).map_err(crate::error::AppError::serialization)?;
     let metadata = serde_json::from_slice(&bytes).map_err(crate::error::AppError::serialization)?;

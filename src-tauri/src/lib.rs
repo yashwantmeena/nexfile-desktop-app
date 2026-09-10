@@ -25,6 +25,7 @@ pub use error::{AppError, ClipError, Florence2Error};
 pub use mappers::file_mapper::file_type_from_path;
 pub use mappers::search_mapper::search_tags;
 pub use models::background_process_model::BackgroundProcess;
+pub use models::delete_model::DeleteFileJob;
 pub use models::file_model::FileTypeCount;
 pub use models::image_processing_model::{
     ClassificationPrediction, ImageBoundingBox, ImageClassificationOutput, ImageLocation,
@@ -73,6 +74,7 @@ pub fn run() {
             commands::file_command::fetch_files,
             commands::file_command::suggest_tags,
             commands::file_command::update_file_metadata,
+            commands::file_command::empty_trash,
             commands::import_command::import_folder,
             commands::import_command::get_background_activities,
             commands::storage_command::get_storage_data,
@@ -90,6 +92,7 @@ pub fn run() {
             tauri::async_runtime::block_on(state.import_worker.close());
             tauri::async_runtime::block_on(state.image_processing_worker.close());
             tauri::async_runtime::block_on(state.indexing_worker.close());
+            tauri::async_runtime::block_on(state.delete_worker.close());
             tauri::async_runtime::block_on(state.imports.close());
             tauri::async_runtime::block_on(state.storage.close());
         }

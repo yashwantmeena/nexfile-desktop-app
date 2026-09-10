@@ -10,6 +10,10 @@ pub struct ManagedFileMetadata {
     #[serde(default)]
     pub favorite: bool,
     #[serde(default)]
+    pub is_trashed: bool,
+    #[serde(default)]
+    pub is_deleted: bool,
+    #[serde(default)]
     pub collection_ids: Vec<String>,
 }
 
@@ -27,6 +31,8 @@ pub struct FetchedFile {
     pub tags: Vec<String>,
     pub collection_names: Vec<String>,
     pub favorite: bool,
+    pub is_trashed: bool,
+    pub is_deleted: bool,
 }
 
 #[derive(Debug, Serialize)]

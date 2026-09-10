@@ -10,6 +10,7 @@ use crate::models::storage_model::DriveMetadata;
 
 use super::database_repository::SqliteDatabase;
 
+#[derive(Clone)]
 pub struct SqliteStorageRepository {
     database: SqliteDatabase,
 }

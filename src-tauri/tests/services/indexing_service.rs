@@ -53,6 +53,8 @@ async fn stores_searchable_image_fields_in_tantivy() {
         created_at_ms: 1_788_331_200_000,
         updated_at_ms: 1_788_331_300_000,
         favorite: true,
+        is_trashed: false,
+        is_deleted: false,
         metadata: ImageMetadata {
             media_type: Some("image/jpeg".to_owned()),
             size_bytes: 245_000,

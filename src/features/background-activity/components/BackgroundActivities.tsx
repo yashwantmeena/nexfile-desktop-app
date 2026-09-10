@@ -1,10 +1,11 @@
-import { Check, CircleAlert, Download, LoaderCircle, Search, Sparkles } from "lucide-react";
+import { Check, CircleAlert, Download, LoaderCircle, Search, Sparkles, Trash2 } from "lucide-react";
 import { useBackgroundActivities } from "../hooks/useBackgroundActivities";
 
 const activityTypes = [
   { label: "Importing files", types: ["import_file", "import_folder"], icon: Download },
   { label: "AI processing", types: ["image_processing"], icon: Sparkles },
   { label: "Indexing files", types: ["indexing"], icon: Search },
+  { label: "Emptying Trash", types: ["delete_file"], icon: Trash2 },
 ] as const;
 
 export function BackgroundActivities() {

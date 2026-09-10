@@ -20,6 +20,8 @@ fn namespaces_categories_objects_and_search_keywords() {
         created_at_ms: 0,
         updated_at_ms: 0,
         favorite: false,
+        is_trashed: false,
+        is_deleted: false,
         metadata: Default::default(),
         caption: None,
         ocr: None,

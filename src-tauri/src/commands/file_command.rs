@@ -22,10 +22,11 @@ pub async fn update_file_metadata(
     tags: Option<Vec<String>>,
     collection_ids: Option<Vec<String>>,
     favorite: Option<bool>,
+    is_trashed: Option<bool>,
 ) -> AppResult<()> {
     let updates_labels =
         name.is_some() || category.is_some() || tags.is_some() || collection_ids.is_some();
-    if !updates_labels && favorite.is_none() {
+    if !updates_labels && favorite.is_none() && is_trashed.is_none() {
         return Err(crate::error::AppError::validation(
             "No file metadata changes were provided.",
         ));
@@ -112,14 +113,14 @@ pub async fn update_file_metadata(
             tags,
             collection_names,
             favorite,
+            is_trashed,
         )
         .await?;
     if labels_updated {
         crate::services::indexing_service::IndexingService::new(state.search.clone())
             .process_path(sidecar)
             .await?
-    } else {
-        let favorite = favorite.expect("favorite-only metadata updates are validated above");
+    } else if let Some(favorite) = favorite {
         let index = state.search.clone();
         tauri::async_runtime::spawn_blocking(move || {
             index.index_filename(
@@ -144,6 +145,7 @@ pub async fn get_file_count(
     tags: Option<Vec<String>>,
     collection: Option<String>,
     favorite_only: Option<bool>,
+    trash_only: Option<bool>,
 ) -> AppResult<FileCountSummary> {
     let _guard = state.imports.metadata_lock().lock().await;
     state
@@ -155,6 +157,7 @@ pub async fn get_file_count(
             tags.unwrap_or_default(),
             collection,
             favorite_only.unwrap_or(false),
+            trash_only.unwrap_or(false),
         )
         .await
 }
@@ -171,6 +174,7 @@ pub async fn fetch_files(
     tags: Option<Vec<String>>,
     collection: Option<String>,
     favorite_only: Option<bool>,
+    trash_only: Option<bool>,
 ) -> AppResult<crate::models::file_model::FilePage> {
     let _guard = state.imports.metadata_lock().lock().await;
     let query = query.unwrap_or_default();
@@ -192,6 +196,7 @@ pub async fn fetch_files(
                 media_type,
                 collection,
                 favorite_only.unwrap_or(false),
+                trash_only.unwrap_or(false),
             )
             .await?
     };
@@ -207,4 +212,10 @@ pub async fn fetch_files(
         }
     }
     Ok(page)
+}
+
+#[tauri::command]
+pub async fn empty_trash(state: State<'_, AppState>) -> AppResult<()> {
+    let _guard = state.imports.metadata_lock().lock().await;
+    state.imports.empty_trash().await
 }

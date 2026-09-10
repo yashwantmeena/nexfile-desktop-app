@@ -14,6 +14,7 @@ use crate::utils::constants::{
 use crate::workers::image_processing_worker::ImageProcessingWorker;
 use crate::workers::import_worker::ImportWorker;
 use crate::workers::indexing_worker::IndexingWorker;
+use crate::workers::delete_worker::DeleteWorker;
 
 use super::config::AppConfig;
 use super::state::AppState;
@@ -49,14 +50,17 @@ pub fn initialize<R: tauri::Runtime>(app: &tauri::App<R>) -> AppResult<()> {
         indexing.clone(),
     );
     let indexing_worker = IndexingWorker::start(&database, indexing);
+    let storage = StorageService::new(storage_repository, config.app_data_dir);
+    let delete_worker = DeleteWorker::start(&database, storage.clone(), indexing_repository.clone());
 
     app.manage(AppState {
         search: indexing_repository,
         image_processing_worker,
         import_worker,
         indexing_worker,
+        delete_worker,
         imports,
-        storage: StorageService::new(storage_repository, config.app_data_dir),
+        storage,
     });
     Ok(())
 }

@@ -321,6 +321,19 @@ impl TantivyIndexingRepository {
         self.reader.reload().map_err(AppError::internal)
     }
 
+    pub fn delete_file(&self, drive: &str, file: &str) -> AppResult<()> {
+        let mut writer = self.writer.lock().map_err(|_| {
+            AppError::internal(std::io::Error::other(
+                "Search index writer lock is poisoned.",
+            ))
+        })?;
+        writer
+            .delete_query(Box::new(self.identity_query(drive, file)))
+            .map_err(AppError::internal)?;
+        writer.commit().map_err(AppError::internal)?;
+        self.reader.reload().map_err(AppError::internal)
+    }
+
     fn identity_query(&self, drive: &str, file: &str) -> BooleanQuery {
         BooleanQuery::new(vec![
             (
