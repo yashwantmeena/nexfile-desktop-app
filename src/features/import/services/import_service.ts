@@ -8,6 +8,14 @@ export interface ImportSelection {
   folder: boolean;
 }
 
+export interface ImportPreview {
+  fileCount: number;
+  totalBytes: number;
+  availableBytes: number;
+  mountedDriveCount: number;
+  canImportAll: boolean;
+}
+
 export async function selectImportFiles(): Promise<ImportSelection | null> {
   const selectedPaths = await open({
     directory: false,
@@ -38,8 +46,8 @@ export async function selectImportFolder(): Promise<ImportSelection | null> {
   return { paths: [path], folder: true };
 }
 
-export const getImportPreviewCount = (selection: ImportSelection) =>
-  invoke<number>("preview_import", { paths: selection.paths, folder: selection.folder });
+export const getImportPreview = (selection: ImportSelection) =>
+  invoke<ImportPreview>("preview_import", { paths: selection.paths, folder: selection.folder });
 
 export const importSelection = (selection: ImportSelection, collectionIds: string[] = []) =>
   selection.folder

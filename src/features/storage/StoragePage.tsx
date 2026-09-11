@@ -5,6 +5,7 @@ import type { AppNavigationItem } from "@/types/navigation";
 import { DriveTable } from "./components/DriveTable";
 import { StorageHeader } from "./components/StorageHeader";
 import { StorageOverview } from "./components/StorageOverview";
+import { useBackgroundActivities } from "@/features/background-activity/hooks/useBackgroundActivities";
 import type { DriveConfigurationUpdate, StorageData, StorageDrive } from "./types/storage";
 import "./storage.css";
 
@@ -40,6 +41,8 @@ export function StoragePage({ activeNavigation, onNavigationChange }: StoragePag
   const [isScanning, setIsScanning] = useState(true);
   const [loadError, setLoadError] = useState<string>();
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const { activities } = useBackgroundActivities();
+  const disableDestructiveActions = activities.length > 0;
 
   const loadStorageData = useCallback(async () => {
     setIsScanning(true);
@@ -201,6 +204,7 @@ export function StoragePage({ activeNavigation, onNavigationChange }: StoragePag
             onRemove={removeDrive}
             onMovePriority={movePriority}
             onLimitChange={changeLimit}
+            disableDestructiveActions={disableDestructiveActions}
           />
           <DriveTable
             title="Unmounted Drives"
@@ -213,6 +217,7 @@ export function StoragePage({ activeNavigation, onNavigationChange }: StoragePag
             description="Saved drives that are not currently connected."
             drives={unavailableDrives}
             onRemove={removeDrive}
+            disableDestructiveActions={disableDestructiveActions}
           />
         </div>
       </main>

@@ -3,14 +3,15 @@ use tauri::State;
 use crate::app::state::AppState;
 use crate::error::AppResult;
 use crate::models::background_process_model::BackgroundProcess;
+use crate::models::import_model::ImportPreview;
 
 #[tauri::command]
 pub async fn preview_import(
     paths: Vec<String>,
     folder: bool,
     state: State<'_, AppState>,
-) -> AppResult<u64> {
-    state.imports.preview_count(paths, folder).await
+) -> AppResult<ImportPreview> {
+    state.imports.preview(paths, folder).await
 }
 
 #[tauri::command]

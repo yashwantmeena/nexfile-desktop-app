@@ -123,6 +123,7 @@
 .import-collection-name svg { width:16px; flex:none; color:#6485b2; }
 .import-no-collections { margin:0; padding:15px; border:1px dashed #d7dfe9; border-radius:10px; color:#8390a2; background:#fbfcfe; font-size:12px; line-height:18px; }
 .import-preview-error { margin:16px 0 0; padding:10px 12px; border:1px solid #f0c8cd; border-radius:9px; color:#a3313e; background:#fff6f7; font-size:12px; line-height:18px; }
+.import-preview-capacity-warning { margin:16px 0 0; padding:10px 12px; border:1px solid #f2d4a6; border-radius:9px; color:#8a5710; background:#fff9ed; font-size:12px; line-height:18px; }
 .import-preview-footer { margin-top:26px; display:flex; justify-content:flex-end; gap:8px; }
 .import-preview-footer button { height:38px; padding:0 15px; border:1px solid #dce2ea; border-radius:9px; color:#536176; background:#fff; font-size:12.5px; font-weight:620; cursor:pointer; }
 .import-preview-footer button:hover:not(:disabled) { background:#f7f9fc; }

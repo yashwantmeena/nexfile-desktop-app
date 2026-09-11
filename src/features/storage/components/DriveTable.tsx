@@ -8,6 +8,7 @@ interface DriveTableProps {
   onRemove?:(id:string)=>void;
   onMovePriority?:(id:string,direction:"up"|"down")=>void;
   onLimitChange?:(id:string,limitBytes:number|undefined)=>void;
+  disableDestructiveActions?:boolean;
 }
 
 function formatCapacity(value: number | undefined): string {
@@ -74,7 +75,7 @@ function LimitEditor({ drive, onLimitChange }: {
   );
 }
 
-export function DriveTable({ title, description, drives, onMount, onUnmount, onRemove, onMovePriority, onLimitChange }: DriveTableProps) {
+export function DriveTable({ title, description, drives, onMount, onUnmount, onRemove, onMovePriority, onLimitChange, disableDestructiveActions = false }: DriveTableProps) {
   useEffect(() => {
     const closeOpenMenus = (event: PointerEvent) => {
       if (!(event.target instanceof Node)) return;
@@ -111,7 +112,7 @@ export function DriveTable({ title, description, drives, onMount, onUnmount, onR
           <strong>{drive.isMounted ? formatCapacity(drive.availableBytes) : "—"}</strong>
           {drive.isMounted ? <LimitEditor drive={drive} onLimitChange={onLimitChange} /> : <span className="limit-empty">—</span>}
           {drive.isMounted ? <div className="priority-control"><button disabled={index===0} onClick={()=>onMovePriority?.(drive.driveId,"up")} aria-label={`Move ${drive.partitionName} up`} title="Move up"><ArrowUp /></button><button disabled={index===drives.length-1} onClick={()=>onMovePriority?.(drive.driveId,"down")} aria-label={`Move ${drive.partitionName} down`} title="Move down"><ArrowDown /></button></div> : <span className="priority-empty">—</span>}
-          <div className="drive-actions">{drive.isMounted ? <details className="drive-action-menu"><summary aria-label={`Actions for ${drive.partitionName}`} title="Drive actions"><EllipsisVertical /></summary><div className="drive-action-options"><button onClick={(event)=>{closeActionMenu(event.currentTarget);onUnmount?.(drive.driveId);}}><Unplug />Unmount</button><button className="delete-drive-action" onClick={(event)=>{closeActionMenu(event.currentTarget);onRemove?.(drive.driveId);}}><Trash2 />Remove / Delete</button></div></details> : drive.isConnected ? <details className="drive-action-menu"><summary aria-label={`Actions for ${drive.partitionName}`} title="Drive actions"><EllipsisVertical /></summary><div className="drive-action-options"><button onClick={(event)=>{closeActionMenu(event.currentTarget);onMount?.(drive.deviceId,drive.partitionName);}}><Plug />Mount</button></div></details> : <details className="drive-action-menu"><summary aria-label={`Actions for ${drive.partitionName}`} title="Drive actions"><EllipsisVertical /></summary><div className="drive-action-options"><button className="delete-drive-action" onClick={(event)=>{closeActionMenu(event.currentTarget);onRemove?.(drive.driveId);}}><Trash2 />Remove / Delete</button></div></details>}</div>
+          <div className="drive-actions">{drive.isMounted ? <details className="drive-action-menu"><summary aria-label={`Actions for ${drive.partitionName}`} title="Drive actions"><EllipsisVertical /></summary><div className="drive-action-options"><button disabled={disableDestructiveActions} title={disableDestructiveActions ? "Wait for background work to finish" : undefined} onClick={(event)=>{closeActionMenu(event.currentTarget);onUnmount?.(drive.driveId);}}><Unplug />Unmount</button><button className="delete-drive-action" disabled={disableDestructiveActions} title={disableDestructiveActions ? "Wait for background work to finish" : undefined} onClick={(event)=>{closeActionMenu(event.currentTarget);onRemove?.(drive.driveId);}}><Trash2 />Remove / Delete</button></div></details> : drive.isConnected ? <details className="drive-action-menu"><summary aria-label={`Actions for ${drive.partitionName}`} title="Drive actions"><EllipsisVertical /></summary><div className="drive-action-options"><button onClick={(event)=>{closeActionMenu(event.currentTarget);onMount?.(drive.deviceId,drive.partitionName);}}><Plug />Mount</button></div></details> : <details className="drive-action-menu"><summary aria-label={`Actions for ${drive.partitionName}`} title="Drive actions"><EllipsisVertical /></summary><div className="drive-action-options"><button className="delete-drive-action" disabled={disableDestructiveActions} title={disableDestructiveActions ? "Wait for background work to finish" : undefined} onClick={(event)=>{closeActionMenu(event.currentTarget);onRemove?.(drive.driveId);}}><Trash2 />Remove / Delete</button></div></details>}</div>
         </div>)}
       </div></div>
     </section>

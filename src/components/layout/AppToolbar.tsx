@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, FileText, FileUp, FolderUp, Sparkles, Tag } from "lucide-react";
 import { useCollections } from "./CollectionsProvider";
-import { getImportErrorMessage, getImportPreviewCount, importSelection, selectImportFiles, selectImportFolder, type ImportSelection } from "@/features/import/services/import_service";
+import { getImportErrorMessage, getImportPreview, importSelection, selectImportFiles, selectImportFolder, type ImportPreview, type ImportSelection } from "@/features/import/services/import_service";
 import { TagSearchInput } from "./TagSearchInput";
 import { ImportPreviewDialog } from "./ImportPreviewDialog";
 
@@ -28,7 +28,7 @@ export function AppToolbar({ query, onQueryChange, onQuerySubmit, searchMode, on
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState<string>();
   const [importSelectionState, setImportSelectionState] = useState<ImportSelection | null>(null);
-  const [importCount, setImportCount] = useState<number | null>(null);
+  const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [importPreviewLoading, setImportPreviewLoading] = useState(false);
   const [importPreviewError, setImportPreviewError] = useState<string>();
   const searchModeRef = useRef<HTMLDivElement>(null);
@@ -66,10 +66,10 @@ export function AppToolbar({ query, onQueryChange, onQuerySubmit, searchMode, on
       if (!selection) return;
       setImportSelectionState(selection);
       previewOpened = true;
-      setImportCount(null);
+      setImportPreview(null);
       setImportPreviewLoading(true);
       setImportPreviewError(undefined);
-      setImportCount(await getImportPreviewCount(selection));
+      setImportPreview(await getImportPreview(selection));
     } catch (error) {
       if (previewOpened) setImportPreviewError(getImportErrorMessage(error));
       else setImportError(getImportErrorMessage(error));
@@ -146,7 +146,7 @@ export function AppToolbar({ query, onQueryChange, onQuerySubmit, searchMode, on
         </div>}
         {importError && <p className="import-error" role="alert">{importError}</p>}
       </div>
-      {importSelectionState && <ImportPreviewDialog selection={importSelectionState} count={importCount} counting={importPreviewLoading} error={importPreviewError} collections={collections} busy={isImporting} onClose={() => { if (!isImporting) setImportSelectionState(null); }} onConfirm={confirmImport} />}
+      {importSelectionState && <ImportPreviewDialog selection={importSelectionState} preview={importPreview} counting={importPreviewLoading} error={importPreviewError} collections={collections} busy={isImporting} onClose={() => { if (!isImporting) setImportSelectionState(null); }} onConfirm={confirmImport} />}
     </header>
   );
 }

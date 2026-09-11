@@ -13,7 +13,7 @@ use crate::error::{AppError, AppResult, CounterOverflow};
 use crate::models::background_process_model::BackgroundProcess;
 use crate::models::file_model::ManagedFileMetadata;
 use crate::models::image_processing_model::ImageProcessingJob;
-use crate::models::import_model::ImportFileJob;
+use crate::models::import_model::{ImportFileJob, ImportPreview};
 use crate::models::storage_model::{DriveInfo, DriveMetadata};
 use crate::repositories::background_processing_repository::SqliteBackgroundProcessingRepository;
 use crate::repositories::database_repository::SqliteDatabase;
@@ -42,48 +42,161 @@ pub struct ImportService {
 }
 
 impl ImportService {
-    pub(crate) fn collection_pool(&self) -> &SqlitePool { &self.queue_pool }
+    pub(crate) fn collection_pool(&self) -> &SqlitePool {
+        &self.queue_pool
+    }
 
     pub(crate) fn background_processes(&self) -> &SqliteBackgroundProcessingRepository {
         &self.repository
     }
 
-    pub async fn preview_count(&self, paths: Vec<String>, folder: bool) -> AppResult<u64> {
+    pub async fn preview(&self, paths: Vec<String>, folder: bool) -> AppResult<ImportPreview> {
         let paths = if folder {
-            let path = paths.first().ok_or_else(|| AppError::validation("Select a folder."))?.clone();
+            let path = paths
+                .first()
+                .ok_or_else(|| AppError::validation("Select a folder."))?
+                .clone();
             tauri::async_runtime::spawn_blocking(move || collect_folder_files(Path::new(&path)))
                 .await
                 .map_err(AppError::internal)??
         } else {
             validate_file_paths(paths)?
         };
-        u64::try_from(paths.len()).map_err(|_| AppError::validation("Too many files were selected."))
+        let file_sizes = tauri::async_runtime::spawn_blocking(move || {
+            paths
+                .iter()
+                .map(|path| std::fs::metadata(path).map(|metadata| metadata.len()))
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .await
+        .map_err(AppError::internal)??;
+        let file_count = u64::try_from(file_sizes.len())
+            .map_err(|_| AppError::validation("Too many files were selected."))?;
+        let total_bytes = file_sizes
+            .iter()
+            .try_fold(0_u64, |total, size| {
+                total.checked_add(*size).ok_or(CounterOverflow)
+            })
+            .map_err(AppError::internal)?;
+
+        let saved_drives = self.storage_repository.list().await?;
+        let system_metadata_root = self.system_metadata_root.clone();
+        let drives = tauri::async_runtime::spawn_blocking(get_drives)
+            .await
+            .map_err(AppError::internal)?;
+        let mut capacities = drives
+            .into_iter()
+            .filter_map(|drive| {
+                let on_drive = read_drive_metadata(&drive, &system_metadata_root)?;
+                let saved = saved_drives
+                    .iter()
+                    .find(|saved| saved.drive_id == on_drive.drive_id && saved.is_mounted)?;
+                Some((saved.priority, available_capacity(&drive, saved)))
+            })
+            .collect::<Vec<_>>();
+        capacities.sort_by_key(|(priority, _)| *priority);
+        let mounted_drive_count = u64::try_from(capacities.len())
+            .map_err(|_| AppError::validation("Too many mounted drives."))?;
+        let available_bytes = capacities
+            .iter()
+            .try_fold(0_u64, |total, (_, capacity)| {
+                total.checked_add(*capacity).ok_or(CounterOverflow)
+            })
+            .map_err(AppError::internal)?;
+        let mut remaining = capacities
+            .into_iter()
+            .map(|(_, capacity)| capacity)
+            .collect::<Vec<_>>();
+        let can_import_all = file_sizes.into_iter().all(|size| {
+            let Some(capacity) = remaining.iter_mut().find(|capacity| **capacity >= size) else {
+                return false;
+            };
+            *capacity -= size;
+            true
+        });
+
+        Ok(ImportPreview {
+            file_count,
+            total_bytes,
+            available_bytes,
+            mounted_drive_count,
+            can_import_all,
+        })
     }
 
-    pub async fn import_with_collections(&self, paths: Vec<String>, folder: bool, ids: Vec<String>) -> AppResult<BackgroundProcess> {
-        let names = crate::repositories::collection_repository::selected_names(&self.queue_pool, &ids).await?;
+    pub async fn import_with_collections(
+        &self,
+        paths: Vec<String>,
+        folder: bool,
+        ids: Vec<String>,
+    ) -> AppResult<BackgroundProcess> {
+        let names =
+            crate::repositories::collection_repository::selected_names(&self.queue_pool, &ids)
+                .await?;
         let paths = if folder {
-            let path = paths.first().ok_or_else(|| AppError::validation("Select a folder."))?.clone();
-            tauri::async_runtime::spawn_blocking(move || collect_folder_files(Path::new(&path))).await.map_err(AppError::internal)??
-        } else { validate_file_paths(paths)? };
-        self.queue_files_with_collections(paths, if folder { IMPORT_FOLDER_PROCESS_TYPE } else { IMPORT_FILE_PROCESS_TYPE }, names).await
+            let path = paths
+                .first()
+                .ok_or_else(|| AppError::validation("Select a folder."))?
+                .clone();
+            tauri::async_runtime::spawn_blocking(move || collect_folder_files(Path::new(&path)))
+                .await
+                .map_err(AppError::internal)??
+        } else {
+            validate_file_paths(paths)?
+        };
+        self.queue_files_with_collections(
+            paths,
+            if folder {
+                IMPORT_FOLDER_PROCESS_TYPE
+            } else {
+                IMPORT_FILE_PROCESS_TYPE
+            },
+            names,
+        )
+        .await
     }
 
-    async fn save_selected_collections(&self, job: &ImportFileJob, root: &Path, drive_id: &str, destination: &Path) -> AppResult<()> {
-        let encoded: Option<String> = sqlx::query_scalar("SELECT collections FROM background_processes WHERE process_id = ?").bind(&job.process_id).fetch_optional(&self.queue_pool).await.map_err(AppError::database)?;
+    async fn save_selected_collections(
+        &self,
+        job: &ImportFileJob,
+        root: &Path,
+        drive_id: &str,
+        destination: &Path,
+    ) -> AppResult<()> {
+        let encoded: Option<String> =
+            sqlx::query_scalar("SELECT collections FROM background_processes WHERE process_id = ?")
+                .bind(&job.process_id)
+                .fetch_optional(&self.queue_pool)
+                .await
+                .map_err(AppError::database)?;
         let mut names: Vec<String> = match encoded {
             Some(encoded) => serde_json::from_str(&encoded).map_err(AppError::serialization)?,
             None => Vec::new(),
         };
         // Inherit only from the known source file, without scanning source or destination drives.
-        if let Some(files) = job.path.parent().filter(|path| path.file_name().and_then(|name| name.to_str()) == Some(IMPORTED_FILES_DIRECTORY)) {
+        if let Some(files) = job.path.parent().filter(|path| {
+            path.file_name().and_then(|name| name.to_str()) == Some(IMPORTED_FILES_DIRECTORY)
+        }) {
             if let Some(source_root) = files.parent() {
-                if let Some(drive) = super::storage_service::read_metadata(&source_root.join(crate::utils::constants::DRIVE_METADATA_FILE)) {
-                    let ids = super::file_service::sidecar_collection_ids(&classification_output_path(&job.path))?;
+                if let Some(drive) = super::storage_service::read_metadata(
+                    &source_root.join(crate::utils::constants::DRIVE_METADATA_FILE),
+                ) {
+                    let ids = super::file_service::sidecar_collection_ids(
+                        &classification_output_path(&job.path),
+                    )?;
                     if !ids.is_empty() {
-                        let metadata = super::collection_service::read(source_root, &drive.drive_id)?;
+                        let metadata =
+                            super::collection_service::read(source_root, &drive.drive_id)?;
                         for id in ids {
-                            let item = metadata.collections.iter().find(|item| item.id == id).ok_or_else(|| AppError::validation("Source file references an unknown collection."))?;
+                            let item = metadata
+                                .collections
+                                .iter()
+                                .find(|item| item.id == id)
+                                .ok_or_else(|| {
+                                    AppError::validation(
+                                        "Source file references an unknown collection.",
+                                    )
+                                })?;
                             names.push(item.name.clone());
                         }
                     }
@@ -100,12 +213,22 @@ impl ImportService {
         self
     }
 
-    async fn index_filename(&self, drive: &str, job: &ImportFileJob, destination: &Path) -> AppResult<()> {
+    async fn index_filename(
+        &self,
+        drive: &str,
+        job: &ImportFileJob,
+        destination: &Path,
+    ) -> AppResult<()> {
         if let Some(search) = &self.search {
             let search = search.clone();
             let drive = drive.to_owned();
             let file = job.file_id.clone();
-            let name = job.path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+            let name = job
+                .path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned();
             let sidecar = crate::services::file_service::read_managed_file_metadata(
                 &classification_output_path(destination),
             )?;
@@ -114,8 +237,8 @@ impl ImportService {
             tauri::async_runtime::spawn_blocking(move || {
                 search.index_filename(&drive, &file, &name, &collection_ids, favorite)
             })
-                .await
-                .map_err(AppError::internal)??;
+            .await
+            .map_err(AppError::internal)??;
         }
         Ok(())
     }
@@ -170,13 +293,22 @@ impl ImportService {
         paths: Vec<PathBuf>,
         process_type: &str,
     ) -> AppResult<BackgroundProcess> {
-        self.queue_files_with_collections(paths, process_type, Vec::new()).await
+        self.queue_files_with_collections(paths, process_type, Vec::new())
+            .await
     }
 
-    async fn queue_files_with_collections(&self, paths: Vec<PathBuf>, process_type: &str, names: Vec<String>) -> AppResult<BackgroundProcess> {
+    async fn queue_files_with_collections(
+        &self,
+        paths: Vec<PathBuf>,
+        process_type: &str,
+        names: Vec<String>,
+    ) -> AppResult<BackgroundProcess> {
         let total_items = u64::try_from(paths.len())
             .map_err(|_| AppError::validation("Too many files were selected."))?;
-        let process = self.repository.acquire_import(process_type, total_items, &names).await?;
+        let process = self
+            .repository
+            .acquire_import(process_type, total_items, &names)
+            .await?;
         let process_id = process.process_id.clone();
         let mut jobs = stream::iter(paths.into_iter().map(|path| {
             Task::builder(ImportFileJob {
@@ -191,7 +323,10 @@ impl ImportService {
             IMPORT_FILE_QUEUE,
         );
         if let Err(error) = queue.push_all(&mut jobs).await {
-            let _ = self.repository.rollback_items(&process.process_id, total_items).await;
+            let _ = self
+                .repository
+                .rollback_items(&process.process_id, total_items)
+                .await;
             return Err(AppError::database(error));
         }
         Ok(process)
@@ -245,12 +380,16 @@ impl ImportService {
                     )));
                 }
                 write_import_sidecar(&job, &destination)?;
-                self.save_selected_collections(&job, &drive_storage_root(&drive, &self.system_metadata_root), &saved.drive_id, &destination).await?;
-                let (file_count, app_used_bytes) =
-                    calculate_managed_statistics(&files_directory)?;
+                self.save_selected_collections(
+                    &job,
+                    &drive_storage_root(&drive, &self.system_metadata_root),
+                    &saved.drive_id,
+                    &destination,
+                )
+                .await?;
+                let (file_count, app_used_bytes) = calculate_managed_statistics(&files_directory)?;
                 saved.file_count = file_count;
                 saved.app_used_bytes = app_used_bytes;
-
 
                 self.storage_repository
                     .update(&saved, |updated| {
@@ -258,7 +397,8 @@ impl ImportService {
                     })
                     .await?;
                 drop(_metadata_guard);
-                self.index_filename(&saved.drive_id, &job, &destination).await?;
+                self.index_filename(&saved.drive_id, &job, &destination)
+                    .await?;
                 self.publish_for_image_processing(&destination).await?;
                 return Ok(());
             }
@@ -292,7 +432,13 @@ impl ImportService {
             let _metadata_guard = self.metadata_lock.lock().await;
             std::fs::rename(&temporary, &destination)?;
             write_import_sidecar(&job, &destination)?;
-                self.save_selected_collections(&job, &drive_storage_root(&drive, &self.system_metadata_root), &saved.drive_id, &destination).await?;
+            self.save_selected_collections(
+                &job,
+                &drive_storage_root(&drive, &self.system_metadata_root),
+                &saved.drive_id,
+                &destination,
+            )
+            .await?;
             saved.file_count = saved
                 .file_count
                 .checked_add(1)
@@ -302,14 +448,14 @@ impl ImportService {
                 .checked_add(file_size)
                 .ok_or_else(|| AppError::internal(CounterOverflow))?;
 
-
             self.storage_repository
                 .update(&saved, |updated| {
                     write_drive_metadata(&drive, &self.system_metadata_root, updated)
                 })
                 .await?;
             drop(_metadata_guard);
-            self.index_filename(&saved.drive_id, &job, &destination).await?;
+            self.index_filename(&saved.drive_id, &job, &destination)
+                .await?;
             self.publish_for_image_processing(&destination).await?;
             return Ok(());
         }
@@ -327,7 +473,10 @@ impl ImportService {
             &self.queue_pool,
             IMAGE_PROCESSING_QUEUE,
         );
-        let process = self.repository.acquire_stage(IMAGE_PROCESSING_PROCESS_TYPE, 1).await?;
+        let process = self
+            .repository
+            .acquire_stage(IMAGE_PROCESSING_PROCESS_TYPE, 1)
+            .await?;
         if let Err(error) = queue
             .push(ImageProcessingJob {
                 process_id: process.process_id.clone(),
@@ -412,12 +561,19 @@ fn validate_job(job: &ImportFileJob) -> AppResult<()> {
 }
 
 fn can_fit(drive: &DriveInfo, metadata: &DriveMetadata, file_size: i64) -> bool {
-    let physical_available = drive.total_bytes.saturating_sub(drive.system_used_bytes);
+    u64::try_from(file_size).is_ok_and(|file_size| available_capacity(drive, metadata) >= file_size)
+}
+
+fn available_capacity(drive: &DriveInfo, metadata: &DriveMetadata) -> u64 {
+    let physical_available = drive
+        .total_bytes
+        .saturating_sub(drive.system_used_bytes)
+        .max(0);
     let app_available = metadata
         .app_limit_bytes
-        .map(|limit| limit.saturating_sub(metadata.app_used_bytes))
+        .map(|limit| limit.saturating_sub(metadata.app_used_bytes).max(0))
         .unwrap_or(physical_available);
-    file_size <= physical_available && file_size <= app_available
+    u64::try_from(physical_available.min(app_available)).unwrap_or(0)
 }
 
 fn destination_name(job: &ImportFileJob) -> OsString {
@@ -468,11 +624,7 @@ fn write_import_sidecar(job: &ImportFileJob, destination: &Path) -> AppResult<()
     Ok(())
 }
 
-fn copy_to_temporary(
-    source: &Path,
-    temporary: &Path,
-    expected_size: u64,
-) -> std::io::Result<()> {
+fn copy_to_temporary(source: &Path, temporary: &Path, expected_size: u64) -> std::io::Result<()> {
     let copied = std::fs::copy(source, temporary)?;
     if copied != expected_size {
         let _ = std::fs::remove_file(temporary);
@@ -495,26 +647,51 @@ mod concurrency_tests {
         std::fs::create_dir_all(&root).unwrap();
         let source = root.join("notes.txt");
         std::fs::write(&source, b"complete contents").unwrap();
-        let database = SqliteDatabase::open(root.join("test.sqlite3")).await.unwrap();
-        let storage = StorageService::new(SqliteStorageRepository::new(database.clone()), root.clone());
-        let partition = storage.get_storage_data().await.unwrap().drives
-            .into_iter().find(|drive| drive.is_system).unwrap().partition_name;
+        let database = SqliteDatabase::open(root.join("test.sqlite3"))
+            .await
+            .unwrap();
+        let storage =
+            StorageService::new(SqliteStorageRepository::new(database.clone()), root.clone());
+        let partition = storage
+            .get_storage_data()
+            .await
+            .unwrap()
+            .drives
+            .into_iter()
+            .find(|drive| drive.is_system)
+            .unwrap()
+            .partition_name;
         storage.mount_drive(None, &partition).await.unwrap();
         let imports = ImportService::new(
             SqliteBackgroundProcessingRepository::new(database.clone()),
-            SqliteStorageRepository::new(database.clone()), &database, root.clone(),
-        ).await.unwrap();
-        let catalog = crate::repositories::collection_repository::save(database.pool(), None, "Travel").await.unwrap();
+            SqliteStorageRepository::new(database.clone()),
+            &database,
+            root.clone(),
+        )
+        .await
+        .unwrap();
+        let catalog =
+            crate::repositories::collection_repository::save(database.pool(), None, "Travel")
+                .await
+                .unwrap();
         assert_eq!(catalog[0].id.len(), 14);
         assert!(!root.join("nexfile/collections.json").exists());
-        assert!(crate::repositories::collection_repository::save(database.pool(), None, "travel").await.is_err());
+        assert!(
+            crate::repositories::collection_repository::save(database.pool(), None, "travel")
+                .await
+                .is_err()
+        );
         sqlx::query("INSERT INTO background_processes (process_id, process_type, status, collections) VALUES (?1, 'import_file', 'queued', ?2)").bind("test").bind("[\"Travel\"]").execute(database.pool()).await.unwrap();
         let guard = imports.metadata_lock().lock().await;
         let worker = imports.clone();
         let task = tauri::async_runtime::spawn(async move {
-            worker.consume(ImportFileJob {
-                process_id: "test".into(), file_id: "abcdefghijklmn".into(), path: source,
-            }).await
+            worker
+                .consume(ImportFileJob {
+                    process_id: "test".into(),
+                    file_id: "abcdefghijklmn".into(),
+                    path: source,
+                })
+                .await
         });
         let directory = root.join("nexfile").join("files");
         let staged = directory.join(".abcdefghijklmn.importing");
@@ -526,42 +703,83 @@ mod concurrency_tests {
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;
             }
-        }).await;
-        assert!(copied.is_ok(), "copy must proceed while a browser holds the metadata lock");
-        assert!(!destination.exists(), "staged bytes must not be published yet");
+        })
+        .await;
+        assert!(
+            copied.is_ok(),
+            "copy must proceed while a browser holds the metadata lock"
+        );
+        assert!(
+            !destination.exists(),
+            "staged bytes must not be published yet"
+        );
         let page = storage.fetch_files(0, 60, None).await.unwrap();
-        assert!(page.files.is_empty(), "browsing must exclude the staged file");
+        assert!(
+            page.files.is_empty(),
+            "browsing must exclude the staged file"
+        );
         drop(guard);
         task.await.unwrap().unwrap();
         assert_eq!(std::fs::read(&destination).unwrap(), b"complete contents");
         assert!(!staged.exists());
-        let metadata = super::super::collection_service::read(&root.join("nexfile"), &storage.get_storage_data().await.unwrap().drives.into_iter().find(|drive| drive.is_system).unwrap().drive_id).unwrap();
+        let metadata = super::super::collection_service::read(
+            &root.join("nexfile"),
+            &storage
+                .get_storage_data()
+                .await
+                .unwrap()
+                .drives
+                .into_iter()
+                .find(|drive| drive.is_system)
+                .unwrap()
+                .drive_id,
+        )
+        .unwrap();
         assert_eq!(metadata.collections[0].name, "Travel");
-        assert_eq!(super::super::file_service::sidecar_collection_ids(&classification_output_path(&destination)).unwrap(), vec![metadata.collections[0].id.clone()]);
+        assert_eq!(
+            super::super::file_service::sidecar_collection_ids(&classification_output_path(
+                &destination
+            ))
+            .unwrap(),
+            vec![metadata.collections[0].id.clone()]
+        );
         assert_ne!(metadata.collections[0].id, catalog[0].id);
-        assert_eq!(storage.fetch_files(0, 60, None).await.unwrap().files.len(), 1);
+        assert_eq!(
+            storage.fetch_files(0, 60, None).await.unwrap().files.len(),
+            1
+        );
         imports.close().await;
         storage.close().await;
         std::fs::remove_dir_all(root).unwrap();
     }
 }
 
-
-
-
-
-
-pub(crate) fn assign_import_collections(root: &Path, drive_id: &str, destination: &Path, names: &[String]) -> AppResult<()> {
-    if names.is_empty() { return Ok(()); }
+pub(crate) fn assign_import_collections(
+    root: &Path,
+    drive_id: &str,
+    destination: &Path,
+    names: &[String],
+) -> AppResult<()> {
+    if names.is_empty() {
+        return Ok(());
+    }
     let mut metadata = super::collection_service::read(root, drive_id)?;
     let count = metadata.collections.len();
     let mut ids = Vec::new();
     for name in names {
-        let existing = metadata.collections.iter().find(|item| item.name.to_lowercase() == name.trim().to_lowercase()).map(|item| item.id.clone());
-        ids.push(match existing { Some(id) => id, None => metadata.create(name)? });
+        let existing = metadata
+            .collections
+            .iter()
+            .find(|item| item.name.to_lowercase() == name.trim().to_lowercase())
+            .map(|item| item.id.clone());
+        ids.push(match existing {
+            Some(id) => id,
+            None => metadata.create(name)?,
+        });
     }
     // Definitions must exist before the file starts referencing them.
-    if metadata.collections.len() != count { super::collection_service::save(root, &metadata)?; }
+    if metadata.collections.len() != count {
+        super::collection_service::save(root, &metadata)?;
+    }
     super::file_service::add_sidecar_collections(destination, &ids)
 }
-
