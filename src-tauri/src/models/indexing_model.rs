@@ -3,10 +3,37 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct IndexingJob {
-    pub process_id: String,
-    pub path: PathBuf,
+#[serde(tag = "operation", rename_all = "camelCase")]
+pub enum IndexingJob {
+    CreateIndexBatch {
+        process_id: String,
+        paths: Vec<PathBuf>,
+    },
+    DeleteIndexBatch {
+        process_id: String,
+        drive_id: String,
+        file_ids: Vec<String>,
+    },
+}
+
+impl IndexingJob {
+    pub fn process_id(&self) -> &str {
+        match self {
+            Self::CreateIndexBatch { process_id, .. }
+            | Self::DeleteIndexBatch { process_id, .. } => {
+                process_id
+            }
+        }
+    }
+
+    pub fn subject(&self) -> String {
+        match self {
+            Self::CreateIndexBatch { paths, .. } => format!("{} files", paths.len()),
+            Self::DeleteIndexBatch { drive_id, file_ids, .. } => {
+                format!("{drive_id}: {} files", file_ids.len())
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

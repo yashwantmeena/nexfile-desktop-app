@@ -148,6 +148,30 @@ fn counts_indexed_matches_across_types_search_and_tags() {
 }
 
 #[test]
+fn deletes_every_indexed_document_for_a_removed_drive() {
+    let root = temporary_directory("delete-drive");
+    let repository = TantivyIndexingRepository::open(&root).unwrap();
+    repository
+        .index_filename("removed-drive", "one", "one.jpg", &[], false)
+        .unwrap();
+    repository
+        .index_filename("removed-drive", "two", "two.jpg", &[], false)
+        .unwrap();
+    repository
+        .index_filename("retained-drive", "three", "three.jpg", &[], false)
+        .unwrap();
+
+    repository.delete_drive("removed-drive").unwrap();
+
+    assert_eq!(
+        repository.search_files("", "tags", &[], None).unwrap(),
+        std::collections::HashSet::from([("retained-drive".to_owned(), "three".to_owned())])
+    );
+    drop(repository);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn suggests_unique_live_prefix_tags_with_limits_and_refresh() {
     use nexfile_desktop_app_lib::IndexDocument;
     let root = temporary_directory("tag-suggestions");

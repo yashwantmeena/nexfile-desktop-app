@@ -133,65 +133,75 @@ impl TantivyIndexingRepository {
     }
 
     pub fn upsert(&self, source: IndexDocument) -> AppResult<()> {
-        let mut document = TantivyDocument::default();
-        document.add_text(self.fields.file_id, &source.file_id);
-        document.add_text(self.fields.drive_id, &source.drive_id);
-        document.add_u64(self.fields.created_at_ms, source.created_at_ms);
-        document.add_u64(self.fields.updated_at_ms, source.updated_at_ms);
-        if let Some(media_type) = source.media_type {
-            document.add_text(self.fields.media_type, media_type);
-        }
-        document.add_u64(self.fields.size_bytes, source.size_bytes);
-        if let Some(latitude) = source.latitude {
-            document.add_f64(self.fields.latitude, latitude);
-        }
-        if let Some(longitude) = source.longitude {
-            document.add_f64(self.fields.longitude, longitude);
-        }
-        for label in source.object_labels {
-            document.add_text(self.fields.object_labels, label);
-        }
-        for keyword in source.search_keywords {
-            document.add_text(self.fields.search_keywords, keyword);
-        }
-        for label in source.secondary_labels {
-            document.add_text(self.fields.secondary_labels, label);
-        }
-        for category in source.categories {
-            document.add_text(self.fields.categories, category);
-        }
-        for collection_id in source.collection_ids {
-            if !collection_id.is_empty() {
-                document.add_text(self.fields.collection_ids, collection_id);
-            }
-        }
-        document.add_bool(self.fields.favorite, source.favorite);
+        self.upsert_batch(vec![source])
+    }
 
+    /// Replaces each file's existing identity entry before adding its current document, then
+    /// commits the bounded batch once. This keeps indexing idempotent across drive mounts.
+    pub fn upsert_batch(&self, sources: Vec<IndexDocument>) -> AppResult<()> {
+        if sources.is_empty() {
+            return Ok(());
+        }
         let mut writer = self.writer.lock().map_err(|_| {
             AppError::internal(std::io::Error::other(
                 "Tantivy index writer lock is poisoned.",
             ))
         })?;
-        let name = if source.name.is_empty() {
-            self.existing_document(&source.drive_id, &source.file_id)?
-                .and_then(|doc| {
-                    doc.get_first(self.fields.name)
-                        .and_then(|value| value.as_str())
-                        .map(str::to_owned)
-                })
-                .unwrap_or_default()
-        } else {
-            source.name.trim().to_lowercase()
-        };
-        if !name.is_empty() {
-            document.add_text(self.fields.name, name);
+        for source in sources {
+            let mut document = TantivyDocument::default();
+            document.add_text(self.fields.file_id, &source.file_id);
+            document.add_text(self.fields.drive_id, &source.drive_id);
+            document.add_u64(self.fields.created_at_ms, source.created_at_ms);
+            document.add_u64(self.fields.updated_at_ms, source.updated_at_ms);
+            if let Some(media_type) = source.media_type {
+                document.add_text(self.fields.media_type, media_type);
+            }
+            document.add_u64(self.fields.size_bytes, source.size_bytes);
+            if let Some(latitude) = source.latitude {
+                document.add_f64(self.fields.latitude, latitude);
+            }
+            if let Some(longitude) = source.longitude {
+                document.add_f64(self.fields.longitude, longitude);
+            }
+            for label in source.object_labels {
+                document.add_text(self.fields.object_labels, label);
+            }
+            for keyword in source.search_keywords {
+                document.add_text(self.fields.search_keywords, keyword);
+            }
+            for label in source.secondary_labels {
+                document.add_text(self.fields.secondary_labels, label);
+            }
+            for category in source.categories {
+                document.add_text(self.fields.categories, category);
+            }
+            for collection_id in source.collection_ids {
+                if !collection_id.is_empty() {
+                    document.add_text(self.fields.collection_ids, collection_id);
+                }
+            }
+            document.add_bool(self.fields.favorite, source.favorite);
+            let name = if source.name.is_empty() {
+                self.existing_document(&source.drive_id, &source.file_id)?
+                    .and_then(|doc| {
+                        doc.get_first(self.fields.name)
+                            .and_then(|value| value.as_str())
+                            .map(str::to_owned)
+                    })
+                    .unwrap_or_default()
+            } else {
+                source.name.trim().to_lowercase()
+            };
+            if !name.is_empty() {
+                document.add_text(self.fields.name, name);
+            }
+            writer
+                .delete_query(Box::new(
+                    self.identity_query(&source.drive_id, &source.file_id),
+                ))
+                .map_err(AppError::internal)?;
+            writer.add_document(document).map_err(AppError::internal)?;
         }
-        writer
-            .delete_query(Box::new(
-                self.identity_query(&source.drive_id, &source.file_id),
-            ))
-            .map_err(AppError::internal)?;
-        writer.add_document(document).map_err(AppError::internal)?;
         writer.commit().map_err(AppError::internal)?;
         self.reader.reload().map_err(AppError::internal)?;
         Ok(())
@@ -322,13 +332,66 @@ impl TantivyIndexingRepository {
     }
 
     pub fn delete_file(&self, drive: &str, file: &str) -> AppResult<()> {
+        let file_ids = [file.to_owned()];
+        self.delete_files(drive, &file_ids)
+    }
+
+    /// Deletes a bounded group of documents for one drive with a single commit and reload.
+    pub fn delete_files(&self, drive: &str, file_ids: &[String]) -> AppResult<()> {
+        if file_ids.is_empty() {
+            return Ok(());
+        }
+        let mut writer = self.writer.lock().map_err(|_| {
+            AppError::internal(std::io::Error::other(
+                "Search index writer lock is poisoned.",
+            ))
+        })?;
+        for file_id in file_ids {
+            writer
+                .delete_query(Box::new(self.identity_query(drive, file_id)))
+                .map_err(AppError::internal)?;
+        }
+        writer.commit().map_err(AppError::internal)?;
+        self.reader.reload().map_err(AppError::internal)
+    }
+
+    /// Returns stable file IDs that can be split into durable deletion batches.
+    pub fn file_ids_for_drive(&self, drive: &str) -> AppResult<Vec<String>> {
+        let query = TermQuery::new(
+            Term::from_field_text(self.fields.drive_id, drive),
+            IndexRecordOption::Basic,
+        );
+        let searcher = self.reader.searcher();
+        let hits = searcher
+            .search(&query, &DocSetCollector)
+            .map_err(AppError::internal)?;
+        let mut file_ids = HashSet::new();
+        for address in hits {
+            let document: TantivyDocument = searcher.doc(address).map_err(AppError::internal)?;
+            if let Some(file_id) = document
+                .get_first(self.fields.file_id)
+                .and_then(|value| value.as_str())
+            {
+                file_ids.insert(file_id.to_owned());
+            }
+        }
+        let mut file_ids = file_ids.into_iter().collect::<Vec<_>>();
+        file_ids.sort();
+        Ok(file_ids)
+    }
+
+    /// Removes every indexed document belonging to a drive that was removed from NexFile.
+    pub fn delete_drive(&self, drive: &str) -> AppResult<()> {
         let mut writer = self.writer.lock().map_err(|_| {
             AppError::internal(std::io::Error::other(
                 "Search index writer lock is poisoned.",
             ))
         })?;
         writer
-            .delete_query(Box::new(self.identity_query(drive, file)))
+            .delete_query(Box::new(TermQuery::new(
+                Term::from_field_text(self.fields.drive_id, drive),
+                IndexRecordOption::Basic,
+            )))
             .map_err(AppError::internal)?;
         writer.commit().map_err(AppError::internal)?;
         self.reader.reload().map_err(AppError::internal)

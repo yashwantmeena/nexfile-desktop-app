@@ -51,7 +51,11 @@ pub fn initialize<R: tauri::Runtime>(app: &tauri::App<R>) -> AppResult<()> {
         indexing.clone(),
     );
     let indexing_worker = IndexingWorker::start(&database, indexing);
-    let storage = StorageService::new(storage_repository, config.app_data_dir.clone());
+    let storage = StorageService::new(storage_repository, config.app_data_dir.clone()).with_drive_jobs(
+        SqliteBackgroundProcessingRepository::new(database.clone()),
+        &database,
+        indexing_repository.clone(),
+    );
     let trash = TrashService::new(
         SqliteBackgroundProcessingRepository::new(database.clone()),
         SqliteStorageRepository::new(database.clone()),

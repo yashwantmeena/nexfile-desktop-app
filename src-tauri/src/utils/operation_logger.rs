@@ -1,6 +1,8 @@
 use std::fmt::Display;
 use std::time::{Duration, Instant};
 
+use chrono::Local;
+
 pub(crate) struct OperationLogger {
     scope: &'static str,
     subject: String,
@@ -64,15 +66,28 @@ impl OperationLogger {
     }
 
     fn write(&self, status: &str, message: &str) {
-        eprintln!(
-            "[{}][{}][+{}] {} | {}",
+        log_event(
             self.scope,
             status,
-            format_duration(self.started.elapsed()),
-            self.subject,
-            message
+            format!(
+                "[+{}] {} | {}",
+                format_duration(self.started.elapsed()),
+                self.subject,
+                message
+            ),
         );
     }
+}
+
+/// Writes a timestamped lifecycle event for durable background work.
+pub(crate) fn log_event(scope: &str, event: &str, message: impl Display) {
+    eprintln!(
+        "[{}][{}][{}] {}",
+        Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
+        scope,
+        event,
+        message
+    );
 }
 
 fn format_duration(duration: Duration) -> String {

@@ -5,10 +5,11 @@ use tauri::async_runtime::{channel, JoinHandle, Mutex, Sender};
 
 use crate::error::AppResult;
 use crate::models::indexing_model::IndexingJob;
-use crate::repositories::database_repository::SqliteDatabase;
 use crate::repositories::background_processing_repository::SqliteBackgroundProcessingRepository;
+use crate::repositories::database_repository::SqliteDatabase;
 use crate::services::indexing_service::IndexingService;
 use crate::utils::constants::{INDEXING_QUEUE, INDEXING_WORKER};
+use crate::utils::operation_logger::log_event;
 
 pub struct IndexingWorker {
     shutdown: Sender<()>,
@@ -39,17 +40,29 @@ impl IndexingWorker {
                             let service = handler_service.clone();
                             let repository = handler_repository.clone();
                             async move {
-                                let subject = job.path.display().to_string();
-                                repository.mark_running(&job.process_id).await?;
-                                let outcome = super::retry::retry_and_ack(INDEXING_QUEUE, &subject, || {
-                                    consume_indexing_job(job.clone(), service.clone())
-                                })
-                                .await?;
+                                let subject = job.subject();
+                                log_indexing_event("START", &job, "batch processing started");
+                                repository.mark_running(job.process_id()).await?;
+                                let outcome =
+                                    super::retry::retry_and_ack(INDEXING_QUEUE, &subject, || {
+                                        consume_indexing_job(job.clone(), service.clone())
+                                    })
+                                    .await?;
                                 let failure = match &outcome {
-                                    super::retry::JobOutcome::Completed => None,
-                                    super::retry::JobOutcome::Failed(message) => Some(message.as_str()),
+                                    super::retry::JobOutcome::Completed => {
+                                        log_indexing_event(
+                                            "COMPLETE",
+                                            &job,
+                                            "batch processing completed",
+                                        );
+                                        None
+                                    }
+                                    super::retry::JobOutcome::Failed(message) => {
+                                        log_indexing_event("FAILED", &job, message);
+                                        Some(message.as_str())
+                                    }
                                 };
-                                repository.finish_item(&job.process_id, failure).await?;
+                                repository.finish_item(job.process_id(), failure).await?;
                                 Ok::<(), crate::error::AppError>(())
                             }
                         });
@@ -86,30 +99,44 @@ impl IndexingWorker {
 }
 
 async fn consume_indexing_job(job: IndexingJob, service: IndexingService) -> AppResult<()> {
-    let path = job.path.clone();
-    if !path.is_file() {
-        eprintln!(
-            "[indexing-queue][ACK] {} | stale sidecar no longer exists",
-            path.display()
-        );
-        return Ok(());
+    match job {
+        IndexingJob::CreateIndexBatch { paths, .. } => {
+            let existing = paths
+                .into_iter()
+                .filter(|path| path.is_file())
+                .collect::<Vec<_>>();
+            if existing.is_empty() {
+                return Ok(());
+            }
+            service.process_batch(existing).await
+        }
+        IndexingJob::DeleteIndexBatch {
+            drive_id, file_ids, ..
+        } => service.delete_batch(drive_id, file_ids).await,
     }
+}
 
-    match service.process(job).await {
-        Ok(()) => {
-            eprintln!("[indexing-queue][ACK] {}", path.display());
-            Ok(())
-        }
-        Err(_) if !path.is_file() => {
-            eprintln!(
-                "[indexing-queue][ACK] {} | sidecar disappeared during indexing",
-                path.display()
-            );
-            Ok(())
-        }
-        Err(error) => {
-            eprintln!("[indexing-queue][RETRY] {} | {error:?}", path.display());
-            Err(error)
-        }
+fn log_indexing_event(event: &str, job: &IndexingJob, message: impl std::fmt::Display) {
+    match job {
+        IndexingJob::CreateIndexBatch { process_id, paths } => log_event(
+            INDEXING_WORKER,
+            event,
+            format!(
+                "process_id={process_id} operation=index items={} cleanup=identity | {message}",
+                paths.len()
+            ),
+        ),
+        IndexingJob::DeleteIndexBatch {
+            process_id,
+            drive_id,
+            file_ids,
+        } => log_event(
+            INDEXING_WORKER,
+            event,
+            format!(
+                "process_id={process_id} operation=delete-index drive_id={drive_id} items={} | {message}",
+                file_ids.len()
+            ),
+        ),
     }
 }

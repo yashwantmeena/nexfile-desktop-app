@@ -1,7 +1,7 @@
 use nexfile_desktop_app_lib::{
     ClassificationPrediction, DriveMetadata, ImageBoundingBox, ImageClassificationOutput,
     ImageLocation, ImageMetadata, ImageObjectDetection, ImageObjectDetectionOutput,
-    ImageProcessingOutput, IndexingJob, IndexingService, TantivyIndexingRepository,
+    ImageProcessingOutput, IndexingService, TantivyIndexingRepository,
 };
 use tantivy::collector::{Count, TopDocs};
 use tantivy::query::TermQuery;
@@ -112,7 +112,7 @@ async fn stores_searchable_image_fields_in_tantivy() {
         TantivyIndexingRepository::open(&app_data).expect("indexing repository should open");
     let indexing = IndexingService::new(repository.clone());
     indexing
-        .process(IndexingJob { process_id: "process-1".into(), path: sidecar_path })
+        .process_batch(vec![sidecar_path])
         .await
         .expect("sidecar should be indexed");
     assert_eq!(repository.search_files("PHOTO.JPG", "name", &[], None).unwrap(),
