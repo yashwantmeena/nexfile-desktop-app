@@ -55,3 +55,28 @@ export async function emptyTrash(): Promise<void> {
 export async function updateFileMetadata(file: { driveId: string; path: string }, changes: FileMetadataChanges): Promise<void> {
   await invoke("update_file_metadata", { driveId: file.driveId, path: file.path, ...changes });
 }
+
+export interface BulkOperationFilters {
+  query: string;
+  searchMode: string;
+  tags: string[];
+  collection?: string;
+  mediaType?: string;
+  favoriteOnly: boolean;
+  trashOnly: boolean;
+  modelCategory?: string;
+}
+
+export async function enqueueBulkOperation(
+  operation: "moveToTrash" | { setFavorite: { favorite: boolean } },
+  filters: BulkOperationFilters,
+  expectedCount: number,
+  selectedIds?: string[],
+): Promise<void> {
+  await invoke("enqueue_bulk_operation", {
+    operation,
+    filters,
+    expectedCount,
+    selectedIds: selectedIds?.length ? selectedIds : null,
+  });
+}

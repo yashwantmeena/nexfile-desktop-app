@@ -247,6 +247,47 @@ impl SqliteBackgroundProcessingRepository {
         Ok(())
     }
 
+    pub async fn fail_remaining_items(
+        &self,
+        process_id: &str,
+        count: u64,
+        message: &str,
+    ) -> AppResult<()> {
+        let count = to_sql_integer(count)?;
+        let result = sqlx::query(
+            "UPDATE background_processes
+             SET processed_items = MIN(processed_items + ?2, total_items),
+                 failed_items = MIN(failed_items + ?2, total_items),
+                 remark = ?3,
+                 status = CASE
+                    WHEN processed_items + ?2 >= total_items THEN
+                        CASE WHEN failed_items + ?2 >= total_items
+                            THEN 'failed' ELSE 'completed' END
+                    ELSE 'running'
+                 END,
+                 finished_at_ms = CASE WHEN processed_items + ?2 >= total_items
+                    THEN CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
+                    ELSE NULL END,
+                 updated_at_ms = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
+             WHERE process_id = ?1 AND status IN ('queued', 'running')",
+        )
+        .bind(process_id)
+        .bind(count)
+        .bind(message)
+        .execute(self.database.pool())
+        .await
+        .map_err(AppError::database)?;
+        log_event(
+            "background-process",
+            "ITEMS-FAILED",
+            format!(
+                "process_id={process_id} items={count} rows_affected={}",
+                result.rows_affected()
+            ),
+        );
+        Ok(())
+    }
+
     pub async fn list_active(&self) -> AppResult<Vec<BackgroundProcess>> {
         sqlx::query_as::<_, ProcessRow>(
             "SELECT process_id, process_type, status, priority, total_items, processed_items,

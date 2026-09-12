@@ -9,11 +9,13 @@ use crate::services::import_service::ImportService;
 use crate::services::indexing_service::IndexingService;
 use crate::services::storage_service::StorageService;
 use crate::services::trash_service::TrashService;
+use crate::services::bulk_operation_service::BulkOperationService;
 use crate::utils::constants::{
     AI_CONFIGS_DIRECTORY, AI_MODELS_DIRECTORY, CLIP_MODEL_DIRECTORY, FLORENCE2_MODEL_DIRECTORY,
 };
 use crate::utils::operation_logger::log_event;
 use crate::workers::file_processing_worker::FileProcessingWorker;
+use crate::workers::bulk_operation_worker::BulkOperationWorker;
 use crate::workers::ai_processing_worker::AiProcessingWorker;
 use crate::workers::indexing_worker::IndexingWorker;
 
@@ -56,11 +58,22 @@ pub fn initialize<R: tauri::Runtime>(app: &tauri::App<R>) -> AppResult<()> {
         &database,
         config.app_data_dir.clone(),
     );
+    let bulk_operations = BulkOperationService::new(
+        SqliteBackgroundProcessingRepository::new(database.clone()),
+        SqliteStorageRepository::new(database.clone()),
+        &database,
+        config.app_data_dir.clone(),
+        indexing_repository.clone(),
+    );
     let file_processing_worker = FileProcessingWorker::start(
         &database,
         imports.clone(),
         storage.clone(),
         indexing_repository.clone(),
+    );
+    let bulk_operation_worker = BulkOperationWorker::start(
+        &database,
+        bulk_operations.clone(),
     );
     let ai_processing_worker = AiProcessingWorker::start(
         &database,
@@ -82,10 +95,12 @@ pub fn initialize<R: tauri::Runtime>(app: &tauri::App<R>) -> AppResult<()> {
         search: indexing_repository,
         ai_processing_worker,
         file_processing_worker,
+        bulk_operation_worker,
         indexing_worker,
         imports,
         storage,
         trash,
+        bulk_operations,
     });
     log_event("app", "COMPLETE", "application initialization completed");
     Ok(())

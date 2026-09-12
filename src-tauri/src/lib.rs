@@ -28,6 +28,7 @@ pub use models::background_process_model::BackgroundProcess;
 pub use models::delete_model::DeleteFileJob;
 pub use models::file_model::FileTypeCount;
 pub use models::file_processing_model::{ExportFileJob, FileProcessingJob};
+pub use models::bulk_operation_model::{BulkOperation, BulkOperationFilters, BulkOperationJob};
 pub use models::image_processing_model::{
     ClassificationPrediction, ImageBoundingBox, ImageClassificationOutput, ImageLocation,
     ImageMetadata, ImageObjectDetection, ImageObjectDetectionOutput, ImageOcrOutput,
@@ -78,6 +79,7 @@ pub fn run() {
             commands::file_command::suggest_tags,
             commands::file_command::update_file_metadata,
             commands::file_command::empty_trash,
+            commands::file_command::enqueue_bulk_operation,
             commands::import_command::import_folder,
             commands::import_command::get_background_activities,
             commands::storage_command::get_storage_data,
@@ -93,6 +95,7 @@ pub fn run() {
         if matches!(event, tauri::RunEvent::Exit) {
             log_event("app", "STOP", "application shutdown started");
             let state = app_handle.state::<app::state::AppState>();
+            tauri::async_runtime::block_on(state.bulk_operation_worker.close());
             tauri::async_runtime::block_on(state.file_processing_worker.close());
             tauri::async_runtime::block_on(state.ai_processing_worker.close());
             tauri::async_runtime::block_on(state.indexing_worker.close());

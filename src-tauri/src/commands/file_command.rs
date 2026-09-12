@@ -3,6 +3,8 @@ use tauri::{Manager, State};
 use crate::app::state::AppState;
 use crate::error::AppResult;
 use crate::models::file_model::FileCountSummary;
+use crate::models::background_process_model::BackgroundProcess;
+use crate::models::bulk_operation_model::{BulkOperation, BulkOperationFilters};
 use crate::utils::operation_logger::log_event;
 
 #[tauri::command]
@@ -229,4 +231,32 @@ pub async fn fetch_files(
 pub async fn empty_trash(state: State<'_, AppState>) -> AppResult<()> {
     let _guard = state.imports.metadata_lock().lock().await;
     state.trash.empty_trash().await
+}
+
+#[tauri::command]
+pub async fn enqueue_bulk_operation(
+    state: State<'_, AppState>,
+    operation: BulkOperation,
+    filters: BulkOperationFilters,
+    selected_ids: Option<Vec<String>>,
+    expected_count: u64,
+) -> AppResult<BackgroundProcess> {
+    log_event(
+        "bulk-operation",
+        "COMMAND-START",
+        format!("operation={} selected_ids={}", operation.as_str(), selected_ids.as_ref().map_or(0, Vec::len)),
+    );
+    let result = state
+        .bulk_operations
+        .enqueue(operation, filters, selected_ids, expected_count)
+        .await;
+    match &result {
+        Ok(process) => log_event(
+            "bulk-operation",
+            "COMMAND-COMPLETE",
+            format!("process_id={} total_items={}", process.process_id, process.total_items),
+        ),
+        Err(error) => log_event("bulk-operation", "COMMAND-FAILED", format!("error={error}")),
+    }
+    result
 }

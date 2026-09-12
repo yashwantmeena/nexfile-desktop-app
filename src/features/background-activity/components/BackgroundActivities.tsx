@@ -1,7 +1,8 @@
-import { Check, CircleAlert, Download, LoaderCircle, Search, Sparkles } from "lucide-react";
+import { Check, CircleAlert, Download, Layers, LoaderCircle, Search, Sparkles } from "lucide-react";
 import { useBackgroundActivities } from "../hooks/useBackgroundActivities";
 
 const activityTypes = [
+  { label: "Bulk operations", types: ["bulk_operation"], icon: Layers },
   { label: "File processing", types: ["import_file", "import_folder", "export_file", "delete_file"], icon: Download },
   { label: "AI processing", types: ["image_processing"], icon: Sparkles },
   { label: "Indexing", types: ["indexing", "delete_index"], icon: Search },

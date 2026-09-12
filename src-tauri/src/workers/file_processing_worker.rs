@@ -4,7 +4,7 @@ use futures::FutureExt;
 use tauri::async_runtime::{channel, JoinHandle, Mutex, Sender};
 
 use crate::error::{AppError, AppResult};
-use crate::models::file_processing_model::{ExportFileJob, FileProcessingJob};
+use crate::models::file_processing_model::{ExportFileJob, FileProcessingJob, UpdateFileMetadataJob};
 use crate::repositories::background_processing_repository::SqliteBackgroundProcessingRepository;
 use crate::repositories::database_repository::SqliteDatabase;
 use crate::repositories::indexing_repository::TantivyIndexingRepository;
@@ -140,7 +140,46 @@ async fn consume_file_processing_job(
                 .map_err(AppError::internal)??;
             Ok(())
         }
+        FileProcessingJob::UpdateMetadata(job) => {
+            consume_update_metadata(job, imports, storage, index).await
+        }
     }
+}
+
+async fn consume_update_metadata(
+    job: UpdateFileMetadataJob,
+    imports: ImportService,
+    storage: StorageService,
+    index: TantivyIndexingRepository,
+) -> AppResult<()> {
+    let _guard = imports.metadata_lock().lock().await;
+    let drive_id = job.drive_id.clone();
+    let (sidecar, file_id, name, collections, _) = storage
+        .update_file_metadata(
+            job.drive_id,
+            job.path,
+            None,
+            None,
+            None,
+            None,
+            job.favorite,
+            job.is_trashed,
+        )
+        .await?;
+    if let Some(favorite) = job.favorite {
+        let index = index.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            index.index_filename(&drive_id, &file_id, &name, &collections, favorite)
+        })
+        .await
+        .map_err(AppError::internal)??;
+    }
+    log_event(
+        FILE_PROCESSING_WORKER,
+        "METADATA-COMPLETE",
+        format!("sidecar={} favorite={:?} trashed={:?}", sidecar.display(), job.favorite, job.is_trashed),
+    );
+    Ok(())
 }
 
 async fn consume_export_file(job: ExportFileJob) -> AppResult<()> {

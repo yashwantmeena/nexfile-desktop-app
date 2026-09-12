@@ -12,7 +12,7 @@ import { BulkSelectionToolbar } from "./components/BulkSelectionToolbar";
 import { FilePreviewModal } from "./components/FilePreviewModal";
 import { FilterBar } from "./components/FilterBar";
 import { useFiles } from "./hooks/useFiles";
-import { emptyTrash, updateFileMetadata } from "./api/files";
+import { emptyTrash, enqueueBulkOperation } from "./api/files";
 import type { DashboardFile } from "./types/file";
 import type { HomeCounts } from "./types/home";
 import "./dashboard.css";
@@ -136,28 +136,38 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
     if (!selectedIds.size || bulkDeleteBusy) return;
     setBulkDeleteBusy(true);
     setBulkDeleteError("");
-    const actionFiles = filesToUpdate ?? await resolveSelectedFiles();
-    if (!actionFiles.length) {
+    try {
+      const actionFiles = filesToUpdate ?? (allFilteredSelected ? files : await resolveSelectedFiles());
+      const selectedForQueue = allFilteredSelected ? undefined : actionFiles.map(file => String(file.id));
+      const operation = changes.isTrashed
+        ? "moveToTrash" as const
+        : { setFavorite: { favorite: changes.favorite === true } };
+      const filters = {
+        query,
+        searchMode,
+        tags,
+        collection: activeCollection?.name,
+        mediaType: activeCategory === "All" ? undefined : activeCategory.toLowerCase(),
+        favoriteOnly,
+        trashOnly,
+        modelCategory,
+      };
+      const queuedCount = allFilteredSelected ? totalCount : actionFiles.length;
+      console.info("[NexFile] Creating bulk operation task", { operation, queuedCount, allFilteredSelected, selectedForQueue: selectedForQueue?.length ?? 0, filters });
+      await enqueueBulkOperation(operation, filters, queuedCount, selectedForQueue);
+      console.info("[NexFile] Bulk operation task queued", { operation, queuedCount });
+      if (changes.isTrashed) actionFiles.forEach(file => fetched.removeFile(String(file.id)));
+      if (changes.favorite !== undefined) actionFiles.forEach(file => fetched.updateFavorite(String(file.id), changes.favorite!));
+      setSelectedIds(new Set());
+      setCountRefreshKey(current => current + 1);
+      setRefreshKey(current => current + 1);
+      void successMessage;
+    } catch (error) {
+      console.error("[NexFile] Bulk operation task failed", { changes, error });
+      setBulkDeleteError("Unable to queue this bulk operation. Please try again.");
+    } finally {
       setBulkDeleteBusy(false);
-      return;
     }
-    console.info("[NexFile] Starting bulk metadata action", { changes, selectedCount: actionFiles.length, query, tags, activeCategory, modelCategory });
-    const results = await Promise.allSettled(actionFiles.map(file => file.driveId
-      ? updateFileMetadata({ driveId:file.driveId, path:file.path }, changes)
-      : Promise.reject(new Error("The file's drive is unavailable."))));
-    const succeeded = actionFiles.filter((_, index) => results[index].status === "fulfilled");
-    const failedFiles = actionFiles.filter((_, index) => results[index].status === "rejected");
-    const failed = actionFiles.length - succeeded.length;
-    if (changes.isTrashed) succeeded.forEach(file => fetched.removeFile(String(file.id)));
-    if (changes.favorite !== undefined) {
-      succeeded.forEach(file => fetched.updateFavorite(String(file.id), changes.favorite!));
-      if (favoriteOnly && !changes.favorite && succeeded.length) setRefreshKey(current => current + 1);
-    }
-    if (failed) setBulkDeleteError(`${succeeded.length} ${successMessage}. ${failed} ${failed === 1 ? "file" : "files"} could not be updated.`);
-    setSelectedIds(new Set(failedFiles.map(file => String(file.id))));
-    setBulkDeleteBusy(false);
-    if (succeeded.length) setCountRefreshKey(current => current + 1);
-    console.info("[NexFile] Bulk metadata action complete", { succeeded: succeeded.length, failed, changes });
   };
   const deleteSelected = async () => {
     if (!selectedCount || bulkDeleteBusy) return;
@@ -166,7 +176,7 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
   };
   const favoriteTarget = selectedFiles.some(file => !file.favorite);
   const favoriteSelected = async () => {
-    const actionFiles = await resolveSelectedFiles();
+    const actionFiles = allFilteredSelected ? files : await resolveSelectedFiles();
     const target = actionFiles.some(file => !file.favorite);
     await applyBulkMetadata({ favorite:target }, target ? "added to Favorites" : "removed from Favorites", actionFiles);
   };
