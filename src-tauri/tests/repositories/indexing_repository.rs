@@ -196,9 +196,14 @@ fn suggests_unique_live_prefix_tags_with_limits_and_refresh() {
     };
     repository.upsert(document.clone()).unwrap();
     let one = std::collections::HashSet::from([("drive".to_owned(), "one".to_owned())]);
-    assert_eq!(repository.search_files(" BE ", "tags", &[], None).unwrap(), one);
     assert_eq!(
-        repository.search_files("beach b", "tags", &[], None).unwrap(),
+        repository.search_files(" BE ", "tags", &[], None).unwrap(),
+        one
+    );
+    assert_eq!(
+        repository
+            .search_files("beach b", "tags", &[], None)
+            .unwrap(),
         one
     );
     assert_eq!(
@@ -224,7 +229,9 @@ fn suggests_unique_live_prefix_tags_with_limits_and_refresh() {
         .index_filename("drive", "one", "Beach (2026).JPG", &[], false)
         .unwrap();
     assert_eq!(
-        repository.search_files("(2026).jpg", "name", &[], None).unwrap(),
+        repository
+            .search_files("(2026).jpg", "name", &[], None)
+            .unwrap(),
         one
     );
     assert_eq!(
@@ -241,7 +248,9 @@ fn suggests_unique_live_prefix_tags_with_limits_and_refresh() {
         .search_files("beach", "name", &["missing".into()], None)
         .unwrap()
         .is_empty());
-    assert!(repository.search_files("beach", "invalid", &[], None).is_err());
+    assert!(repository
+        .search_files("beach", "invalid", &[], None)
+        .is_err());
     assert!(repository
         .search_files(&"a".repeat(257), "tags", &[], None)
         .is_err());
@@ -253,7 +262,9 @@ fn suggests_unique_live_prefix_tags_with_limits_and_refresh() {
         .unwrap()
         .is_empty());
     assert_eq!(
-        repository.search_files("renamed", "name", &[], None).unwrap(),
+        repository
+            .search_files("renamed", "name", &[], None)
+            .unwrap(),
         one
     );
     assert_eq!(
@@ -272,6 +283,26 @@ fn suggests_unique_live_prefix_tags_with_limits_and_refresh() {
         .suggest_tags(&"b".repeat(257))
         .unwrap()
         .is_empty());
+    repository
+        .index_file_metadata(
+            "drive",
+            "one",
+            "Renamed.jpg",
+            &[],
+            &["sunset".into()],
+            false,
+        )
+        .unwrap();
+    assert_eq!(
+        repository
+            .search_files("sunset", "tags", &[], None)
+            .unwrap(),
+        one
+    );
+    assert!(repository
+        .search_files("beach", "tags", &[], None)
+        .unwrap()
+        .is_empty());
     document.object_labels.clear();
     document.secondary_labels.clear();
     document.categories.clear();
@@ -287,7 +318,10 @@ fn suggests_unique_live_prefix_tags_with_limits_and_refresh() {
     assert!(suggestions.windows(2).all(|pair| pair[0] < pair[1]));
     drop(repository);
     let reopened = TantivyIndexingRepository::open(&root).unwrap();
-    assert_eq!(reopened.search_files("renamed", "name", &[], None).unwrap(), one);
+    assert_eq!(
+        reopened.search_files("renamed", "name", &[], None).unwrap(),
+        one
+    );
     assert_eq!(reopened.suggest_tags("be").unwrap(), suggestions);
     drop(reopened);
     std::fs::remove_dir_all(root).unwrap();

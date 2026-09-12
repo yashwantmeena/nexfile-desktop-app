@@ -25,9 +25,9 @@ use crate::services::storage_service::{
 };
 use crate::system::filesystem::get_drives;
 use crate::utils::constants::{
-    APALIS_MIGRATION_TABLE, IMAGE_PROCESSING_PROCESS_TYPE, AI_PROCESSING_QUEUE,
-    IMPORTED_FILES_DIRECTORY, IMPORT_FILE_ID_ALPHABET, IMPORT_FILE_ID_LENGTH,
-    IMPORT_FILE_PROCESS_TYPE, FILE_PROCESSING_QUEUE, IMPORT_FOLDER_PROCESS_TYPE,
+    AI_PROCESSING_QUEUE, APALIS_MIGRATION_TABLE, FILE_PROCESSING_QUEUE,
+    IMAGE_PROCESSING_PROCESS_TYPE, IMPORTED_FILES_DIRECTORY, IMPORT_FILE_ID_ALPHABET,
+    IMPORT_FILE_ID_LENGTH, IMPORT_FILE_PROCESS_TYPE, IMPORT_FOLDER_PROCESS_TYPE,
 };
 use crate::utils::image_decoder::is_supported_image;
 use crate::utils::operation_logger::log_event;
@@ -153,7 +153,12 @@ impl ImportService {
         log_event(
             FILE_PROCESSING_QUEUE,
             "REQUEST",
-            format!("requested_paths={} folder={} collections={}", paths.len(), folder, ids.len()),
+            format!(
+                "requested_paths={} folder={} collections={}",
+                paths.len(),
+                folder,
+                ids.len()
+            ),
         );
         let names =
             crate::repositories::collection_repository::selected_names(&self.queue_pool, &ids)
@@ -169,20 +174,24 @@ impl ImportService {
         } else {
             validate_file_paths(paths)?
         };
-        let process = self.queue_files_with_collections(
-            paths,
-            if folder {
-                IMPORT_FOLDER_PROCESS_TYPE
-            } else {
-                IMPORT_FILE_PROCESS_TYPE
-            },
-            names,
-        )
-        .await?;
+        let process = self
+            .queue_files_with_collections(
+                paths,
+                if folder {
+                    IMPORT_FOLDER_PROCESS_TYPE
+                } else {
+                    IMPORT_FILE_PROCESS_TYPE
+                },
+                names,
+            )
+            .await?;
         log_event(
             FILE_PROCESSING_QUEUE,
             "REQUEST-COMPLETE",
-            format!("process_id={} total_items={}", process.process_id, process.total_items),
+            format!(
+                "process_id={} total_items={}",
+                process.process_id, process.total_items
+            ),
         );
         Ok(process)
     }
@@ -234,7 +243,7 @@ impl ImportService {
                 }
             }
         }
-        assign_import_collections(root, drive_id, destination, &names)
+        super::collection_service::add_file_to_collections(root, drive_id, destination, &names)
     }
     pub fn with_search_index(
         mut self,
@@ -374,7 +383,10 @@ impl ImportService {
         log_event(
             FILE_PROCESSING_QUEUE,
             "QUEUED",
-            format!("process_id={} process_type={process_type} items={total_items}", process.process_id),
+            format!(
+                "process_id={} process_type={process_type} items={total_items}",
+                process.process_id
+            ),
         );
         Ok(process)
     }
@@ -382,7 +394,12 @@ impl ImportService {
         log_event(
             FILE_PROCESSING_QUEUE,
             "CONSUME",
-            format!("process_id={} file_id={} source={}", job.process_id, job.file_id, job.path.display()),
+            format!(
+                "process_id={} file_id={} source={}",
+                job.process_id,
+                job.file_id,
+                job.path.display()
+            ),
         );
         let _guard = self.copy_lock.lock().await;
         let drives = tauri::async_runtime::spawn_blocking(get_drives)
@@ -420,14 +437,22 @@ impl ImportService {
         log_event(
             FILE_PROCESSING_QUEUE,
             "CANDIDATES",
-            format!("process_id={} file_id={} candidates={} size_bytes={file_size}", job.process_id, job.file_id, candidates.len()),
+            format!(
+                "process_id={} file_id={} candidates={} size_bytes={file_size}",
+                job.process_id,
+                job.file_id,
+                candidates.len()
+            ),
         );
 
         for (drive, mut saved) in candidates {
             log_event(
                 FILE_PROCESSING_QUEUE,
                 "TRY-DRIVE",
-                format!("process_id={} file_id={} drive_id={} priority={}", job.process_id, job.file_id, saved.drive_id, saved.priority),
+                format!(
+                    "process_id={} file_id={} drive_id={} priority={}",
+                    job.process_id, job.file_id, saved.drive_id, saved.priority
+                ),
             );
             let files_directory = drive_storage_root(&drive, &self.system_metadata_root)
                 .join(IMPORTED_FILES_DIRECTORY);
@@ -437,7 +462,13 @@ impl ImportService {
                 log_event(
                     FILE_PROCESSING_QUEUE,
                     "DESTINATION-EXISTS",
-                    format!("process_id={} file_id={} drive_id={} path={}", job.process_id, job.file_id, saved.drive_id, destination.display()),
+                    format!(
+                        "process_id={} file_id={} drive_id={} path={}",
+                        job.process_id,
+                        job.file_id,
+                        saved.drive_id,
+                        destination.display()
+                    ),
                 );
                 let _metadata_guard = self.metadata_lock.lock().await;
                 if std::fs::metadata(&destination)?.len() != source_metadata.len() {
@@ -470,7 +501,10 @@ impl ImportService {
                 log_event(
                     FILE_PROCESSING_QUEUE,
                     "COMPLETE",
-                    format!("process_id={} file_id={} drive_id={} reused_destination=true", job.process_id, job.file_id, saved.drive_id),
+                    format!(
+                        "process_id={} file_id={} drive_id={} reused_destination=true",
+                        job.process_id, job.file_id, saved.drive_id
+                    ),
                 );
                 return Ok(());
             }
@@ -479,7 +513,10 @@ impl ImportService {
                 log_event(
                     FILE_PROCESSING_QUEUE,
                     "SKIP-DRIVE",
-                    format!("process_id={} file_id={} drive_id={} reason=insufficient_capacity", job.process_id, job.file_id, saved.drive_id),
+                    format!(
+                        "process_id={} file_id={} drive_id={} reason=insufficient_capacity",
+                        job.process_id, job.file_id, saved.drive_id
+                    ),
                 );
                 continue;
             }
@@ -493,7 +530,13 @@ impl ImportService {
             log_event(
                 FILE_PROCESSING_QUEUE,
                 "COPY-START",
-                format!("process_id={} file_id={} drive_id={} staging={}", job.process_id, job.file_id, saved.drive_id, temporary.display()),
+                format!(
+                    "process_id={} file_id={} drive_id={} staging={}",
+                    job.process_id,
+                    job.file_id,
+                    saved.drive_id,
+                    temporary.display()
+                ),
             );
             let copied = tauri::async_runtime::spawn_blocking(move || {
                 copy_to_temporary(&source, &staging_path, expected_size)
@@ -511,7 +554,10 @@ impl ImportService {
             log_event(
                 FILE_PROCESSING_QUEUE,
                 "COPY-COMPLETE",
-                format!("process_id={} file_id={} drive_id={} bytes={file_size}", job.process_id, job.file_id, saved.drive_id),
+                format!(
+                    "process_id={} file_id={} drive_id={} bytes={file_size}",
+                    job.process_id, job.file_id, saved.drive_id
+                ),
             );
 
             // Publish only a complete file. Readers share this short publication lock,
@@ -547,7 +593,10 @@ impl ImportService {
             log_event(
                 FILE_PROCESSING_QUEUE,
                 "COMPLETE",
-                format!("process_id={} file_id={} drive_id={} reused_destination=false", job.process_id, job.file_id, saved.drive_id),
+                format!(
+                    "process_id={} file_id={} drive_id={} reused_destination=false",
+                    job.process_id, job.file_id, saved.drive_id
+                ),
             );
             return Ok(());
         }
@@ -703,14 +752,22 @@ fn write_import_sidecar(job: &ImportFileJob, destination: &Path) -> AppResult<()
     if path.try_exists()? {
         return Ok(());
     }
+    let created_at_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(AppError::system_time)?
+        .as_millis();
+    let created_at_ms = u64::try_from(created_at_ms).map_err(AppError::internal)?;
     let temporary = path.with_file_name(format!(".{}.sidecar.tmp", job.file_id));
     let bytes = serde_json::to_vec(&ManagedFileMetadata {
         version: 1,
         name,
+        created_at_ms,
         favorite: false,
         is_trashed: false,
+        trashed_at_ms: None,
         is_deleted: false,
         collection_ids: Vec::new(),
+        search_keywords: Vec::new(),
         captured_at_ms: None,
     })
     .map_err(AppError::serialization)?;
@@ -739,149 +796,5 @@ fn copy_to_temporary(source: &Path, temporary: &Path, expected_size: u64) -> std
 }
 
 #[cfg(all(test, target_os = "windows"))]
-mod concurrency_tests {
-    use super::*;
-    use crate::services::storage_service::StorageService;
-
-    #[tokio::test]
-    async fn stages_copy_while_browsing_holds_metadata_lock() {
-        let root = std::env::temp_dir().join(format!("nexfile-copy-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&root).unwrap();
-        let source = root.join("notes.txt");
-        std::fs::write(&source, b"complete contents").unwrap();
-        let database = SqliteDatabase::open(root.join("test.sqlite3"))
-            .await
-            .unwrap();
-        let storage =
-            StorageService::new(SqliteStorageRepository::new(database.clone()), root.clone());
-        let partition = storage
-            .get_storage_data()
-            .await
-            .unwrap()
-            .drives
-            .into_iter()
-            .find(|drive| drive.is_system)
-            .unwrap()
-            .partition_name;
-        storage.mount_drive(None, &partition).await.unwrap();
-        let imports = ImportService::new(
-            SqliteBackgroundProcessingRepository::new(database.clone()),
-            SqliteStorageRepository::new(database.clone()),
-            &database,
-            root.clone(),
-        )
-        .await
-        .unwrap();
-        let catalog =
-            crate::repositories::collection_repository::save(database.pool(), None, "Travel")
-                .await
-                .unwrap();
-        assert_eq!(catalog[0].id.len(), 14);
-        assert!(!root.join("nexfile/collections.json").exists());
-        assert!(
-            crate::repositories::collection_repository::save(database.pool(), None, "travel")
-                .await
-                .is_err()
-        );
-        sqlx::query("INSERT INTO background_processes (process_id, process_type, status, collections) VALUES (?1, 'import_file', 'queued', ?2)").bind("test").bind("[\"Travel\"]").execute(database.pool()).await.unwrap();
-        let guard = imports.metadata_lock().lock().await;
-        let worker = imports.clone();
-        let task = tauri::async_runtime::spawn(async move {
-            worker
-                .consume(ImportFileJob {
-                    process_id: "test".into(),
-                    file_id: "abcdefghijklmn".into(),
-                    path: source,
-                })
-                .await
-        });
-        let directory = root.join("nexfile").join("files");
-        let staged = directory.join(".abcdefghijklmn.importing");
-        let destination = directory.join("abcdefghijklmn.txt");
-        let copied = tokio::time::timeout(std::time::Duration::from_secs(10), async {
-            loop {
-                if std::fs::read(&staged).ok().as_deref() == Some(b"complete contents") {
-                    break;
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-            }
-        })
-        .await;
-        assert!(
-            copied.is_ok(),
-            "copy must proceed while a browser holds the metadata lock"
-        );
-        assert!(
-            !destination.exists(),
-            "staged bytes must not be published yet"
-        );
-        let page = storage.fetch_files(0, 60, None).await.unwrap();
-        assert!(
-            page.files.is_empty(),
-            "browsing must exclude the staged file"
-        );
-        drop(guard);
-        task.await.unwrap().unwrap();
-        assert_eq!(std::fs::read(&destination).unwrap(), b"complete contents");
-        assert!(!staged.exists());
-        let metadata = super::super::collection_service::read(
-            &root.join("nexfile"),
-            &storage
-                .get_storage_data()
-                .await
-                .unwrap()
-                .drives
-                .into_iter()
-                .find(|drive| drive.is_system)
-                .unwrap()
-                .drive_id,
-        )
-        .unwrap();
-        assert_eq!(metadata.collections[0].name, "Travel");
-        assert_eq!(
-            super::super::file_service::sidecar_collection_ids(&classification_output_path(
-                &destination
-            ))
-            .unwrap(),
-            vec![metadata.collections[0].id.clone()]
-        );
-        assert_ne!(metadata.collections[0].id, catalog[0].id);
-        assert_eq!(
-            storage.fetch_files(0, 60, None).await.unwrap().files.len(),
-            1
-        );
-        imports.close().await;
-        storage.close().await;
-        std::fs::remove_dir_all(root).unwrap();
-    }
-}
-
-pub(crate) fn assign_import_collections(
-    root: &Path,
-    drive_id: &str,
-    destination: &Path,
-    names: &[String],
-) -> AppResult<()> {
-    if names.is_empty() {
-        return Ok(());
-    }
-    let mut metadata = super::collection_service::read(root, drive_id)?;
-    let count = metadata.collections.len();
-    let mut ids = Vec::new();
-    for name in names {
-        let existing = metadata
-            .collections
-            .iter()
-            .find(|item| item.name.to_lowercase() == name.trim().to_lowercase())
-            .map(|item| item.id.clone());
-        ids.push(match existing {
-            Some(id) => id,
-            None => metadata.create(name)?,
-        });
-    }
-    // Definitions must exist before the file starts referencing them.
-    if metadata.collections.len() != count {
-        super::collection_service::save(root, &metadata)?;
-    }
-    super::file_service::add_sidecar_collections(destination, &ids)
-}
+#[path = "../../tests/services/import_service_concurrency.rs"]
+mod concurrency_tests;

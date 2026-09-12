@@ -48,12 +48,52 @@ impl BulkOperationService {
     pub async fn enqueue(
         &self,
         operation: BulkOperation,
-        filters: BulkOperationFilters,
+        mut filters: BulkOperationFilters,
         selected_ids: Option<Vec<String>>,
         expected_count: u64,
     ) -> AppResult<BackgroundProcess> {
         if expected_count == 0 {
             return Err(AppError::validation("No files are selected."));
+        }
+        let operation = match operation {
+            BulkOperation::AddToCollection { collection_name } => {
+                let collection_name = collection_name.trim();
+                let collection = crate::repositories::collection_repository::list(&self.queue_pool)
+                    .await?
+                    .into_iter()
+                    .find(|collection| collection.name.eq_ignore_ascii_case(collection_name))
+                    .ok_or_else(|| {
+                        AppError::validation("The selected collection no longer exists.")
+                    })?;
+                BulkOperation::AddToCollection {
+                    collection_name: collection.name,
+                }
+            }
+            BulkOperation::AddTag { tag } => {
+                let normalized = tag
+                    .split(|character: char| {
+                        character.is_whitespace() || character == '_' || character == '-'
+                    })
+                    .map(str::trim)
+                    .filter(|tag| !tag.is_empty())
+                    .map(str::to_lowercase)
+                    .collect::<Vec<_>>();
+                if normalized.len() != 1
+                    || normalized[0].chars().count() > 80
+                    || normalized[0].chars().any(char::is_control)
+                {
+                    return Err(AppError::validation(
+                        "Enter one tag containing at most 80 characters.",
+                    ));
+                }
+                BulkOperation::AddTag {
+                    tag: normalized[0].clone(),
+                }
+            }
+            operation => operation,
+        };
+        if matches!(&operation, BulkOperation::EmptyTrash) {
+            filters.trash_only = true;
         }
         let snapshot_at_ms = current_time_ms()?;
         log_event(
@@ -108,9 +148,7 @@ impl BulkOperationService {
             "QUEUED",
             format!(
                 "process_id={} operation={} items={} snapshot_at_ms={snapshot_at_ms}",
-                process.process_id,
-                process.process_type,
-                expected_count
+                process.process_id, process.process_type, expected_count
             ),
         );
         Ok(process)
@@ -122,6 +160,8 @@ impl BulkOperationService {
         snapshot_at_ms: i64,
         selected_ids: Option<Vec<String>>,
     ) -> AppResult<Vec<BulkFileTarget>> {
+        let snapshot_at_ms = u64::try_from(snapshot_at_ms)
+            .map_err(|_| AppError::validation("The bulk operation snapshot is invalid."))?;
         log_event(
             BULK_OPERATION_QUEUE,
             "MATCH-START",
@@ -136,6 +176,7 @@ impl BulkOperationService {
         let index = self.index.clone();
         let result = tauri::async_runtime::spawn_blocking(move || {
             let connected = get_drives();
+            let trash_only = filters.trash_only;
             let page = if filters.trash_only {
                 crate::services::file_service::fetch_matching_files_with_trash(
                     snapshots,
@@ -154,10 +195,7 @@ impl BulkOperationService {
                     .filter(|name| !name.trim().is_empty())
                     .map(|name| {
                         crate::services::collection_service::ids_by_name(
-                            &snapshots,
-                            &connected,
-                            &root,
-                            name,
+                            &snapshots, &connected, &root, name,
                         )
                     })
                     .transpose()?;
@@ -185,18 +223,40 @@ impl BulkOperationService {
                 .files
                 .into_iter()
                 .filter(|file| {
-                    file.modified_at_ms
-                        .is_some_and(|modified| modified <= snapshot_at_ms)
+                    let sidecar =
+                        crate::services::image_processing_service::classification_output_path(
+                            &file.path,
+                        );
+                    let Ok(metadata) =
+                        crate::services::file_service::read_managed_file_metadata(&sidecar)
+                    else {
+                        return false;
+                    };
+                    let existed_at_snapshot =
+                        metadata.created_at_ms == 0 || metadata.created_at_ms <= snapshot_at_ms;
+                    let was_trashed_at_snapshot = !trash_only
+                        || metadata
+                            .trashed_at_ms
+                            .is_none_or(|trashed_at_ms| trashed_at_ms <= snapshot_at_ms);
+                    existed_at_snapshot && was_trashed_at_snapshot
                 })
                 .filter(|file| {
                     selected_ids
                         .as_ref()
                         .is_none_or(|ids| ids.contains(&file.id))
                 })
-                .map(|file| BulkFileTarget {
-                    id: file.id,
-                    drive_id: file.drive_id,
-                    path: file.path,
+                .filter_map(|file| {
+                    let file_id = file
+                        .path
+                        .file_stem()
+                        .and_then(|value| value.to_str())
+                        .filter(|value| !value.is_empty())?
+                        .to_owned();
+                    Some(BulkFileTarget {
+                        drive_id: file.drive_id,
+                        file_id,
+                        path: file.path,
+                    })
                 })
                 .collect::<Vec<_>>())
         })

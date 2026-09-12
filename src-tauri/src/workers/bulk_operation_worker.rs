@@ -5,13 +5,13 @@ use tauri::async_runtime::{channel, JoinHandle, Mutex, Sender};
 
 use crate::error::{AppError, AppResult};
 use crate::models::bulk_operation_model::{BulkOperation, BulkOperationJob};
+use crate::models::delete_model::DeleteFileJob;
 use crate::models::file_processing_model::{FileProcessingJob, UpdateFileMetadataJob};
 use crate::repositories::background_processing_repository::SqliteBackgroundProcessingRepository;
 use crate::repositories::database_repository::SqliteDatabase;
 use crate::services::bulk_operation_service::BulkOperationService;
 use crate::utils::constants::{
-    BULK_OPERATION_BATCH_SIZE, BULK_OPERATION_QUEUE, BULK_OPERATION_WORKER,
-    FILE_PROCESSING_QUEUE,
+    BULK_OPERATION_BATCH_SIZE, BULK_OPERATION_QUEUE, BULK_OPERATION_WORKER, FILE_PROCESSING_QUEUE,
 };
 use crate::utils::operation_logger::log_event;
 
@@ -21,10 +21,7 @@ pub struct BulkOperationWorker {
 }
 
 impl BulkOperationWorker {
-    pub fn start(
-        database: &SqliteDatabase,
-        bulk_operations: BulkOperationService,
-    ) -> Self {
+    pub fn start(database: &SqliteDatabase, bulk_operations: BulkOperationService) -> Self {
         let queue_pool = database.pool().clone();
         let repository = SqliteBackgroundProcessingRepository::new(database.clone());
         let (shutdown, mut shutdown_receiver) = channel(1);
@@ -36,9 +33,9 @@ impl BulkOperationWorker {
         let task = tauri::async_runtime::spawn(async move {
             log_event(BULK_OPERATION_WORKER, "START", "worker supervisor started");
             loop {
-                let backend = SqliteStorage::<BulkOperationJob, (), ()>::new_in_queue(
+                let backend = SqliteStorage::<BulkOperationJob, (), ()>::new_with_config(
                     &queue_pool,
-                    BULK_OPERATION_QUEUE,
+                    &super::queue_config(BULK_OPERATION_QUEUE),
                 );
                 let handler_pool = queue_pool.clone();
                 let handler_bulk_operations = bulk_operations.clone();
@@ -159,11 +156,17 @@ async fn dispatch_bulk_operation(
     log_event(
         BULK_OPERATION_WORKER,
         "BATCH-MATCHED",
-        format!("process_id={} expected={expected} matched={} missing={missing}", job.process_id, targets.len()),
+        format!(
+            "process_id={} expected={expected} matched={} missing={missing}",
+            job.process_id,
+            targets.len()
+        ),
     );
 
     if missing > 0 {
-        repository.rollback_items(&job.process_id, missing as u64).await?;
+        repository
+            .rollback_items(&job.process_id, missing as u64)
+            .await?;
     }
 
     let mut dispatched = 0_usize;
@@ -173,33 +176,20 @@ async fn dispatch_bulk_operation(
         let process_id = job.process_id.clone();
         let operation = job.operation.clone();
         let queue_pool = pool.clone();
-        let batch_subject = format!("process_id={process_id} offset={dispatched} items={batch_size}");
-        let outcome = super::retry::retry_and_ack(
-            BULK_OPERATION_QUEUE,
-            &batch_subject,
-            move || {
+        let batch_subject =
+            format!("process_id={process_id} offset={dispatched} items={batch_size}");
+        let outcome =
+            super::retry::retry_and_ack(BULK_OPERATION_QUEUE, &batch_subject, move || {
                 let batch = batch.clone();
                 let operation = operation.clone();
                 let process_id = process_id.clone();
                 let queue_pool = queue_pool.clone();
                 async move {
-                    let (favorite, is_trashed) = match operation {
-                        BulkOperation::MoveToTrash => (None, Some(true)),
-                        BulkOperation::SetFavorite { favorite } => (Some(favorite), None),
-                    };
                     let jobs = batch
                         .into_iter()
                         .map(|target| {
-                            Task::builder(FileProcessingJob::UpdateMetadata(
-                                UpdateFileMetadataJob {
-                                    process_id: process_id.clone(),
-                                    drive_id: target.drive_id,
-                                    path: target.path,
-                                    favorite,
-                                    is_trashed,
-                                },
-                            ))
-                            .build()
+                            let child_job = file_processing_job(&operation, &process_id, target);
+                            Task::builder(child_job).build()
                         })
                         .collect::<Vec<_>>();
                     let mut jobs = stream::iter(jobs);
@@ -209,16 +199,18 @@ async fn dispatch_bulk_operation(
                     );
                     queue.push_all(&mut jobs).await.map_err(AppError::database)
                 }
-            },
-        )
-        .await?;
+            })
+            .await?;
         match outcome {
             super::retry::JobOutcome::Completed => {
                 dispatched += batch_size;
                 log_event(
                     BULK_OPERATION_WORKER,
                     "BATCH-QUEUED",
-                    format!("process_id={} dispatched={dispatched} items={batch_size}", job.process_id),
+                    format!(
+                        "process_id={} dispatched={dispatched} items={batch_size}",
+                        job.process_id
+                    ),
                 );
             }
             super::retry::JobOutcome::Failed(message) => {
@@ -235,6 +227,59 @@ async fn dispatch_bulk_operation(
         }
     }
     Ok(BulkDispatchOutcome::Complete { dispatched })
+}
+
+fn file_processing_job(
+    operation: &BulkOperation,
+    process_id: &str,
+    target: crate::models::bulk_operation_model::BulkFileTarget,
+) -> FileProcessingJob {
+    match operation {
+        BulkOperation::Delete => FileProcessingJob::UpdateMetadata(UpdateFileMetadataJob {
+            process_id: process_id.to_owned(),
+            drive_id: target.drive_id,
+            path: target.path,
+            favorite: None,
+            is_trashed: Some(true),
+            add_tags: Vec::new(),
+            add_collection_names: Vec::new(),
+        }),
+        BulkOperation::AddToFavorites => FileProcessingJob::UpdateMetadata(UpdateFileMetadataJob {
+            process_id: process_id.to_owned(),
+            drive_id: target.drive_id,
+            path: target.path,
+            favorite: Some(true),
+            is_trashed: None,
+            add_tags: Vec::new(),
+            add_collection_names: Vec::new(),
+        }),
+        BulkOperation::AddToCollection { collection_name } => {
+            FileProcessingJob::UpdateMetadata(UpdateFileMetadataJob {
+                process_id: process_id.to_owned(),
+                drive_id: target.drive_id,
+                path: target.path,
+                favorite: None,
+                is_trashed: None,
+                add_tags: Vec::new(),
+                add_collection_names: vec![collection_name.clone()],
+            })
+        }
+        BulkOperation::AddTag { tag } => FileProcessingJob::UpdateMetadata(UpdateFileMetadataJob {
+            process_id: process_id.to_owned(),
+            drive_id: target.drive_id,
+            path: target.path,
+            favorite: None,
+            is_trashed: None,
+            add_tags: vec![tag.clone()],
+            add_collection_names: Vec::new(),
+        }),
+        BulkOperation::EmptyTrash => FileProcessingJob::Delete(DeleteFileJob {
+            process_id: process_id.to_owned(),
+            drive_id: target.drive_id,
+            file_id: target.file_id,
+            path: target.path,
+        }),
+    }
 }
 
 async fn collect_targets_with_retry(
@@ -264,3 +309,7 @@ async fn collect_targets_with_retry(
     }
     unreachable!("the retry loop returns after success or the final attempt")
 }
+
+#[cfg(test)]
+#[path = "../../tests/workers/bulk_operation_worker.rs"]
+mod tests;

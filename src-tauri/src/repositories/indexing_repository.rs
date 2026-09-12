@@ -290,6 +290,37 @@ impl TantivyIndexingRepository {
         collection_ids: &[String],
         favorite: bool,
     ) -> AppResult<()> {
+        self.index_metadata(drive, file, name, collection_ids, None, favorite)
+    }
+
+    pub fn index_file_metadata(
+        &self,
+        drive: &str,
+        file: &str,
+        name: &str,
+        collection_ids: &[String],
+        search_keywords: &[String],
+        favorite: bool,
+    ) -> AppResult<()> {
+        self.index_metadata(
+            drive,
+            file,
+            name,
+            collection_ids,
+            Some(search_keywords),
+            favorite,
+        )
+    }
+
+    fn index_metadata(
+        &self,
+        drive: &str,
+        file: &str,
+        name: &str,
+        collection_ids: &[String],
+        search_keywords: Option<&[String]>,
+        favorite: bool,
+    ) -> AppResult<()> {
         let name_field = self.fields.name;
         let mut writer = self.writer.lock().map_err(|_| {
             AppError::internal(std::io::Error::other(
@@ -302,6 +333,7 @@ impl TantivyIndexingRepository {
                 if field != name_field
                     && field != self.fields.collection_ids
                     && field != self.fields.favorite
+                    && (search_keywords.is_none() || field != self.fields.search_keywords)
                 {
                     document.add_field_value(field, value);
                 }
@@ -320,6 +352,14 @@ impl TantivyIndexingRepository {
         for collection_id in collection_ids {
             if !collection_id.is_empty() {
                 document.add_text(self.fields.collection_ids, collection_id);
+            }
+        }
+        if let Some(search_keywords) = search_keywords {
+            for keyword in search_keywords {
+                let keyword = keyword.trim().to_lowercase();
+                if !keyword.is_empty() {
+                    document.add_text(self.fields.search_keywords, keyword);
+                }
             }
         }
         document.add_bool(self.fields.favorite, favorite);

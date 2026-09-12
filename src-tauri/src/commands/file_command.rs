@@ -2,20 +2,28 @@ use tauri::{Manager, State};
 
 use crate::app::state::AppState;
 use crate::error::AppResult;
-use crate::models::file_model::FileCountSummary;
 use crate::models::background_process_model::BackgroundProcess;
 use crate::models::bulk_operation_model::{BulkOperation, BulkOperationFilters};
+use crate::models::file_model::FileCountSummary;
 use crate::utils::operation_logger::log_event;
 
 #[tauri::command]
 pub async fn suggest_tags(state: State<'_, AppState>, prefix: String) -> AppResult<Vec<String>> {
-    log_event("files", "SUGGEST-TAGS-START", format!("prefix_length={}", prefix.chars().count()));
+    log_event(
+        "files",
+        "SUGGEST-TAGS-START",
+        format!("prefix_length={}", prefix.chars().count()),
+    );
     let repository = state.search.clone();
     let result = tauri::async_runtime::spawn_blocking(move || repository.suggest_tags(&prefix))
         .await
         .map_err(crate::error::AppError::internal)?;
     match &result {
-        Ok(tags) => log_event("files", "SUGGEST-TAGS-COMPLETE", format!("count={}", tags.len())),
+        Ok(tags) => log_event(
+            "files",
+            "SUGGEST-TAGS-COMPLETE",
+            format!("count={}", tags.len()),
+        ),
         Err(error) => log_event("files", "SUGGEST-TAGS-FAILED", format!("error={error}")),
     }
     result
@@ -112,7 +120,7 @@ pub async fn update_file_metadata(
         None
     };
     let _guard = state.imports.metadata_lock().lock().await;
-    let (sidecar, file_id, current_name, current_collection_ids, labels_updated) = state
+    let (sidecar, file_id, current_name, current_collection_ids, _, _, labels_updated) = state
         .storage
         .update_file_metadata(
             drive_id.clone(),
@@ -121,6 +129,8 @@ pub async fn update_file_metadata(
             category,
             tags,
             collection_names,
+            Vec::new(),
+            Vec::new(),
             favorite,
             is_trashed,
         )
@@ -228,9 +238,37 @@ pub async fn fetch_files(
 }
 
 #[tauri::command]
-pub async fn empty_trash(state: State<'_, AppState>) -> AppResult<()> {
-    let _guard = state.imports.metadata_lock().lock().await;
-    state.trash.empty_trash().await
+pub async fn empty_trash(
+    state: State<'_, AppState>,
+    mut filters: BulkOperationFilters,
+    expected_count: u64,
+) -> AppResult<BackgroundProcess> {
+    log_event(
+        "bulk-operation",
+        "EMPTY-TRASH-START",
+        format!("expected_count={expected_count}"),
+    );
+    filters.trash_only = true;
+    let result = state
+        .bulk_operations
+        .enqueue(BulkOperation::EmptyTrash, filters, None, expected_count)
+        .await;
+    match &result {
+        Ok(process) => log_event(
+            "bulk-operation",
+            "EMPTY-TRASH-QUEUED",
+            format!(
+                "process_id={} total_items={}",
+                process.process_id, process.total_items
+            ),
+        ),
+        Err(error) => log_event(
+            "bulk-operation",
+            "EMPTY-TRASH-FAILED",
+            format!("error={error}"),
+        ),
+    }
+    result
 }
 
 #[tauri::command]
@@ -244,7 +282,11 @@ pub async fn enqueue_bulk_operation(
     log_event(
         "bulk-operation",
         "COMMAND-START",
-        format!("operation={} selected_ids={}", operation.as_str(), selected_ids.as_ref().map_or(0, Vec::len)),
+        format!(
+            "operation={} selected_ids={}",
+            operation.as_str(),
+            selected_ids.as_ref().map_or(0, Vec::len)
+        ),
     );
     let result = state
         .bulk_operations
@@ -254,7 +296,10 @@ pub async fn enqueue_bulk_operation(
         Ok(process) => log_event(
             "bulk-operation",
             "COMMAND-COMPLETE",
-            format!("process_id={} total_items={}", process.process_id, process.total_items),
+            format!(
+                "process_id={} total_items={}",
+                process.process_id, process.total_items
+            ),
         ),
         Err(error) => log_event("bulk-operation", "COMMAND-FAILED", format!("error={error}")),
     }

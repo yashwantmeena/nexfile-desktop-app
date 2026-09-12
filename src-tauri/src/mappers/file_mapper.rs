@@ -1,7 +1,5 @@
 use std::path::Path;
 
-
-
 use crate::types::file_type::FileType;
 
 pub fn file_type_from_path(path: impl AsRef<Path>) -> FileType {
@@ -28,5 +26,3 @@ pub fn file_type_from_path(path: impl AsRef<Path>) -> FileType {
         _ => FileType::Other,
     }
 }
-
-

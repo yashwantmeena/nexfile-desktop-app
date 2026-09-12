@@ -4,7 +4,9 @@ use futures::FutureExt;
 use tauri::async_runtime::{channel, JoinHandle, Mutex, Sender};
 
 use crate::error::{AppError, AppResult};
-use crate::models::file_processing_model::{ExportFileJob, FileProcessingJob, UpdateFileMetadataJob};
+use crate::models::file_processing_model::{
+    ExportFileJob, FileProcessingJob, UpdateFileMetadataJob,
+};
 use crate::repositories::background_processing_repository::SqliteBackgroundProcessingRepository;
 use crate::repositories::database_repository::SqliteDatabase;
 use crate::repositories::indexing_repository::TantivyIndexingRepository;
@@ -36,9 +38,9 @@ impl FileProcessingWorker {
         let task = tauri::async_runtime::spawn(async move {
             log_event(FILE_PROCESSING_WORKER, "START", "worker supervisor started");
             loop {
-                let backend = SqliteStorage::<FileProcessingJob, (), ()>::new_in_queue(
+                let backend = SqliteStorage::<FileProcessingJob, (), ()>::new_with_config(
                     &queue_pool,
-                    FILE_PROCESSING_QUEUE,
+                    &super::queue_config(FILE_PROCESSING_QUEUE),
                 );
                 let handler_imports = imports.clone();
                 let handler_storage = storage.clone();
@@ -61,20 +63,34 @@ impl FileProcessingWorker {
                         log_event(
                             FILE_PROCESSING_WORKER,
                             "RECEIVED",
-                            format!("process_id={} operation={} subject={subject}", job.process_id(), job.operation()),
+                            format!(
+                                "process_id={} operation={} subject={subject}",
+                                job.process_id(),
+                                job.operation()
+                            ),
                         );
                         repository.mark_running(job.process_id()).await?;
                         log_event(
                             FILE_PROCESSING_WORKER,
                             "RUNNING",
-                            format!("process_id={} operation={} subject={subject}", job.process_id(), job.operation()),
+                            format!(
+                                "process_id={} operation={} subject={subject}",
+                                job.process_id(),
+                                job.operation()
+                            ),
                         );
                         let process_id = job.process_id().to_owned();
                         let operation = job.operation();
-                        let outcome = super::retry::retry_and_ack(FILE_PROCESSING_QUEUE, &subject, || {
-                            consume_file_processing_job(job.clone(), imports.clone(), storage.clone(), index.clone())
-                        })
-                        .await?;
+                        let outcome =
+                            super::retry::retry_and_ack(FILE_PROCESSING_QUEUE, &subject, || {
+                                consume_file_processing_job(
+                                    job.clone(),
+                                    imports.clone(),
+                                    storage.clone(),
+                                    index.clone(),
+                                )
+                            })
+                            .await?;
                         let failure = match &outcome {
                             super::retry::JobOutcome::Completed => None,
                             super::retry::JobOutcome::Failed(message) => Some(message.as_str()),
@@ -82,8 +98,14 @@ impl FileProcessingWorker {
                         repository.finish_item(&process_id, failure).await?;
                         log_event(
                             FILE_PROCESSING_WORKER,
-                            if failure.is_some() { "FAILED" } else { "COMPLETE" },
-                            format!("process_id={process_id} operation={operation} subject={subject}"),
+                            if failure.is_some() {
+                                "FAILED"
+                            } else {
+                                "COMPLETE"
+                            },
+                            format!(
+                                "process_id={process_id} operation={operation} subject={subject}"
+                            ),
                         );
                         Ok::<(), AppError>(())
                     }
@@ -99,7 +121,10 @@ impl FileProcessingWorker {
                     log_event(FILE_PROCESSING_WORKER, "STOP", "worker supervisor stopped");
                     return result;
                 }
-                eprintln!("[{}][RESTART] worker exited: {result:?}", FILE_PROCESSING_WORKER);
+                eprintln!(
+                    "[{}][RESTART] worker exited: {result:?}",
+                    FILE_PROCESSING_WORKER
+                );
                 tokio::select! {
                     _ = shutdown_signal.clone() => return Ok(()),
                     _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {}
@@ -132,12 +157,15 @@ async fn consume_file_processing_job(
         FileProcessingJob::Import(job) => imports.consume(job).await,
         FileProcessingJob::Export(job) => consume_export_file(job).await,
         FileProcessingJob::Delete(job) => {
+            let _guard = imports.metadata_lock().lock().await;
             storage
                 .permanently_delete_file(job.drive_id.clone(), job.file_id.clone(), job.path)
                 .await?;
-            tauri::async_runtime::spawn_blocking(move || index.delete_file(&job.drive_id, &job.file_id))
-                .await
-                .map_err(AppError::internal)??;
+            tauri::async_runtime::spawn_blocking(move || {
+                index.delete_file(&job.drive_id, &job.file_id)
+            })
+            .await
+            .map_err(AppError::internal)??;
             Ok(())
         }
         FileProcessingJob::UpdateMetadata(job) => {
@@ -154,19 +182,37 @@ async fn consume_update_metadata(
 ) -> AppResult<()> {
     let _guard = imports.metadata_lock().lock().await;
     let drive_id = job.drive_id.clone();
-    let (sidecar, file_id, name, collections, _) = storage
-        .update_file_metadata(
-            job.drive_id,
-            job.path,
-            None,
-            None,
-            None,
-            None,
-            job.favorite,
-            job.is_trashed,
-        )
-        .await?;
-    if let Some(favorite) = job.favorite {
+    let add_tags = job.add_tags.clone();
+    let add_collection_names = job.add_collection_names.clone();
+    let (sidecar, file_id, name, collections, search_keywords, current_favorite, labels_updated) =
+        storage
+            .update_file_metadata(
+                job.drive_id,
+                job.path,
+                None,
+                None,
+                None,
+                None,
+                job.add_tags,
+                job.add_collection_names,
+                job.favorite,
+                job.is_trashed,
+            )
+            .await?;
+    if labels_updated {
+        tauri::async_runtime::spawn_blocking(move || {
+            index.index_file_metadata(
+                &drive_id,
+                &file_id,
+                &name,
+                &collections,
+                &search_keywords,
+                current_favorite,
+            )
+        })
+        .await
+        .map_err(AppError::internal)??;
+    } else if let Some(favorite) = job.favorite {
         let index = index.clone();
         tauri::async_runtime::spawn_blocking(move || {
             index.index_filename(&drive_id, &file_id, &name, &collections, favorite)
@@ -177,7 +223,14 @@ async fn consume_update_metadata(
     log_event(
         FILE_PROCESSING_WORKER,
         "METADATA-COMPLETE",
-        format!("sidecar={} favorite={:?} trashed={:?}", sidecar.display(), job.favorite, job.is_trashed),
+        format!(
+            "sidecar={} favorite={:?} trashed={:?} added_tags={} added_collections={}",
+            sidecar.display(),
+            job.favorite,
+            job.is_trashed,
+            add_tags.len(),
+            add_collection_names.len()
+        ),
     );
     Ok(())
 }
@@ -189,7 +242,9 @@ async fn consume_export_file(job: ExportFileJob) -> AppResult<()> {
         if let Some(parent) = destination.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::copy(source, destination).map(|_| ()).map_err(AppError::from)
+        std::fs::copy(source, destination)
+            .map(|_| ())
+            .map_err(AppError::from)
     })
     .await
     .map_err(AppError::internal)??;

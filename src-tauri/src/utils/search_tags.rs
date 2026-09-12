@@ -7,9 +7,7 @@ pub(crate) fn extract_keyword_candidates(text: &str) -> Vec<String> {
     for clause in text.split(is_clause_boundary) {
         let mut current_segment = Vec::new();
 
-        for raw_token in
-            clause.split(|character: char| !character.is_alphanumeric())
-        {
+        for raw_token in clause.split(|character: char| !character.is_alphanumeric()) {
             let token = raw_token.trim_matches('-').to_lowercase();
             if token.is_empty() {
                 continue;

@@ -25,10 +25,10 @@ pub use error::{AppError, ClipError, Florence2Error};
 pub use mappers::file_mapper::file_type_from_path;
 pub use mappers::search_mapper::search_tags;
 pub use models::background_process_model::BackgroundProcess;
+pub use models::bulk_operation_model::{BulkOperation, BulkOperationFilters, BulkOperationJob};
 pub use models::delete_model::DeleteFileJob;
 pub use models::file_model::FileTypeCount;
 pub use models::file_processing_model::{ExportFileJob, FileProcessingJob};
-pub use models::bulk_operation_model::{BulkOperation, BulkOperationFilters, BulkOperationJob};
 pub use models::image_processing_model::{
     ClassificationPrediction, ImageBoundingBox, ImageClassificationOutput, ImageLocation,
     ImageMetadata, ImageObjectDetection, ImageObjectDetectionOutput, ImageOcrOutput,
@@ -46,7 +46,6 @@ pub use repositories::storage_repository::SqliteStorageRepository;
 pub use services::import_service::ImportService;
 pub use services::indexing_service::IndexingService;
 pub use services::storage_service::StorageService;
-pub use services::trash_service::TrashService;
 pub use system::filesystem::read_file;
 pub use types::background_process_status::BackgroundProcessStatus;
 pub use types::file_type::FileType;
@@ -91,7 +90,7 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-            app.run(|app_handle, event| {
+    app.run(|app_handle, event| {
         if matches!(event, tauri::RunEvent::Exit) {
             log_event("app", "STOP", "application shutdown started");
             let state = app_handle.state::<app::state::AppState>();
@@ -105,4 +104,3 @@ pub fn run() {
         }
     });
 }
-

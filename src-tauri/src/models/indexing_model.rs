@@ -20,16 +20,16 @@ impl IndexingJob {
     pub fn process_id(&self) -> &str {
         match self {
             Self::CreateIndexBatch { process_id, .. }
-            | Self::DeleteIndexBatch { process_id, .. } => {
-                process_id
-            }
+            | Self::DeleteIndexBatch { process_id, .. } => process_id,
         }
     }
 
     pub fn subject(&self) -> String {
         match self {
             Self::CreateIndexBatch { paths, .. } => format!("{} files", paths.len()),
-            Self::DeleteIndexBatch { drive_id, file_ids, .. } => {
+            Self::DeleteIndexBatch {
+                drive_id, file_ids, ..
+            } => {
                 format!("{drive_id}: {} files", file_ids.len())
             }
         }

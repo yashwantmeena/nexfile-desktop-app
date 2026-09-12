@@ -60,7 +60,9 @@ pub(crate) fn fetch_matching_files_with_trash(
     trash_only: bool,
 ) -> crate::models::file_model::FilePage {
     use crate::models::file_model::{FetchedFile, FilePage};
-    use crate::services::storage_service::{drive_storage_root, is_generated_image_sidecar, read_drive_metadata};
+    use crate::services::storage_service::{
+        drive_storage_root, is_generated_image_sidecar, read_drive_metadata,
+    };
     use crate::utils::constants::IMPORTED_FILES_DIRECTORY;
 
     let connected = connected
@@ -120,7 +122,10 @@ pub(crate) fn fetch_matching_files_with_trash(
             };
             let path = entry.path();
             if let Some(matches) = indexed_matches {
-                let file_id = path.file_stem().and_then(|value| value.to_str()).unwrap_or_default();
+                let file_id = path
+                    .file_stem()
+                    .and_then(|value| value.to_str())
+                    .unwrap_or_default();
                 if !matches.contains(&(saved.drive_id.clone(), file_id.to_owned())) {
                     continue;
                 }
@@ -158,9 +163,15 @@ pub(crate) fn fetch_matching_files_with_trash(
                 .filter(|name| !name.is_empty())
                 .map(str::to_owned)
                 .unwrap_or_else(|| managed_name.clone());
-            let favorite = managed_metadata.as_ref().is_some_and(|metadata| metadata.favorite);
-            let is_trashed = managed_metadata.as_ref().is_some_and(|metadata| metadata.is_trashed);
-            let is_deleted = managed_metadata.as_ref().is_some_and(|metadata| metadata.is_deleted);
+            let favorite = managed_metadata
+                .as_ref()
+                .is_some_and(|metadata| metadata.favorite);
+            let is_trashed = managed_metadata
+                .as_ref()
+                .is_some_and(|metadata| metadata.is_trashed);
+            let is_deleted = managed_metadata
+                .as_ref()
+                .is_some_and(|metadata| metadata.is_deleted);
             if (trash_only && (!is_trashed || is_deleted))
                 || (!trash_only && (is_trashed || is_deleted))
             {
@@ -226,8 +237,7 @@ pub(crate) fn fetch_matching_files_with_trash(
 pub(crate) fn read_managed_file_metadata(
     path: &Path,
 ) -> crate::error::AppResult<crate::models::file_model::ManagedFileMetadata> {
-    serde_json::from_slice(&std::fs::read(path)?)
-        .map_err(crate::error::AppError::serialization)
+    serde_json::from_slice(&std::fs::read(path)?).map_err(crate::error::AppError::serialization)
 }
 
 fn fallback_captured_at_ms(metadata: &std::fs::Metadata) -> i64 {
@@ -243,7 +253,11 @@ fn fallback_captured_at_ms(metadata: &std::fs::Metadata) -> i64 {
     }
 }
 
-pub(crate) fn read_collection_names(file_path: &Path, storage_root: &Path, drive_id: &str) -> Vec<String> {
+pub(crate) fn read_collection_names(
+    file_path: &Path,
+    storage_root: &Path,
+    drive_id: &str,
+) -> Vec<String> {
     let ids = crate::services::file_service::sidecar_collection_ids(
         &crate::services::image_processing_service::classification_output_path(file_path),
     )
@@ -255,7 +269,13 @@ pub(crate) fn read_collection_names(file_path: &Path, storage_root: &Path, drive
         return Vec::new();
     };
     ids.into_iter()
-        .filter_map(|id| metadata.collections.iter().find(|item| item.id == id).map(|item| item.name.clone()))
+        .filter_map(|id| {
+            metadata
+                .collections
+                .iter()
+                .find(|item| item.id == id)
+                .map(|item| item.name.clone())
+        })
         .collect()
 }
 
@@ -295,9 +315,11 @@ fn read_file_labels(path: &Path) -> (Vec<String>, Vec<String>) {
         .search_keywords
         .into_iter()
         .flat_map(|tag| {
-            tag.split(|character: char| character.is_whitespace() || character == '_' || character == '-')
-                .map(str::to_owned)
-                .collect::<Vec<_>>()
+            tag.split(|character: char| {
+                character.is_whitespace() || character == '_' || character == '-'
+            })
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
         })
         .filter(|tag| !crate::utils::search_tags::is_blocked_search_tag(tag))
         .fold(Vec::<String>::new(), |mut tags, tag| {
@@ -389,21 +411,42 @@ pub(crate) fn sidecar_collection_ids(path: &Path) -> crate::error::AppResult<Vec
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(error) => return Err(error.into()),
     };
-    let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(crate::error::AppError::serialization)?;
-    value.get("collectionIds").map(|ids| serde_json::from_value(ids.clone()).map_err(crate::error::AppError::serialization)).unwrap_or_else(|| Ok(Vec::new()))
+    let value: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(crate::error::AppError::serialization)?;
+    value
+        .get("collectionIds")
+        .map(|ids| {
+            serde_json::from_value(ids.clone()).map_err(crate::error::AppError::serialization)
+        })
+        .unwrap_or_else(|| Ok(Vec::new()))
 }
 
 pub(crate) fn add_sidecar_collections(file: &Path, ids: &[String]) -> crate::error::AppResult<()> {
     let path = super::image_processing_service::classification_output_path(file);
     let mut existing = sidecar_collection_ids(&path)?;
     let before = existing.len();
-    for id in ids { if !existing.contains(id) { existing.push(id.clone()); } }
-    if existing.len() == before { return Ok(()); }
+    for id in ids {
+        if !existing.contains(id) {
+            existing.push(id.clone());
+        }
+    }
+    if existing.len() == before {
+        return Ok(());
+    }
     let bytes = std::fs::read(&path)?;
-    let mut value: serde_json::Value = serde_json::from_slice(&bytes).map_err(crate::error::AppError::serialization)?;
-    let object = value.as_object_mut().ok_or_else(|| crate::error::AppError::validation("File metadata must be a JSON object."))?;
-    object.insert("collectionIds".into(), serde_json::to_value(existing).map_err(crate::error::AppError::serialization)?);
-    crate::system::filesystem::write_file(path, serde_json::to_vec_pretty(&value).map_err(crate::error::AppError::serialization)?)?;
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(crate::error::AppError::serialization)?;
+    let object = value.as_object_mut().ok_or_else(|| {
+        crate::error::AppError::validation("File metadata must be a JSON object.")
+    })?;
+    object.insert(
+        "collectionIds".into(),
+        serde_json::to_value(existing).map_err(crate::error::AppError::serialization)?,
+    );
+    crate::system::filesystem::write_file(
+        path,
+        serde_json::to_vec_pretty(&value).map_err(crate::error::AppError::serialization)?,
+    )?;
     Ok(())
 }
 
@@ -419,11 +462,11 @@ pub(crate) fn replace_sidecar_metadata(
     is_deleted: Option<bool>,
 ) -> crate::error::AppResult<crate::models::file_model::ManagedFileMetadata> {
     let bytes = std::fs::read(sidecar)?;
-    let mut value: serde_json::Value = serde_json::from_slice(&bytes)
-        .map_err(crate::error::AppError::serialization)?;
-    let object = value
-        .as_object_mut()
-        .ok_or_else(|| crate::error::AppError::validation("File metadata must be a JSON object."))?;
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(crate::error::AppError::serialization)?;
+    let object = value.as_object_mut().ok_or_else(|| {
+        crate::error::AppError::validation("File metadata must be a JSON object.")
+    })?;
     if let Some(name) = name {
         object.insert("name".into(), serde_json::Value::String(name.to_owned()));
     }
@@ -439,8 +482,9 @@ pub(crate) fn replace_sidecar_metadata(
         if category.is_empty() {
             secondary.clear();
         } else {
-            if let Some(prediction) =
-                secondary.first_mut().and_then(serde_json::Value::as_object_mut)
+            if let Some(prediction) = secondary
+                .first_mut()
+                .and_then(serde_json::Value::as_object_mut)
             {
                 prediction.insert(
                     "label".into(),
@@ -469,7 +513,19 @@ pub(crate) fn replace_sidecar_metadata(
         object.insert("favorite".into(), serde_json::Value::Bool(favorite));
     }
     if let Some(is_trashed) = is_trashed {
+        let was_trashed = object
+            .get("isTrashed")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
         object.insert("isTrashed".into(), serde_json::Value::Bool(is_trashed));
+        if is_trashed && !was_trashed {
+            object.insert(
+                "trashedAtMs".into(),
+                serde_json::Value::from(current_time_ms()?),
+            );
+        } else if !is_trashed {
+            object.insert("trashedAtMs".into(), serde_json::Value::Null);
+        }
     }
     if let Some(is_deleted) = is_deleted {
         object.insert("isDeleted".into(), serde_json::Value::Bool(is_deleted));
@@ -480,4 +536,9 @@ pub(crate) fn replace_sidecar_metadata(
     Ok(metadata)
 }
 
-
+fn current_time_ms() -> crate::error::AppResult<u64> {
+    let duration = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(crate::error::AppError::system_time)?;
+    u64::try_from(duration.as_millis()).map_err(crate::error::AppError::internal)
+}

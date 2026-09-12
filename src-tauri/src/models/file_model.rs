@@ -8,13 +8,19 @@ pub struct ManagedFileMetadata {
     #[serde(alias = "originalName")]
     pub name: String,
     #[serde(default)]
+    pub created_at_ms: u64,
+    #[serde(default)]
     pub favorite: bool,
     #[serde(default)]
     pub is_trashed: bool,
     #[serde(default)]
+    pub trashed_at_ms: Option<u64>,
+    #[serde(default)]
     pub is_deleted: bool,
     #[serde(default)]
     pub collection_ids: Vec<String>,
+    #[serde(default)]
+    pub search_keywords: Vec<String>,
     #[serde(default)]
     pub captured_at_ms: Option<i64>,
 }
@@ -69,4 +75,3 @@ pub struct FileCountIssue {
     pub drive_name: String,
     pub message: String,
 }
-

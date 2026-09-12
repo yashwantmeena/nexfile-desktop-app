@@ -1,9 +1,9 @@
+use crate::models::storage_model::{DriveInfo, DriveMetadata};
 use crate::services::{
-    collection_service::*, file_service::sidecar_collection_ids,
-    import_service::assign_import_collections,
+    collection_service::*,
+    file_service::sidecar_collection_ids,
     storage_service::{drive_storage_root, write_drive_metadata},
 };
-use crate::models::storage_model::{DriveInfo, DriveMetadata};
 
 #[test]
 fn collection_persistence_does_not_read_file_metadata() {
@@ -39,13 +39,13 @@ fn import_updates_only_known_sidecar_and_reuses_collection() {
     std::fs::write(&file, b"photo").unwrap();
     std::fs::write(&sidecar, br#"{"version":1,"name":"Photo.jpg","custom":42}"#).unwrap();
     std::fs::write(root.join("files/other.jpg.json"), b"invalid JSON").unwrap();
-    assign_import_collections(&root, "drive", &file, &[]).unwrap();
+    add_file_to_collections(&root, "drive", &file, &[]).unwrap();
     assert!(!root.join("collections.json").exists());
-    assign_import_collections(&root, "drive", &file, &["Travel".into()]).unwrap();
+    add_file_to_collections(&root, "drive", &file, &["Travel".into()]).unwrap();
     let data = read(&root, "drive").unwrap();
     let id = data.collections[0].id.clone();
     let saved = std::fs::read(root.join("collections.json")).unwrap();
-    assign_import_collections(&root, "drive", &file, &["travel".into()]).unwrap();
+    add_file_to_collections(&root, "drive", &file, &["travel".into()]).unwrap();
     assert_eq!(std::fs::read(root.join("collections.json")).unwrap(), saved);
     assert_eq!(sidecar_collection_ids(&sidecar).unwrap(), vec![id]);
     let json: serde_json::Value =

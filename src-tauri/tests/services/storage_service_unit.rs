@@ -1,6 +1,4 @@
-
 use crate::models::storage_model::DriveMetadata;
-
 
 use crate::services::storage_service::{
     calculate_managed_statistics, read_metadata, write_metadata,
@@ -35,7 +33,6 @@ fn writes_only_total_file_count_in_drive_metadata() {
         std::env::temp_dir().join(format!("nexfile-metadata-counts-{}", uuid::Uuid::new_v4()));
     let path = directory.join("drive_metadata.json");
     let metadata = DriveMetadata {
-        
         drive_id: "drive-1".to_owned(),
         drive_name: "Test".to_owned(),
         partition_name: "Test".to_owned(),
@@ -59,5 +56,3 @@ fn writes_only_total_file_count_in_drive_metadata() {
 
     std::fs::remove_dir_all(directory).expect("test directory should be removed");
 }
-
-

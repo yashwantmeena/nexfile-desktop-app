@@ -101,5 +101,3 @@ pub async fn selected_names(pool: &SqlitePool, ids: &[String]) -> AppResult<Vec<
     }
     Ok(names)
 }
-
-

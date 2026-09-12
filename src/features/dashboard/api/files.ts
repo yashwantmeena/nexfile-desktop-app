@@ -48,8 +48,8 @@ interface FileMetadataChanges {
   isTrashed?: boolean;
 }
 
-export async function emptyTrash(): Promise<void> {
-  await invoke("empty_trash");
+export async function emptyTrash(filters: BulkOperationFilters, expectedCount: number): Promise<void> {
+  await invoke("empty_trash", { filters, expectedCount });
 }
 
 export async function updateFileMetadata(file: { driveId: string; path: string }, changes: FileMetadataChanges): Promise<void> {
@@ -68,7 +68,7 @@ export interface BulkOperationFilters {
 }
 
 export async function enqueueBulkOperation(
-  operation: "moveToTrash" | { setFavorite: { favorite: boolean } },
+  operation: "delete" | "addToFavorites" | { addToCollection: { collectionName: string } } | { addTag: { tag: string } } | "emptyTrash",
   filters: BulkOperationFilters,
   expectedCount: number,
   selectedIds?: string[],

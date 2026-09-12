@@ -78,6 +78,36 @@ pub(crate) fn ids_by_name(
     Ok(matches)
 }
 
+pub(crate) fn add_file_to_collections(
+    root: &Path,
+    drive_id: &str,
+    file: &Path,
+    names: &[String],
+) -> AppResult<()> {
+    if names.is_empty() {
+        return Ok(());
+    }
+    let mut metadata = read(root, drive_id)?;
+    let count = metadata.collections.len();
+    let mut ids = Vec::new();
+    for name in names {
+        let existing = metadata
+            .collections
+            .iter()
+            .find(|item| item.name.eq_ignore_ascii_case(name.trim()))
+            .map(|item| item.id.clone());
+        ids.push(match existing {
+            Some(id) => id,
+            None => metadata.create(name)?,
+        });
+    }
+    // Collection definitions must exist before a sidecar references them.
+    if metadata.collections.len() != count {
+        save(root, &metadata)?;
+    }
+    super::file_service::add_sidecar_collections(file, &ids)
+}
+
 impl CollectionMetadata {
     pub fn create(&mut self, name: &str) -> AppResult<String> {
         let name = self.valid_name(name)?;

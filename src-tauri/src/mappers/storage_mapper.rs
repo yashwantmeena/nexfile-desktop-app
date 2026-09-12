@@ -1,11 +1,7 @@
-
 use crate::models::storage_model::{DriveInfo, DriveMetadata, StorageData, StorageDrive};
 use crate::utils::percentage;
 
-pub(crate) fn storage_data(
-    drives: Vec<StorageDrive>,
-
-) -> StorageData {
+pub(crate) fn storage_data(drives: Vec<StorageDrive>) -> StorageData {
     let connected_drives = drives.iter().filter(|drive| drive.is_connected);
 
     StorageData {

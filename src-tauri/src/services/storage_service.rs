@@ -41,9 +41,19 @@ impl StorageService {
         category: Option<String>,
         tags: Option<Vec<String>>,
         collection_names: Option<Vec<String>>,
+        add_tags: Vec<String>,
+        add_collection_names: Vec<String>,
         favorite: Option<bool>,
         is_trashed: Option<bool>,
-    ) -> AppResult<(PathBuf, String, String, Vec<String>, bool)> {
+    ) -> AppResult<(
+        PathBuf,
+        String,
+        String,
+        Vec<String>,
+        Vec<String>,
+        bool,
+        bool,
+    )> {
         let path_subject = path.display().to_string();
         let drive_subject = drive_id.clone();
         log_event(
@@ -77,11 +87,13 @@ impl StorageService {
             if !sidecar.is_file() {
                 return Err(AppError::validation("The selected file has no metadata."));
             }
-            let labels_updated = name.is_some()
+            let replaces_labels = name.is_some()
                 || category.is_some()
                 || tags.is_some()
                 || collection_names.is_some();
-            if labels_updated
+            let labels_updated =
+                replaces_labels || !add_tags.is_empty() || !add_collection_names.is_empty();
+            if replaces_labels
                 && (name.is_none()
                     || category.is_none()
                     || tags.is_none()
@@ -91,7 +103,7 @@ impl StorageService {
                     "Name, category, tags, and collections must be updated together.",
                 ));
             }
-            if labels_updated {
+            if replaces_labels {
                 let sidecar_bytes = std::fs::read(&sidecar)?;
                 serde_json::from_slice::<
                     crate::models::image_processing_model::ImageProcessingOutput,
@@ -102,12 +114,36 @@ impl StorageService {
             }
 
             let storage_root = drive_storage_root(&drive, &root);
+            let current_metadata =
+                crate::services::file_service::read_managed_file_metadata(&sidecar)?;
+            let resolved_tags = if let Some(tags) = tags {
+                Some(tags)
+            } else if !add_tags.is_empty() {
+                let mut tags = current_metadata.search_keywords.clone();
+                for tag in add_tags {
+                    if !tags
+                        .iter()
+                        .any(|existing| existing.eq_ignore_ascii_case(&tag))
+                    {
+                        tags.push(tag);
+                    }
+                }
+                Some(tags)
+            } else {
+                None
+            };
             let mut collection_metadata =
                 crate::services::collection_service::read(&storage_root, &drive_metadata.drive_id)?;
             let mut resolved_collection_ids = None;
             let mut definitions_changed = false;
-            if let Some(collection_names) = collection_names {
-                let mut collection_ids = Vec::with_capacity(collection_names.len());
+            let replaces_collections = collection_names.is_some();
+            let collection_names = collection_names.unwrap_or(add_collection_names);
+            if replaces_collections || !collection_names.is_empty() {
+                let mut collection_ids = if replaces_collections {
+                    Vec::with_capacity(collection_names.len())
+                } else {
+                    current_metadata.collection_ids.clone()
+                };
                 for name in collection_names {
                     let name = name.trim();
                     if name.is_empty() {
@@ -118,7 +154,9 @@ impl StorageService {
                         .iter()
                         .find(|collection| collection.name.eq_ignore_ascii_case(name))
                     {
-                        collection_ids.push(collection.id.clone());
+                        if !collection_ids.contains(&collection.id) {
+                            collection_ids.push(collection.id.clone());
+                        }
                     } else {
                         let id = collection_metadata.create(name)?;
                         collection_ids.push(id);
@@ -135,7 +173,7 @@ impl StorageService {
                 &sidecar,
                 name.as_deref(),
                 category.as_deref(),
-                tags.as_deref(),
+                resolved_tags.as_deref(),
                 resolved_collection_ids.as_deref(),
                 favorite,
                 is_trashed,
@@ -152,6 +190,8 @@ impl StorageService {
                 file_id,
                 metadata.name,
                 metadata.collection_ids,
+                metadata.search_keywords,
+                metadata.favorite,
                 labels_updated,
             ))
         })
@@ -190,7 +230,10 @@ impl StorageService {
         log_event(
             "storage",
             "SEARCH-START",
-            format!("query_length={} mode={mode} offset={offset} limit={limit} trash_only={trash_only}", query.chars().count()),
+            format!(
+                "query_length={} mode={mode} offset={offset} limit={limit} trash_only={trash_only}",
+                query.chars().count()
+            ),
         );
         if !(1..=200).contains(&limit) {
             return Err(AppError::validation(
@@ -252,7 +295,12 @@ impl StorageService {
             Ok(page) => log_event(
                 "storage",
                 "SEARCH-COMPLETE",
-                format!("returned={} total={} issues={}", page.files.len(), page.total_count, page.issues.len()),
+                format!(
+                    "returned={} total={} issues={}",
+                    page.files.len(),
+                    page.total_count,
+                    page.issues.len()
+                ),
             ),
             Err(error) => log_event("storage", "SEARCH-FAILED", format!("error={error}")),
         }
@@ -273,7 +321,10 @@ impl StorageService {
         log_event(
             "storage",
             "COUNT-START",
-            format!("query_length={} mode={mode} trash_only={trash_only}" , query.chars().count()),
+            format!(
+                "query_length={} mode={mode} trash_only={trash_only}",
+                query.chars().count()
+            ),
         );
         let snapshots = self.repository.list().await?;
         let root = self.system_metadata_root.clone();
@@ -350,7 +401,11 @@ impl StorageService {
             Ok(summary) => log_event(
                 "storage",
                 "COUNT-COMPLETE",
-                format!("total={:?} issues={}", summary.total_count, summary.issues.len()),
+                format!(
+                    "total={:?} issues={}",
+                    summary.total_count,
+                    summary.issues.len()
+                ),
             ),
             Err(error) => log_event("storage", "COUNT-FAILED", format!("error={error}")),
         }
@@ -390,14 +445,23 @@ impl StorageService {
             page => log_event(
                 "storage",
                 "FETCH-COMPLETE",
-                format!("returned={} total={} issues={}", page.files.len(), page.total_count, page.issues.len()),
+                format!(
+                    "returned={} total={} issues={}",
+                    page.files.len(),
+                    page.total_count,
+                    page.issues.len()
+                ),
             ),
         }
         Ok(result)
     }
 
     pub async fn get_file_count(&self) -> AppResult<crate::models::file_model::FileCountSummary> {
-        log_event("storage", "VERIFY-COUNT-START", "verifying managed file counts");
+        log_event(
+            "storage",
+            "VERIFY-COUNT-START",
+            "verifying managed file counts",
+        );
         let snapshot = self.repository.list().await?;
         let root = self.system_metadata_root.clone();
         let result = tauri::async_runtime::spawn_blocking(move || {
@@ -406,7 +470,15 @@ impl StorageService {
         .await
         .map_err(AppError::internal)?;
         match &result {
-            summary => log_event("storage", "VERIFY-COUNT-COMPLETE", format!("total={:?} issues={}", summary.total_count, summary.issues.len())),
+            summary => log_event(
+                "storage",
+                "VERIFY-COUNT-COMPLETE",
+                format!(
+                    "total={:?} issues={}",
+                    summary.total_count,
+                    summary.issues.len()
+                ),
+            ),
         }
         Ok(result)
     }
@@ -617,7 +689,15 @@ impl StorageService {
         log_event(
             "storage",
             "DRIVES-COMPLETE",
-            format!("connected={} detected={} mounted={}", data.drives.iter().filter(|drive| drive.is_connected).count(), data.drives_detected, data.drives.iter().filter(|drive| drive.is_mounted).count()),
+            format!(
+                "connected={} detected={} mounted={}",
+                data.drives
+                    .iter()
+                    .filter(|drive| drive.is_connected)
+                    .count(),
+                data.drives_detected,
+                data.drives.iter().filter(|drive| drive.is_mounted).count()
+            ),
         );
         Ok(data)
     }
@@ -696,7 +776,11 @@ impl StorageService {
         log_event(
             "storage",
             "MOUNT-COMPLETE",
-            format!("drive_id={} files_root={}", metadata.drive_id, files_directory.display()),
+            format!(
+                "drive_id={} files_root={}",
+                metadata.drive_id,
+                files_directory.display()
+            ),
         );
         Ok((self.get_storage_data().await?, files_directory))
     }
@@ -718,7 +802,11 @@ impl StorageService {
         // Unmounting is a local database preference, including for offline drives.
         self.repository.update(&drive, |_| Ok(())).await?;
         let data = self.get_storage_data().await?;
-        log_event("storage", "UNMOUNT-COMPLETE", format!("drive_id={drive_id}"));
+        log_event(
+            "storage",
+            "UNMOUNT-COMPLETE",
+            format!("drive_id={drive_id}"),
+        );
         Ok(data)
     }
 
@@ -726,7 +814,11 @@ impl StorageService {
         &self,
         updates: &[DriveConfigurationUpdate],
     ) -> AppResult<StorageData> {
-        log_event("storage", "CONFIG-START", format!("drives={}", updates.len()));
+        log_event(
+            "storage",
+            "CONFIG-START",
+            format!("drives={}", updates.len()),
+        );
         if updates.is_empty() {
             return Err(AppError::validation(
                 "At least one mounted drive is required.",
@@ -821,7 +913,11 @@ impl StorageService {
                 .await?;
         }
         let data = self.get_storage_data().await?;
-        log_event("storage", "CONFIG-COMPLETE", format!("drives={}", updated_drives.len()));
+        log_event(
+            "storage",
+            "CONFIG-COMPLETE",
+            format!("drives={}", updated_drives.len()),
+        );
         Ok(data)
     }
 

@@ -44,6 +44,16 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const [showBackToTop,setShowBackToTop]=useState(false);
   const { totalCount, nextOffset, loading, error, loadMore } = fetched;
+  const bulkOperationFilters = {
+    query,
+    searchMode,
+    tags,
+    collection: activeCollection?.name,
+    mediaType: activeCategory === "All" ? undefined : activeCategory.toLowerCase(),
+    favoriteOnly,
+    trashOnly,
+    modelCategory,
+  };
   useEffect(() => {
     const root = resultsPaneRef.current;
     const sentinel = loadMoreRef.current;
@@ -73,6 +83,7 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
     };
   }, [query, searchMode, tagsKey, refreshKey, countRefreshKey, activeCollection?.name, favoriteOnly, trashOnly, modelCategory]);
   const counts = homeCounts?.counts;
+  const emptyTrashCount = trashOnly ? homeCounts?.totalCount ?? null : null;
   const categories = [
     { label: "All", count: homeCounts?.totalCount },
     ...["image", "video", "audio", "document", "archive", "other"].map(fileType => ({ label: fileType, count: counts?.find(entry => entry.fileType === fileType)?.count })),
@@ -132,7 +143,7 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
       setSelectingAll(false);
     }
   };
-  const applyBulkMetadata = async (changes:{isTrashed?:boolean; favorite?:boolean}, successMessage:string, filesToUpdate?:Array<{id:string|number; driveId?:string; path:string; favorite?:boolean}>) => {
+  const applyBulkMetadata = async (changes:{isTrashed?:boolean; favorite?:boolean; collectionName?:string; tag?:string}, successMessage:string, filesToUpdate?:Array<{id:string|number; driveId?:string; path:string; favorite?:boolean}>) => {
     if (!selectedIds.size || bulkDeleteBusy) return;
     setBulkDeleteBusy(true);
     setBulkDeleteError("");
@@ -140,24 +151,20 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
       const actionFiles = filesToUpdate ?? (allFilteredSelected ? files : await resolveSelectedFiles());
       const selectedForQueue = allFilteredSelected ? undefined : actionFiles.map(file => String(file.id));
       const operation = changes.isTrashed
-        ? "moveToTrash" as const
-        : { setFavorite: { favorite: changes.favorite === true } };
-      const filters = {
-        query,
-        searchMode,
-        tags,
-        collection: activeCollection?.name,
-        mediaType: activeCategory === "All" ? undefined : activeCategory.toLowerCase(),
-        favoriteOnly,
-        trashOnly,
-        modelCategory,
-      };
+        ? "delete" as const
+        : changes.collectionName
+          ? { addToCollection:{ collectionName:changes.collectionName } }
+          : changes.tag
+            ? { addTag:{ tag:changes.tag } }
+            : "addToFavorites" as const;
       const queuedCount = allFilteredSelected ? totalCount : actionFiles.length;
-      console.info("[NexFile] Creating bulk operation task", { operation, queuedCount, allFilteredSelected, selectedForQueue: selectedForQueue?.length ?? 0, filters });
-      await enqueueBulkOperation(operation, filters, queuedCount, selectedForQueue);
+      console.info("[NexFile] Creating bulk operation task", { operation, queuedCount, allFilteredSelected, selectedForQueue: selectedForQueue?.length ?? 0, filters:bulkOperationFilters });
+      await enqueueBulkOperation(operation, bulkOperationFilters, queuedCount, selectedForQueue);
       console.info("[NexFile] Bulk operation task queued", { operation, queuedCount });
       if (changes.isTrashed) actionFiles.forEach(file => fetched.removeFile(String(file.id)));
       if (changes.favorite !== undefined) actionFiles.forEach(file => fetched.updateFavorite(String(file.id), changes.favorite!));
+      if (changes.collectionName) actionFiles.forEach(file => fetched.addToCollection(String(file.id), changes.collectionName!));
+      if (changes.tag) actionFiles.forEach(file => fetched.addTag(String(file.id), changes.tag!));
       setSelectedIds(new Set());
       setCountRefreshKey(current => current + 1);
       setRefreshKey(current => current + 1);
@@ -174,11 +181,44 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
     if (!window.confirm(`Move ${selectedCount} selected ${selectedCount === 1 ? "file" : "files"} to Trash?`)) return;
     await applyBulkMetadata({ isTrashed:true }, "moved to Trash");
   };
-  const favoriteTarget = selectedFiles.some(file => !file.favorite);
   const favoriteSelected = async () => {
     const actionFiles = allFilteredSelected ? files : await resolveSelectedFiles();
-    const target = actionFiles.some(file => !file.favorite);
-    await applyBulkMetadata({ favorite:target }, target ? "added to Favorites" : "removed from Favorites", actionFiles);
+    await applyBulkMetadata({ favorite:true }, "added to Favorites", actionFiles);
+  };
+  const addSelectedToCollection = async (collectionName:string) => {
+    await applyBulkMetadata({ collectionName }, `added to ${collectionName}`);
+  };
+  const addTagToSelected = async (tag:string) => {
+    await applyBulkMetadata({ tag }, `tagged with ${tag}`);
+  };
+  const emptyTrashItems = async () => {
+    if (emptyingTrash || emptyTrashCount === null || emptyTrashCount <= 0) return;
+    if (!window.confirm(`Permanently delete ${emptyTrashCount} ${emptyTrashCount === 1 ? "file" : "files"} from Trash? This cannot be undone.`)) return;
+    const filters = {
+      query:"",
+      searchMode:"tags",
+      tags:[],
+      collection:undefined,
+      mediaType:undefined,
+      favoriteOnly:false,
+      trashOnly:true,
+      modelCategory:undefined,
+    };
+    setEmptyingTrash(true);
+    setBulkDeleteError("");
+    console.info("[NexFile] Creating Empty Trash bulk operation", { expectedCount:emptyTrashCount, filters });
+    try {
+      await emptyTrash(filters, emptyTrashCount);
+      console.info("[NexFile] Empty Trash bulk operation queued", { expectedCount:emptyTrashCount });
+      setPreviewIndex(null);
+      fetched.clearFiles();
+      setCountRefreshKey(current => current + 1);
+    } catch (error) {
+      console.error("[NexFile] Empty Trash bulk operation failed", { error });
+      setBulkDeleteError("Unable to queue Empty Trash. Please try again.");
+    } finally {
+      setEmptyingTrash(false);
+    }
   };
   return (
     <div className="nexfile-app">
@@ -203,7 +243,7 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
           selectAllDisabled={trashOnly || !files.length || selectingAll || bulkDeleteBusy || loading || allFilteredSelected}
           selectAllPressed={allFilteredSelected}
           onSelectAll={!trashOnly && files.length ? ()=>void toggleSelectAll() : undefined}
-          selectionActions={selectedCount > 0 && !trashOnly ? <BulkSelectionToolbar count={selectedCount} busy={bulkDeleteBusy || loading || selectingAll} error={bulkDeleteError} onDelete={()=>void deleteSelected()} onFavorite={()=>void favoriteSelected()} favoriteLabel={favoriteTarget ? "Add to Favorites" : "Remove from Favorites"} onClear={clearSelection}/> : undefined}/>
+          selectionActions={selectedCount > 0 && !trashOnly ? <BulkSelectionToolbar count={selectedCount} busy={bulkDeleteBusy || loading || selectingAll} error={bulkDeleteError} onDelete={()=>void deleteSelected()} onFavorite={()=>void favoriteSelected()} favoriteLabel="Add to Favorites" collections={collections} onAddToCollection={collectionName=>void addSelectedToCollection(collectionName)} onAddTag={tag=>void addTagToSelected(tag)} onClear={clearSelection}/> : undefined}/>
         <section className="content-shell">
           <div className="results-pane" ref={resultsPaneRef} tabIndex={-1} onScroll={event=>setShowBackToTop(event.currentTarget.scrollTop>200)}>
             {(countsError || !!homeCounts?.issues.length) && <div className="count-warning" role="alert">
@@ -214,9 +254,10 @@ export function DashboardPage({ activeNavigation,onNavigationChange }:DashboardP
             <div className="category-toolbar">
               <CategoryFilters categories={categories} activeCategory={activeCategory} onCategoryChange={setActiveCategory}/>
               <ModelCategoryFilter categories={modelCategories} selected={modelCategory} onSelect={value => { setModelCategory(value); setPreviewIndex(null); }}/>
-              {trashOnly && <button className="empty-trash-button" disabled={emptyingTrash || !fetched.files.length} onClick={()=>void (async()=>{setEmptyingTrash(true);try{await emptyTrash();setPreviewIndex(null);fetched.clearFiles();setCountRefreshKey(current=>current+1);}finally{setEmptyingTrash(false);}})()}>{emptyingTrash?"Emptying…":"Empty Trash"}</button>}
+              {trashOnly && <button className="empty-trash-button" disabled={emptyingTrash || emptyTrashCount === null || emptyTrashCount <= 0} onClick={()=>void emptyTrashItems()}>{emptyingTrash?"Queueing…":"Empty Trash"}</button>}
               <button className="results-sort category-sort" title="Filesystem modified time, descending">Modified: newest <ChevronDown /></button>
             </div>
+            {trashOnly && bulkDeleteError && <div className="count-warning" role="alert"><p>{bulkDeleteError}</p></div>}
             {(fetched.error || fetched.issues.length > 0) && <div className="count-warning" role="alert">
               {fetched.error && <p>{fetched.error}</p>}
               {fetched.issues.map(issue => <p key={issue.driveId}><strong>{issue.driveName || issue.driveId}:</strong> {issue.message}</p>)}

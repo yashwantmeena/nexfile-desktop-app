@@ -17,9 +17,7 @@ fn test_service(root: &std::path::Path) -> ImageProcessingService {
     )
 }
 
-fn test_indexing_service(
-    root: &std::path::Path,
-) -> (IndexingService, TantivyIndexingRepository) {
+fn test_indexing_service(root: &std::path::Path) -> (IndexingService, TantivyIndexingRepository) {
     let repository = TantivyIndexingRepository::open(root.join("app-data"))
         .expect("test search index should open");
     (IndexingService::new(repository.clone()), repository)
@@ -44,7 +42,10 @@ async fn worker_acknowledges_failed_job_and_processes_next_job() {
         AI_PROCESSING_QUEUE,
     );
     queue
-        .push(ImageProcessingJob { process_id: process.process_id.clone(), path: invalid })
+        .push(ImageProcessingJob {
+            process_id: process.process_id.clone(),
+            path: invalid,
+        })
         .await
         .unwrap();
     queue
@@ -138,7 +139,10 @@ async fn keeps_a_real_processing_failure_retryable() {
     std::fs::write(&path, b"not an AVIF image").expect("invalid image should be written");
 
     let result = consume_image_processing_job(
-        ImageProcessingJob { process_id: "process-1".into(), path },
+        ImageProcessingJob {
+            process_id: "process-1".into(),
+            path,
+        },
         test_service(&root),
         test_indexing_service(&root).0,
     )
@@ -202,20 +206,22 @@ async fn indexes_the_processed_json_directly_without_queueing() {
     let (indexing, indexing_repository) = test_indexing_service(&root);
 
     consume_image_processing_job(
-        ImageProcessingJob { process_id: "process-1".into(), path: image_path },
+        ImageProcessingJob {
+            process_id: "process-1".into(),
+            path: image_path,
+        },
         test_service(&root),
         indexing,
     )
     .await
     .expect("processed image should be indexed directly");
 
-    let queued: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM Jobs WHERE job_type = ?1 AND status = 'Pending'",
-    )
-    .bind(INDEXING_QUEUE)
-    .fetch_one(database.pool())
-    .await
-    .expect("indexing queue should be readable");
+    let queued: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM Jobs WHERE job_type = ?1 AND status = 'Pending'")
+            .bind(INDEXING_QUEUE)
+            .fetch_one(database.pool())
+            .await
+            .expect("indexing queue should be readable");
     assert_eq!(queued, 0);
     assert_eq!(
         indexing_repository

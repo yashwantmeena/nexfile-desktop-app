@@ -87,7 +87,9 @@ fn extracts_single_word_candidates_from_a_detailed_caption() {
         "A red vintage car parked beside a brick building on a rainy city street.",
     );
 
-    assert!(candidates.iter().all(|candidate| candidate.split_whitespace().count() == 1));
+    assert!(candidates
+        .iter()
+        .all(|candidate| candidate.split_whitespace().count() == 1));
     assert!(candidates.contains(&"car".to_owned()));
     assert!(candidates.contains(&"parked".to_owned()));
     assert!(candidates.contains(&"building".to_owned()));
@@ -195,7 +197,9 @@ fn removes_viewpoint_pronoun_and_incomplete_descriptor_candidates() {
     );
 
     assert!(candidates.contains(&"bird".to_owned()));
-    assert!(candidates.iter().all(|candidate| candidate.split_whitespace().count() == 1));
+    assert!(candidates
+        .iter()
+        .all(|candidate| candidate.split_whitespace().count() == 1));
     assert!(candidates.contains(&"eyes".to_owned()));
     assert!(candidates.contains(&"head".to_owned()));
     assert!(!candidates.contains(&"large green".to_owned()));
@@ -234,10 +238,7 @@ fn selects_highest_scoring_non_redundant_search_tags() {
         ("carpet".to_owned(), 0.29),
     ]);
 
-    assert_eq!(
-        tags,
-        ["car", "building", "carpet"]
-    );
+    assert_eq!(tags, ["car", "building", "carpet"]);
 }
 
 #[test]

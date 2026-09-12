@@ -43,9 +43,9 @@ impl AiProcessingWorker {
         let task = tauri::async_runtime::spawn(async move {
             log_event(AI_PROCESSING_WORKER, "START", "worker supervisor started");
             loop {
-                let backend = SqliteStorage::<ImageProcessingJob, (), ()>::new_in_queue(
+                let backend = SqliteStorage::<ImageProcessingJob, (), ()>::new_with_config(
                     &queue_pool,
-                    AI_PROCESSING_QUEUE,
+                    &super::queue_config(AI_PROCESSING_QUEUE),
                 );
                 let handler_service = service.clone();
                 let handler_repository = repository.clone();
@@ -74,14 +74,15 @@ impl AiProcessingWorker {
                             "RUNNING",
                             format!("process_id={} path={subject}", job.process_id),
                         );
-                        let outcome = super::retry::retry_and_ack(AI_PROCESSING_QUEUE, &subject, || {
-                            consume_image_processing_job(
-                                job.clone(),
-                                service.clone(),
-                                indexing.clone(),
-                            )
-                        })
-                        .await?;
+                        let outcome =
+                            super::retry::retry_and_ack(AI_PROCESSING_QUEUE, &subject, || {
+                                consume_image_processing_job(
+                                    job.clone(),
+                                    service.clone(),
+                                    indexing.clone(),
+                                )
+                            })
+                            .await?;
                         let failure = match &outcome {
                             super::retry::JobOutcome::Completed => None,
                             super::retry::JobOutcome::Failed(message) => Some(message.as_str()),
@@ -89,7 +90,11 @@ impl AiProcessingWorker {
                         repository.finish_item(&job.process_id, failure).await?;
                         log_event(
                             AI_PROCESSING_WORKER,
-                            if failure.is_some() { "FAILED" } else { "COMPLETE" },
+                            if failure.is_some() {
+                                "FAILED"
+                            } else {
+                                "COMPLETE"
+                            },
                             format!("process_id={} path={subject}", job.process_id),
                         );
                         Ok::<(), AppError>(())

@@ -88,6 +88,16 @@ export function useFiles(mediaType?: string, query = "", searchMode = "tags", ta
   const updateFavorite = useCallback((id: string, favorite: boolean) => {
     setFiles(current => current.map(file => file.id === id ? { ...file, favorite } : file));
   }, []);
+  const addToCollection = useCallback((id: string, collectionName: string) => {
+    setFiles(current => current.map(file => file.id === id && !file.collectionNames.some(name => name.toLowerCase() === collectionName.toLowerCase())
+      ? { ...file, collectionNames:[...file.collectionNames, collectionName] }
+      : file));
+  }, []);
+  const addTag = useCallback((id: string, tag: string) => {
+    setFiles(current => current.map(file => file.id === id && !file.tags.some(value => value.toLowerCase() === tag.toLowerCase())
+      ? { ...file, tags:[...file.tags, tag] }
+      : file));
+  }, []);
   const removeFile = useCallback((id: string) => {
     setFiles(current => current.filter(file => file.id !== id));
   }, []);
@@ -100,5 +110,5 @@ export function useFiles(mediaType?: string, query = "", searchMode = "tags", ta
     setIssues([]);
     setError(null);
   }, []);
-  return { files, totalCount, nextOffset, issues, loading, error, loadMore, loadAll, updateFavorite, removeFile, clearFiles };
+  return { files, totalCount, nextOffset, issues, loading, error, loadMore, loadAll, updateFavorite, addToCollection, addTag, removeFile, clearFiles };
 }

@@ -2,8 +2,6 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-
-
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DriveConfigurationUpdate {
@@ -82,4 +80,3 @@ pub struct StorageData {
     pub app_used_bytes: i64,
     pub drives: Vec<StorageDrive>,
 }
-

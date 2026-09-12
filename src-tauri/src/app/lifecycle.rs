@@ -5,18 +5,17 @@ use crate::repositories::background_processing_repository::SqliteBackgroundProce
 use crate::repositories::database_repository::SqliteDatabase;
 use crate::repositories::indexing_repository::TantivyIndexingRepository;
 use crate::repositories::storage_repository::SqliteStorageRepository;
+use crate::services::bulk_operation_service::BulkOperationService;
 use crate::services::import_service::ImportService;
 use crate::services::indexing_service::IndexingService;
 use crate::services::storage_service::StorageService;
-use crate::services::trash_service::TrashService;
-use crate::services::bulk_operation_service::BulkOperationService;
 use crate::utils::constants::{
     AI_CONFIGS_DIRECTORY, AI_MODELS_DIRECTORY, CLIP_MODEL_DIRECTORY, FLORENCE2_MODEL_DIRECTORY,
 };
 use crate::utils::operation_logger::log_event;
-use crate::workers::file_processing_worker::FileProcessingWorker;
-use crate::workers::bulk_operation_worker::BulkOperationWorker;
 use crate::workers::ai_processing_worker::AiProcessingWorker;
+use crate::workers::bulk_operation_worker::BulkOperationWorker;
+use crate::workers::file_processing_worker::FileProcessingWorker;
 use crate::workers::indexing_worker::IndexingWorker;
 
 use super::config::AppConfig;
@@ -28,7 +27,11 @@ pub fn initialize<R: tauri::Runtime>(app: &tauri::App<R>) -> AppResult<()> {
     log_event(
         "app",
         "CONFIGURED",
-        format!("app_data_dir={} resources_dir={}", config.app_data_dir.display(), config.resources_dir.display()),
+        format!(
+            "app_data_dir={} resources_dir={}",
+            config.app_data_dir.display(),
+            config.resources_dir.display()
+        ),
     );
     std::fs::create_dir_all(&config.app_data_dir)?;
     let indexing_repository = TantivyIndexingRepository::open(&config.app_data_dir)?;
@@ -47,17 +50,12 @@ pub fn initialize<R: tauri::Runtime>(app: &tauri::App<R>) -> AppResult<()> {
     .with_search_index(indexing_repository.clone());
     log_event("app", "SERVICES-READY", "application services initialized");
     let indexing = IndexingService::new(indexing_repository.clone());
-    let storage = StorageService::new(storage_repository, config.app_data_dir.clone()).with_drive_jobs(
-        SqliteBackgroundProcessingRepository::new(database.clone()),
-        &database,
-        indexing_repository.clone(),
-    );
-    let trash = TrashService::new(
-        SqliteBackgroundProcessingRepository::new(database.clone()),
-        SqliteStorageRepository::new(database.clone()),
-        &database,
-        config.app_data_dir.clone(),
-    );
+    let storage = StorageService::new(storage_repository, config.app_data_dir.clone())
+        .with_drive_jobs(
+            SqliteBackgroundProcessingRepository::new(database.clone()),
+            &database,
+            indexing_repository.clone(),
+        );
     let bulk_operations = BulkOperationService::new(
         SqliteBackgroundProcessingRepository::new(database.clone()),
         SqliteStorageRepository::new(database.clone()),
@@ -71,10 +69,7 @@ pub fn initialize<R: tauri::Runtime>(app: &tauri::App<R>) -> AppResult<()> {
         storage.clone(),
         indexing_repository.clone(),
     );
-    let bulk_operation_worker = BulkOperationWorker::start(
-        &database,
-        bulk_operations.clone(),
-    );
+    let bulk_operation_worker = BulkOperationWorker::start(&database, bulk_operations.clone());
     let ai_processing_worker = AiProcessingWorker::start(
         &database,
         config
@@ -99,7 +94,6 @@ pub fn initialize<R: tauri::Runtime>(app: &tauri::App<R>) -> AppResult<()> {
         indexing_worker,
         imports,
         storage,
-        trash,
         bulk_operations,
     });
     log_event("app", "COMPLETE", "application initialization completed");

@@ -1,12 +1,8 @@
-
-
 use std::path::Path;
 
 use crate::error::{AppError, AppResult};
 
-
 use crate::models::storage_model::DriveMetadata;
-
 
 use super::database_repository::SqliteDatabase;
 
@@ -94,7 +90,10 @@ impl SqliteStorageRepository {
 
     async fn fetch_drives(&self, drive_id: Option<&str>) -> AppResult<Vec<DriveMetadata>> {
         sqlx::query_as("SELECT * FROM drives WHERE (?1 IS NULL OR drive_id = ?1) ORDER BY drive_id")
-            .bind(drive_id).fetch_all(self.database.pool()).await.map_err(AppError::database)
+            .bind(drive_id)
+            .fetch_all(self.database.pool())
+            .await
+            .map_err(AppError::database)
     }
 
     pub async fn delete(&self, drive_id: &str) -> AppResult<bool> {
@@ -113,7 +112,6 @@ impl SqliteStorageRepository {
 async fn update_drive(
     transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     drive: &DriveMetadata,
-
 ) -> AppResult<DriveMetadata> {
     let saved = sqlx::query_as::<_, DriveMetadata>(
         "UPDATE drives SET
@@ -141,8 +139,6 @@ async fn update_drive(
     .fetch_one(&mut **transaction)
     .await
     .map_err(AppError::database)?;
-
-
 
     Ok(saved)
 }

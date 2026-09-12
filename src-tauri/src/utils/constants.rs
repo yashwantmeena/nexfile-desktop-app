@@ -38,7 +38,6 @@ pub(crate) const IMPORT_FILE_ID_ALPHABET: [char; 62] = [
 pub(crate) const IMPORT_FILE_ID_LENGTH: usize = 14;
 pub(crate) const IMPORT_FILE_PROCESS_TYPE: &str = "import_file";
 pub(crate) const FILE_PROCESSING_QUEUE: &str = "file_processing";
-pub(crate) const DELETE_FILE_PROCESS_TYPE: &str = "delete_file";
 pub(crate) const FILE_PROCESSING_WORKER: &str = "file_processing_worker";
 pub(crate) const BULK_OPERATION_QUEUE: &str = "bulk_operation";
 pub(crate) const BULK_OPERATION_PROCESS_TYPE: &str = "bulk_operation";

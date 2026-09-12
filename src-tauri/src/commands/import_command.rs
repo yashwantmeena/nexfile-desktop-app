@@ -43,11 +43,23 @@ pub async fn import_folder(
 pub async fn get_background_activities(
     state: State<'_, AppState>,
 ) -> AppResult<Vec<BackgroundProcess>> {
-    log_event("background-process", "LIST-START", "listing active background processes");
+    log_event(
+        "background-process",
+        "LIST-START",
+        "listing active background processes",
+    );
     let result = state.imports.background_processes().list_active().await;
     match &result {
-        Ok(processes) => log_event("background-process", "LIST-COMPLETE", format!("count={}", processes.len())),
-        Err(error) => log_event("background-process", "LIST-FAILED", format!("error={error}")),
+        Ok(processes) => log_event(
+            "background-process",
+            "LIST-COMPLETE",
+            format!("count={}", processes.len()),
+        ),
+        Err(error) => log_event(
+            "background-process",
+            "LIST-FAILED",
+            format!("error={error}"),
+        ),
     }
     result
 }

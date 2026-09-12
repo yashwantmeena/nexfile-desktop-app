@@ -309,7 +309,7 @@ pub(crate) fn extract_image_metadata(
             exif::Reader::new()
                 .read_from_container(&mut BufReader::new(file))
                 .ok()
-    });
+        });
     let location = exif_metadata.as_ref().and_then(exif_location);
     let captured_at_ms = exif_metadata
         .as_ref()
@@ -1000,4 +1000,3 @@ fn write_output(path: &Path, output: &ImageProcessingOutput) -> AppResult<()> {
     }
     Ok(())
 }
-

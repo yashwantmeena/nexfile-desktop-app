@@ -52,7 +52,8 @@ fn writes_counts_as_named_array_entries() {
     assert!(value.is_array());
     assert_eq!(value[0], json!({"fileType": "image", "count": 3}));
     assert_eq!(value.as_array().unwrap().len(), 6);
-    assert_eq!(serde_json::from_value::<Vec<FileTypeCount>>(value).unwrap(), counts);
+    assert_eq!(
+        serde_json::from_value::<Vec<FileTypeCount>>(value).unwrap(),
+        counts
+    );
 }
-
-

@@ -63,4 +63,8 @@ pub struct UpdateFileMetadataJob {
     pub path: PathBuf,
     pub favorite: Option<bool>,
     pub is_trashed: Option<bool>,
+    #[serde(default)]
+    pub add_tags: Vec<String>,
+    #[serde(default)]
+    pub add_collection_names: Vec<String>,
 }

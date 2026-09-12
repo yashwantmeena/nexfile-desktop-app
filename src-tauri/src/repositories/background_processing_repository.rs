@@ -93,7 +93,12 @@ impl SqliteBackgroundProcessingRepository {
         compatible_types: Option<&[&str; 2]>,
     ) -> AppResult<BackgroundProcess> {
         let count = to_sql_integer(count)?;
-        let mut transaction = self.database.pool().begin().await.map_err(AppError::database)?;
+        let mut transaction = self
+            .database
+            .pool()
+            .begin()
+            .await
+            .map_err(AppError::database)?;
         let active = if compatible_types.is_some() {
             sqlx::query_as::<_, ProcessRow>(
                 "SELECT process_id, process_type, status, priority, total_items, processed_items,
@@ -180,7 +185,10 @@ impl SqliteBackgroundProcessingRepository {
         log_event(
             "background-process",
             "RUNNING",
-            format!("process_id={process_id} rows_affected={}", result.rows_affected()),
+            format!(
+                "process_id={process_id} rows_affected={}",
+                result.rows_affected()
+            ),
         );
         Ok(())
     }
@@ -210,15 +218,27 @@ impl SqliteBackgroundProcessingRepository {
         .map_err(AppError::database)?;
         log_event(
             "background-process",
-            if failure.is_some() { "ITEM-FAILED" } else { "ITEM-COMPLETE" },
-            format!("process_id={process_id} rows_affected={}", result.rows_affected()),
+            if failure.is_some() {
+                "ITEM-FAILED"
+            } else {
+                "ITEM-COMPLETE"
+            },
+            format!(
+                "process_id={process_id} rows_affected={}",
+                result.rows_affected()
+            ),
         );
         Ok(())
     }
 
     pub async fn rollback_items(&self, process_id: &str, count: u64) -> AppResult<()> {
         let count = to_sql_integer(count)?;
-        let mut transaction = self.database.pool().begin().await.map_err(AppError::database)?;
+        let mut transaction = self
+            .database
+            .pool()
+            .begin()
+            .await
+            .map_err(AppError::database)?;
         sqlx::query(
             "UPDATE background_processes
              SET total_items = MAX(total_items - ?2, processed_items),
@@ -313,7 +333,10 @@ impl SqliteBackgroundProcessingRepository {
         log_event(
             "background-process",
             "DELETED",
-            format!("process_id={process_id} rows_affected={}", result.rows_affected()),
+            format!(
+                "process_id={process_id} rows_affected={}",
+                result.rows_affected()
+            ),
         );
         Ok(result.rows_affected() > 0)
     }
