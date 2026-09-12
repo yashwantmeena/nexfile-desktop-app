@@ -49,6 +49,7 @@ pub use system::filesystem::read_file;
 pub use types::background_process_status::BackgroundProcessStatus;
 pub use types::file_type::FileType;
 pub use utils::image_hash::{calculate_phash, calculate_phash_path, format_phash, phash_distance};
+use utils::operation_logger::log_event;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -87,8 +88,9 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    app.run(|app_handle, event| {
+            app.run(|app_handle, event| {
         if matches!(event, tauri::RunEvent::Exit) {
+            log_event("app", "STOP", "application shutdown started");
             let state = app_handle.state::<app::state::AppState>();
             tauri::async_runtime::block_on(state.import_worker.close());
             tauri::async_runtime::block_on(state.image_processing_worker.close());
@@ -96,6 +98,7 @@ pub fn run() {
             tauri::async_runtime::block_on(state.delete_worker.close());
             tauri::async_runtime::block_on(state.imports.close());
             tauri::async_runtime::block_on(state.storage.close());
+            log_event("app", "COMPLETE", "application shutdown completed");
         }
     });
 }

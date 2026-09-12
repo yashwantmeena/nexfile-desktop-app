@@ -9,6 +9,7 @@ use crate::repositories::database_repository::SqliteDatabase;
 use crate::repositories::indexing_repository::TantivyIndexingRepository;
 use crate::services::storage_service::StorageService;
 use crate::utils::constants::{DELETE_FILE_QUEUE, DELETE_FILE_WORKER};
+use crate::utils::operation_logger::log_event;
 
 pub struct DeleteWorker {
     shutdown: Sender<()>,
@@ -26,6 +27,7 @@ impl DeleteWorker {
         let (shutdown, mut shutdown_receiver) = channel(1);
         let shutdown_signal = async move { let _ = shutdown_receiver.recv().await; }.boxed().shared();
         let task = tauri::async_runtime::spawn(async move {
+            log_event(DELETE_FILE_WORKER, "START", "worker supervisor started");
             loop {
                 let backend = SqliteStorage::<DeleteFileJob, (), ()>::new_in_queue(
                     &queue_pool,
@@ -43,7 +45,17 @@ impl DeleteWorker {
                         let repository = handler_repository.clone();
                         async move {
                             let subject = job.path.display().to_string();
+                            log_event(
+                                DELETE_FILE_WORKER,
+                                "RECEIVED",
+                                format!("process_id={} drive_id={} path={subject}", job.process_id, job.drive_id),
+                            );
                             repository.mark_running(&job.process_id).await?;
+                            log_event(
+                                DELETE_FILE_WORKER,
+                                "RUNNING",
+                                format!("process_id={} drive_id={} path={subject}", job.process_id, job.drive_id),
+                            );
                             let outcome = super::retry::retry_and_ack(DELETE_FILE_QUEUE, &subject, || {
                                 consume_delete_file(job.clone(), storage.clone(), index.clone())
                             }).await?;
@@ -52,12 +64,18 @@ impl DeleteWorker {
                                 super::retry::JobOutcome::Failed(message) => Some(message.as_str()),
                             };
                             repository.finish_item(&job.process_id, failure).await?;
+                            log_event(
+                                DELETE_FILE_WORKER,
+                                if failure.is_some() { "FAILED" } else { "COMPLETE" },
+                                format!("process_id={} drive_id={} path={subject}", job.process_id, job.drive_id),
+                            );
                             Ok::<(), crate::error::AppError>(())
                         }
                     });
                 let stop = shutdown_signal.clone();
                 let result = worker.run_until(async move { stop.await; Ok::<(), std::io::Error>(()) }).await;
                 if shutdown_signal.clone().now_or_never().is_some() {
+                    log_event(DELETE_FILE_WORKER, "STOP", "worker supervisor stopped");
                     return result;
                 }
                 eprintln!("[{}][RESTART] worker exited: {result:?}", DELETE_FILE_WORKER);
@@ -71,6 +89,7 @@ impl DeleteWorker {
     }
 
     pub async fn close(&self) {
+        log_event(DELETE_FILE_WORKER, "STOP", "shutdown requested");
         let _ = self.shutdown.send(()).await;
         if let Some(task) = self.task.lock().await.take() { let _ = task.await; }
     }

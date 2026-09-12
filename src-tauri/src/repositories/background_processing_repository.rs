@@ -1,6 +1,7 @@
 use crate::error::{AppError, AppResult};
 use crate::models::background_process_model::BackgroundProcess;
 use crate::types::background_process_status::BackgroundProcessStatus;
+use crate::utils::operation_logger::log_event;
 
 use super::database_repository::SqliteDatabase;
 
@@ -151,11 +152,20 @@ impl SqliteBackgroundProcessingRepository {
             .map_err(AppError::database)?
         };
         transaction.commit().await.map_err(AppError::database)?;
-        process_from_row(row)
+        let process = process_from_row(row)?;
+        log_event(
+            "background-process",
+            "ACQUIRED",
+            format!(
+                "process_id={} process_type={} total_items={}",
+                process.process_id, process.process_type, process.total_items
+            ),
+        );
+        Ok(process)
     }
 
     pub async fn mark_running(&self, process_id: &str) -> AppResult<()> {
-        sqlx::query(
+        let result = sqlx::query(
             "UPDATE background_processes
              SET status = 'running',
                  started_at_ms = COALESCE(started_at_ms,
@@ -167,11 +177,16 @@ impl SqliteBackgroundProcessingRepository {
         .execute(self.database.pool())
         .await
         .map_err(AppError::database)?;
+        log_event(
+            "background-process",
+            "RUNNING",
+            format!("process_id={process_id} rows_affected={}", result.rows_affected()),
+        );
         Ok(())
     }
 
     pub async fn finish_item(&self, process_id: &str, failure: Option<&str>) -> AppResult<()> {
-        sqlx::query(
+        let result = sqlx::query(
             "UPDATE background_processes
              SET processed_items = MIN(processed_items + 1, total_items),
                  failed_items = MIN(failed_items + CASE WHEN ?2 IS NULL THEN 0 ELSE 1 END, total_items),
@@ -193,6 +208,11 @@ impl SqliteBackgroundProcessingRepository {
         .execute(self.database.pool())
         .await
         .map_err(AppError::database)?;
+        log_event(
+            "background-process",
+            if failure.is_some() { "ITEM-FAILED" } else { "ITEM-COMPLETE" },
+            format!("process_id={process_id} rows_affected={}", result.rows_affected()),
+        );
         Ok(())
     }
 
@@ -219,6 +239,11 @@ impl SqliteBackgroundProcessingRepository {
         .await
         .map_err(AppError::database)?;
         transaction.commit().await.map_err(AppError::database)?;
+        log_event(
+            "background-process",
+            "ROLLBACK",
+            format!("process_id={process_id} items={count}"),
+        );
         Ok(())
     }
 
@@ -235,7 +260,7 @@ impl SqliteBackgroundProcessingRepository {
         .map_err(AppError::database)?
         .into_iter()
         .map(process_from_row)
-        .collect()
+        .collect::<AppResult<Vec<_>>>()
     }
 
     pub async fn delete(&self, process_id: &str) -> AppResult<bool> {
@@ -244,6 +269,11 @@ impl SqliteBackgroundProcessingRepository {
             .execute(self.database.pool())
             .await
             .map_err(AppError::database)?;
+        log_event(
+            "background-process",
+            "DELETED",
+            format!("process_id={process_id} rows_affected={}", result.rows_affected()),
+        );
         Ok(result.rows_affected() > 0)
     }
 

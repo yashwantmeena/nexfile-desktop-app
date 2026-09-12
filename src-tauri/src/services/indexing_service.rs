@@ -7,6 +7,8 @@ use crate::models::indexing_model::IndexDocument;
 use crate::models::storage_model::DriveMetadata;
 use crate::repositories::indexing_repository::TantivyIndexingRepository;
 use crate::utils::constants::{DRIVE_METADATA_FILE, IMPORTED_FILES_DIRECTORY};
+use crate::utils::constants::INDEXING_QUEUE;
+use crate::utils::operation_logger::log_event;
 
 #[derive(Clone)]
 pub struct IndexingService {
@@ -19,17 +21,27 @@ impl IndexingService {
     }
 
     pub async fn process_path(&self, path: PathBuf) -> AppResult<()> {
+        let subject = path.display().to_string();
+        log_event(INDEXING_QUEUE, "START", format!("operation=index path={subject}"));
         let service = self.clone();
-        tauri::async_runtime::spawn_blocking(move || service.process_blocking(&path))
+        let result = tauri::async_runtime::spawn_blocking(move || service.process_blocking(&path))
             .await
-            .map_err(AppError::internal)?
+            .map_err(AppError::internal)?;
+        if let Err(error) = &result {
+            log_event(INDEXING_QUEUE, "FAILED", format!("operation=index path={subject} error={error}"));
+        } else {
+            log_event(INDEXING_QUEUE, "COMPLETE", format!("operation=index path={subject}"));
+        }
+        result
     }
 
     /// Reindexes one bounded queue batch. A failed entry retries the batch, and upserts are
     /// idempotent, so already-completed entries remain safe.
     pub async fn process_batch(&self, paths: Vec<PathBuf>) -> AppResult<()> {
+        log_event(INDEXING_QUEUE, "START", format!("operation=index-batch items={}", paths.len()));
         let service = self.clone();
-        tauri::async_runtime::spawn_blocking(move || {
+        let item_count = paths.len();
+        let result = tauri::async_runtime::spawn_blocking(move || {
             let documents = paths
                 .iter()
                 .map(|path| service.document_for_path(path))
@@ -37,14 +49,29 @@ impl IndexingService {
             service.repository.upsert_batch(documents)
         })
         .await
-        .map_err(AppError::internal)?
+        .map_err(AppError::internal)?;
+        if let Err(error) = &result {
+            log_event(INDEXING_QUEUE, "FAILED", format!("operation=index-batch items={item_count} error={error}"));
+        } else {
+            log_event(INDEXING_QUEUE, "COMPLETE", format!("operation=index-batch items={item_count}"));
+        }
+        result
     }
 
     pub async fn delete_batch(&self, drive_id: String, file_ids: Vec<String>) -> AppResult<()> {
+        let drive_subject = drive_id.clone();
+        log_event(INDEXING_QUEUE, "START", format!("operation=delete-index drive_id={drive_subject} items={}", file_ids.len()));
         let repository = self.repository.clone();
-        tauri::async_runtime::spawn_blocking(move || repository.delete_files(&drive_id, &file_ids))
+        let item_count = file_ids.len();
+        let result = tauri::async_runtime::spawn_blocking(move || repository.delete_files(&drive_id, &file_ids))
             .await
-            .map_err(AppError::internal)?
+            .map_err(AppError::internal)?;
+        if let Err(error) = &result {
+            log_event(INDEXING_QUEUE, "FAILED", format!("operation=delete-index drive_id={drive_subject} items={item_count} error={error}"));
+        } else {
+            log_event(INDEXING_QUEUE, "COMPLETE", format!("operation=delete-index drive_id={drive_subject} items={item_count}"));
+        }
+        result
     }
 
     fn process_blocking(&self, path: &Path) -> AppResult<()> {

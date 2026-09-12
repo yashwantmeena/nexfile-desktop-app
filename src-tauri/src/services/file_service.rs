@@ -73,6 +73,12 @@ pub(crate) fn fetch_matching_files_with_trash(
     let mut files = Vec::new();
     let mut issues = Vec::new();
     for saved in snapshots {
+        // A connected drive can still be saved in the database while the user
+        // has explicitly unmounted it. Do not expose its files until it is
+        // mounted again.
+        if !saved.is_mounted {
+            continue;
+        }
         let matches = connected
             .iter()
             .filter(|(_, metadata)| {

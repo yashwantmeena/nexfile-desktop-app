@@ -12,7 +12,7 @@ fn snapshot() -> DriveMetadata {
 fn metadata() -> DriveMetadata {
     serde_json::from_value(serde_json::json!({
         "driveId": "drive-1", "driveName": "Test drive", "partitionName": "Test",
-        "appLimitBytes": null, "fileCount": 3, "appUsedBytes": 10,
+        "appLimitBytes": null, "fileCount": 3, "appUsedBytes": 10, "isMounted": true,
         "createdAtMs": 1, "updatedAtMs": 1
     }))
     .unwrap()
@@ -215,6 +215,38 @@ fn fetches_all_types_by_filesystem_modified_time_with_pagination() {
     let offline = fetch_files(vec![saved], vec![], &root, None, 0, 60);
     assert!(offline.files.is_empty());
     assert_eq!(offline.issues.len(), 1);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn hides_files_from_a_connected_but_unmounted_drive() {
+    let root = std::env::temp_dir().join(format!("nexfile-unmounted-{}", uuid::Uuid::new_v4()));
+    let directory = root.join("nexfile/files");
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(directory.join("hidden.jpg"), b"file").unwrap();
+    std::fs::write(
+        root.join("nexfile").join(DRIVE_METADATA_FILE),
+        serde_json::to_vec(&metadata()).unwrap(),
+    )
+    .unwrap();
+
+    let mut saved = metadata();
+    saved.is_mounted = false;
+    let drive = DriveInfo {
+        device_id: "test".into(),
+        drive_name: "Test drive".into(),
+        partition_name: "Test".into(),
+        file_system: "test".into(),
+        total_bytes: 100,
+        system_used_bytes: 10,
+        is_system: true,
+        mount_point: root.clone(),
+    };
+
+    let page = fetch_files(vec![saved], vec![drive], &root, None, 0, 60);
+    assert!(page.files.is_empty());
+    assert_eq!(page.total_count, 0);
+    assert!(page.issues.is_empty());
     std::fs::remove_dir_all(root).unwrap();
 }
 

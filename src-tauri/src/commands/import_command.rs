@@ -4,6 +4,7 @@ use crate::app::state::AppState;
 use crate::error::AppResult;
 use crate::models::background_process_model::BackgroundProcess;
 use crate::models::import_model::ImportPreview;
+use crate::utils::operation_logger::log_event;
 
 #[tauri::command]
 pub async fn preview_import(
@@ -42,5 +43,11 @@ pub async fn import_folder(
 pub async fn get_background_activities(
     state: State<'_, AppState>,
 ) -> AppResult<Vec<BackgroundProcess>> {
-    state.imports.background_processes().list_active().await
+    log_event("background-process", "LIST-START", "listing active background processes");
+    let result = state.imports.background_processes().list_active().await;
+    match &result {
+        Ok(processes) => log_event("background-process", "LIST-COMPLETE", format!("count={}", processes.len())),
+        Err(error) => log_event("background-process", "LIST-FAILED", format!("error={error}")),
+    }
+    result
 }

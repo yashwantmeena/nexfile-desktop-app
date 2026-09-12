@@ -7,6 +7,7 @@ use crate::models::import_model::ImportFileJob;
 use crate::repositories::database_repository::SqliteDatabase;
 use crate::services::import_service::ImportService;
 use crate::utils::constants::{IMPORT_FILE_QUEUE, IMPORT_FILE_WORKER};
+use crate::utils::operation_logger::log_event;
 
 pub struct ImportWorker {
     shutdown: Sender<()>,
@@ -23,6 +24,7 @@ impl ImportWorker {
         .boxed()
         .shared();
         let task = tauri::async_runtime::spawn(async move {
+            log_event(IMPORT_FILE_WORKER, "START", "worker supervisor started");
             loop {
                 let backend = SqliteStorage::<ImportFileJob, (), ()>::new_in_queue(
                     &queue_pool,
@@ -39,7 +41,17 @@ impl ImportWorker {
                             let repository = handler_repository.clone();
                             async move {
                                 let subject = job.path.display().to_string();
+                                log_event(
+                                    IMPORT_FILE_WORKER,
+                                    "RECEIVED",
+                                    format!("process_id={} path={subject}", job.process_id),
+                                );
                                 repository.mark_running(&job.process_id).await?;
+                                log_event(
+                                    IMPORT_FILE_WORKER,
+                                    "RUNNING",
+                                    format!("process_id={} path={subject}", job.process_id),
+                                );
                                 let outcome = super::retry::retry_and_ack(IMPORT_FILE_QUEUE, &subject, || {
                                     consume_import_file(job.clone(), service.clone())
                                 })
@@ -49,6 +61,11 @@ impl ImportWorker {
                                     super::retry::JobOutcome::Failed(message) => Some(message.as_str()),
                                 };
                                 repository.finish_item(&job.process_id, failure).await?;
+                                log_event(
+                                    IMPORT_FILE_WORKER,
+                                    if failure.is_some() { "FAILED" } else { "COMPLETE" },
+                                    format!("process_id={} path={subject}", job.process_id),
+                                );
                                 Ok::<(), crate::error::AppError>(())
                             }
                         });
@@ -60,6 +77,7 @@ impl ImportWorker {
                     })
                     .await;
                 if shutdown_signal.clone().now_or_never().is_some() {
+                    log_event(IMPORT_FILE_WORKER, "STOP", "worker supervisor stopped");
                     return result;
                 }
                 eprintln!(
@@ -80,6 +98,7 @@ impl ImportWorker {
     }
 
     pub async fn close(&self) {
+        log_event(IMPORT_FILE_WORKER, "STOP", "shutdown requested");
         let _ = self.shutdown.send(()).await;
         if let Some(task) = self.task.lock().await.take() {
             let _ = task.await;

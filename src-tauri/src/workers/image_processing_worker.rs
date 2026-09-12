@@ -12,6 +12,7 @@ use crate::repositories::database_repository::SqliteDatabase;
 use crate::services::image_processing_service::ImageProcessingService;
 use crate::services::indexing_service::IndexingService;
 use crate::utils::constants::{IMAGE_PROCESSING_QUEUE, IMAGE_PROCESSING_WORKER};
+use crate::utils::operation_logger::log_event;
 
 pub struct ImageProcessingWorker {
     shutdown: Sender<()>,
@@ -40,6 +41,7 @@ impl ImageProcessingWorker {
         .boxed()
         .shared();
         let task = tauri::async_runtime::spawn(async move {
+            log_event(IMAGE_PROCESSING_WORKER, "START", "worker supervisor started");
             loop {
                 let backend = SqliteStorage::<ImageProcessingJob, (), ()>::new_in_queue(
                     &queue_pool,
@@ -61,7 +63,17 @@ impl ImageProcessingWorker {
                     let indexing = handler_indexing.clone();
                     async move {
                         let subject = job.path.display().to_string();
+                        log_event(
+                            IMAGE_PROCESSING_WORKER,
+                            "RECEIVED",
+                            format!("process_id={} path={subject}", job.process_id),
+                        );
                         repository.mark_running(&job.process_id).await?;
+                        log_event(
+                            IMAGE_PROCESSING_WORKER,
+                            "RUNNING",
+                            format!("process_id={} path={subject}", job.process_id),
+                        );
                         let outcome = super::retry::retry_and_ack(IMAGE_PROCESSING_QUEUE, &subject, || {
                             consume_image_processing_job(
                                 job.clone(),
@@ -75,6 +87,11 @@ impl ImageProcessingWorker {
                             super::retry::JobOutcome::Failed(message) => Some(message.as_str()),
                         };
                         repository.finish_item(&job.process_id, failure).await?;
+                        log_event(
+                            IMAGE_PROCESSING_WORKER,
+                            if failure.is_some() { "FAILED" } else { "COMPLETE" },
+                            format!("process_id={} path={subject}", job.process_id),
+                        );
                         Ok::<(), AppError>(())
                     }
                 });
@@ -86,6 +103,7 @@ impl ImageProcessingWorker {
                     })
                     .await;
                 if shutdown_signal.clone().now_or_never().is_some() {
+                    log_event(IMAGE_PROCESSING_WORKER, "STOP", "worker supervisor stopped");
                     return result;
                 }
                 eprintln!(
@@ -106,6 +124,7 @@ impl ImageProcessingWorker {
     }
 
     pub async fn close(&self) {
+        log_event(IMAGE_PROCESSING_WORKER, "STOP", "shutdown requested");
         let _ = self.shutdown.send(()).await;
         if let Some(task) = self.task.lock().await.take() {
             let _ = task.await;

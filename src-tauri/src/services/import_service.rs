@@ -29,6 +29,7 @@ use crate::utils::constants::{
     IMPORT_FILE_PROCESS_TYPE, IMPORT_FILE_QUEUE, IMPORT_FOLDER_PROCESS_TYPE,
 };
 use crate::utils::image_decoder::is_supported_image;
+use crate::utils::operation_logger::log_event;
 
 #[derive(Clone)]
 pub struct ImportService {
@@ -51,6 +52,11 @@ impl ImportService {
     }
 
     pub async fn preview(&self, paths: Vec<String>, folder: bool) -> AppResult<ImportPreview> {
+        log_event(
+            IMPORT_FILE_QUEUE,
+            "PREVIEW",
+            format!("requested_paths={} folder={folder}", paths.len()),
+        );
         let paths = if folder {
             let path = paths
                 .first()
@@ -115,13 +121,26 @@ impl ImportService {
             true
         });
 
-        Ok(ImportPreview {
+        let preview = ImportPreview {
             file_count,
             total_bytes,
             available_bytes,
             mounted_drive_count,
             can_import_all,
-        })
+        };
+        log_event(
+            IMPORT_FILE_QUEUE,
+            "PREVIEW-COMPLETE",
+            format!(
+                "files={} bytes={} mounted_drives={} available_bytes={} can_import_all={}",
+                preview.file_count,
+                preview.total_bytes,
+                preview.mounted_drive_count,
+                preview.available_bytes,
+                preview.can_import_all
+            ),
+        );
+        Ok(preview)
     }
 
     pub async fn import_with_collections(
@@ -130,6 +149,11 @@ impl ImportService {
         folder: bool,
         ids: Vec<String>,
     ) -> AppResult<BackgroundProcess> {
+        log_event(
+            IMPORT_FILE_QUEUE,
+            "REQUEST",
+            format!("requested_paths={} folder={} collections={}", paths.len(), folder, ids.len()),
+        );
         let names =
             crate::repositories::collection_repository::selected_names(&self.queue_pool, &ids)
                 .await?;
@@ -144,7 +168,7 @@ impl ImportService {
         } else {
             validate_file_paths(paths)?
         };
-        self.queue_files_with_collections(
+        let process = self.queue_files_with_collections(
             paths,
             if folder {
                 IMPORT_FOLDER_PROCESS_TYPE
@@ -153,7 +177,13 @@ impl ImportService {
             },
             names,
         )
-        .await
+        .await?;
+        log_event(
+            IMPORT_FILE_QUEUE,
+            "REQUEST-COMPLETE",
+            format!("process_id={} total_items={}", process.process_id, process.total_items),
+        );
+        Ok(process)
     }
 
     async fn save_selected_collections(
@@ -234,11 +264,17 @@ impl ImportService {
             )?;
             let collection_ids = sidecar.collection_ids;
             let favorite = sidecar.favorite;
+            log_event(
+                IMPORT_FILE_QUEUE,
+                "INDEX-START",
+                format!("drive_id={drive} file_id={file}"),
+            );
             tauri::async_runtime::spawn_blocking(move || {
                 search.index_filename(&drive, &file, &name, &collection_ids, favorite)
             })
             .await
             .map_err(AppError::internal)??;
+            log_event(IMPORT_FILE_QUEUE, "INDEXED", "file metadata indexed");
         }
         Ok(())
     }
@@ -310,6 +346,11 @@ impl ImportService {
             .acquire_import(process_type, total_items, &names)
             .await?;
         let process_id = process.process_id.clone();
+        log_event(
+            IMPORT_FILE_QUEUE,
+            "QUEUING",
+            format!("process_id={process_id} process_type={process_type} items={total_items}"),
+        );
         let mut jobs = stream::iter(paths.into_iter().map(|path| {
             Task::builder(ImportFileJob {
                 process_id: process_id.clone(),
@@ -329,9 +370,19 @@ impl ImportService {
                 .await;
             return Err(AppError::database(error));
         }
+        log_event(
+            IMPORT_FILE_QUEUE,
+            "QUEUED",
+            format!("process_id={} process_type={process_type} items={total_items}", process.process_id),
+        );
         Ok(process)
     }
     pub async fn consume(&self, job: ImportFileJob) -> AppResult<()> {
+        log_event(
+            IMPORT_FILE_QUEUE,
+            "CONSUME",
+            format!("process_id={} file_id={} source={}", job.process_id, job.file_id, job.path.display()),
+        );
         let _guard = self.copy_lock.lock().await;
         let drives = tauri::async_runtime::spawn_blocking(get_drives)
             .await
@@ -365,13 +416,28 @@ impl ImportService {
             })
             .collect::<Vec<_>>();
         candidates.sort_by_key(|(_, metadata)| metadata.priority);
+        log_event(
+            IMPORT_FILE_QUEUE,
+            "CANDIDATES",
+            format!("process_id={} file_id={} candidates={} size_bytes={file_size}", job.process_id, job.file_id, candidates.len()),
+        );
 
         for (drive, mut saved) in candidates {
+            log_event(
+                IMPORT_FILE_QUEUE,
+                "TRY-DRIVE",
+                format!("process_id={} file_id={} drive_id={} priority={}", job.process_id, job.file_id, saved.drive_id, saved.priority),
+            );
             let files_directory = drive_storage_root(&drive, &self.system_metadata_root)
                 .join(IMPORTED_FILES_DIRECTORY);
             let destination = files_directory.join(destination_name(&job));
 
             if destination.try_exists()? {
+                log_event(
+                    IMPORT_FILE_QUEUE,
+                    "DESTINATION-EXISTS",
+                    format!("process_id={} file_id={} drive_id={} path={}", job.process_id, job.file_id, saved.drive_id, destination.display()),
+                );
                 let _metadata_guard = self.metadata_lock.lock().await;
                 if std::fs::metadata(&destination)?.len() != source_metadata.len() {
                     return Err(AppError::internal(std::io::Error::new(
@@ -400,10 +466,20 @@ impl ImportService {
                 self.index_filename(&saved.drive_id, &job, &destination)
                     .await?;
                 self.publish_for_image_processing(&destination).await?;
+                log_event(
+                    IMPORT_FILE_QUEUE,
+                    "COMPLETE",
+                    format!("process_id={} file_id={} drive_id={} reused_destination=true", job.process_id, job.file_id, saved.drive_id),
+                );
                 return Ok(());
             }
 
             if !can_fit(&drive, &saved, file_size) {
+                log_event(
+                    IMPORT_FILE_QUEUE,
+                    "SKIP-DRIVE",
+                    format!("process_id={} file_id={} drive_id={} reason=insufficient_capacity", job.process_id, job.file_id, saved.drive_id),
+                );
                 continue;
             }
 
@@ -413,6 +489,11 @@ impl ImportService {
             let source = job.path.clone();
             let staging_path = temporary.clone();
             let expected_size = source_metadata.len();
+            log_event(
+                IMPORT_FILE_QUEUE,
+                "COPY-START",
+                format!("process_id={} file_id={} drive_id={} staging={}", job.process_id, job.file_id, saved.drive_id, temporary.display()),
+            );
             let copied = tauri::async_runtime::spawn_blocking(move || {
                 copy_to_temporary(&source, &staging_path, expected_size)
             })
@@ -426,6 +507,11 @@ impl ImportService {
                 }
                 Err(error) => return Err(error.into()),
             }
+            log_event(
+                IMPORT_FILE_QUEUE,
+                "COPY-COMPLETE",
+                format!("process_id={} file_id={} drive_id={} bytes={file_size}", job.process_id, job.file_id, saved.drive_id),
+            );
 
             // Publish only a complete file. Readers share this short publication lock,
             // never the lock that serializes the potentially slow copy.
@@ -457,6 +543,11 @@ impl ImportService {
             self.index_filename(&saved.drive_id, &job, &destination)
                 .await?;
             self.publish_for_image_processing(&destination).await?;
+            log_event(
+                IMPORT_FILE_QUEUE,
+                "COMPLETE",
+                format!("process_id={} file_id={} drive_id={} reused_destination=false", job.process_id, job.file_id, saved.drive_id),
+            );
             return Ok(());
         }
 
@@ -467,6 +558,11 @@ impl ImportService {
 
     async fn publish_for_image_processing(&self, path: &Path) -> AppResult<()> {
         if !is_supported_image(path) {
+            log_event(
+                IMAGE_PROCESSING_QUEUE,
+                "SKIP",
+                format!("path={} reason=unsupported_image", path.display()),
+            );
             return Ok(());
         }
         let mut queue = SqliteStorage::<ImageProcessingJob, (), ()>::new_in_queue(
@@ -487,6 +583,11 @@ impl ImportService {
             let _ = self.repository.rollback_items(&process.process_id, 1).await;
             return Err(AppError::database(error));
         }
+        log_event(
+            IMAGE_PROCESSING_QUEUE,
+            "QUEUED",
+            format!("process_id={} path={}", process.process_id, path.display()),
+        );
         Ok(())
     }
 

@@ -44,8 +44,15 @@ impl StorageService {
         favorite: Option<bool>,
         is_trashed: Option<bool>,
     ) -> AppResult<(PathBuf, String, String, Vec<String>, bool)> {
+        let path_subject = path.display().to_string();
+        let drive_subject = drive_id.clone();
+        log_event(
+            "storage",
+            "FILE-METADATA-START",
+            format!("drive_id={drive_id} path={path_subject}"),
+        );
         let root = self.system_metadata_root.clone();
-        tauri::async_runtime::spawn_blocking(move || {
+        let result = tauri::async_runtime::spawn_blocking(move || {
             let (drive, drive_metadata) = get_drives()
                 .into_iter()
                 .filter_map(|drive| {
@@ -149,7 +156,21 @@ impl StorageService {
             ))
         })
         .await
-        .map_err(AppError::internal)?
+        .map_err(AppError::internal)?;
+        if let Err(error) = &result {
+            log_event(
+                "storage",
+                "FILE-METADATA-FAILED",
+                format!("drive_id={drive_subject} path={path_subject} error={error}"),
+            );
+        } else {
+            log_event(
+                "storage",
+                "FILE-METADATA-COMPLETE",
+                format!("drive_id={drive_subject} path={path_subject}"),
+            );
+        }
+        result
     }
 
     pub async fn search_files(
@@ -166,6 +187,11 @@ impl StorageService {
         trash_only: bool,
         model_category: Option<String>,
     ) -> AppResult<crate::models::file_model::FilePage> {
+        log_event(
+            "storage",
+            "SEARCH-START",
+            format!("query_length={} mode={mode} offset={offset} limit={limit} trash_only={trash_only}", query.chars().count()),
+        );
         if !(1..=200).contains(&limit) {
             return Err(AppError::validation(
                 "The file page size must be between 1 and 200.",
@@ -173,7 +199,7 @@ impl StorageService {
         }
         let snapshots = self.repository.list().await?;
         let root = self.system_metadata_root.clone();
-        tauri::async_runtime::spawn_blocking(move || {
+        let result = tauri::async_runtime::spawn_blocking(move || {
             let connected = get_drives();
             if trash_only {
                 return Ok(
@@ -221,7 +247,16 @@ impl StorageService {
             )
         })
         .await
-        .map_err(AppError::internal)?
+        .map_err(AppError::internal)?;
+        match &result {
+            Ok(page) => log_event(
+                "storage",
+                "SEARCH-COMPLETE",
+                format!("returned={} total={} issues={}", page.files.len(), page.total_count, page.issues.len()),
+            ),
+            Err(error) => log_event("storage", "SEARCH-FAILED", format!("error={error}")),
+        }
+        result
     }
 
     pub async fn search_file_count(
@@ -235,9 +270,14 @@ impl StorageService {
         trash_only: bool,
         model_category: Option<String>,
     ) -> AppResult<crate::models::file_model::FileCountSummary> {
+        log_event(
+            "storage",
+            "COUNT-START",
+            format!("query_length={} mode={mode} trash_only={trash_only}" , query.chars().count()),
+        );
         let snapshots = self.repository.list().await?;
         let root = self.system_metadata_root.clone();
-        tauri::async_runtime::spawn_blocking(move || {
+        let result = tauri::async_runtime::spawn_blocking(move || {
             let connected = get_drives();
             if trash_only {
                 let page = crate::services::file_service::fetch_matching_files_with_trash(
@@ -305,7 +345,16 @@ impl StorageService {
             })
         })
         .await
-        .map_err(AppError::internal)?
+        .map_err(AppError::internal)?;
+        match &result {
+            Ok(summary) => log_event(
+                "storage",
+                "COUNT-COMPLETE",
+                format!("total={:?} issues={}", summary.total_count, summary.issues.len()),
+            ),
+            Err(error) => log_event("storage", "COUNT-FAILED", format!("error={error}")),
+        }
+        result
     }
     pub async fn fetch_files(
         &self,
@@ -313,6 +362,11 @@ impl StorageService {
         limit: usize,
         media_type: Option<crate::types::file_type::FileType>,
     ) -> AppResult<crate::models::file_model::FilePage> {
+        log_event(
+            "storage",
+            "FETCH-START",
+            format!("offset={offset} limit={limit} media_type={media_type:?}"),
+        );
         if !(1..=200).contains(&limit) {
             return Err(AppError::validation(
                 "The file page size must be between 1 and 200.",
@@ -320,7 +374,7 @@ impl StorageService {
         }
         let snapshots = self.repository.list().await?;
         let root = self.system_metadata_root.clone();
-        tauri::async_runtime::spawn_blocking(move || {
+        let result = tauri::async_runtime::spawn_blocking(move || {
             crate::services::file_service::fetch_files(
                 snapshots,
                 get_drives(),
@@ -331,17 +385,30 @@ impl StorageService {
             )
         })
         .await
-        .map_err(AppError::internal)
+        .map_err(AppError::internal)?;
+        match &result {
+            page => log_event(
+                "storage",
+                "FETCH-COMPLETE",
+                format!("returned={} total={} issues={}", page.files.len(), page.total_count, page.issues.len()),
+            ),
+        }
+        Ok(result)
     }
 
     pub async fn get_file_count(&self) -> AppResult<crate::models::file_model::FileCountSummary> {
+        log_event("storage", "VERIFY-COUNT-START", "verifying managed file counts");
         let snapshot = self.repository.list().await?;
         let root = self.system_metadata_root.clone();
-        tauri::async_runtime::spawn_blocking(move || {
+        let result = tauri::async_runtime::spawn_blocking(move || {
             crate::services::file_service::verify_file_counts(snapshot, get_drives(), &root)
         })
         .await
-        .map_err(AppError::internal)
+        .map_err(AppError::internal)?;
+        match &result {
+            summary => log_event("storage", "VERIFY-COUNT-COMPLETE", format!("total={:?} issues={}", summary.total_count, summary.issues.len())),
+        }
+        Ok(result)
     }
 
     /// Permanently remove one queued Trash item after confirming it is still soft-deleted.
@@ -351,6 +418,14 @@ impl StorageService {
         file_id: String,
         path: PathBuf,
     ) -> AppResult<()> {
+        let path_subject = path.display().to_string();
+        let drive_subject = drive_id.clone();
+        let file_subject = file_id.clone();
+        log_event(
+            "storage",
+            "PERMANENT-DELETE-START",
+            format!("drive_id={drive_id} file_id={file_id} path={path_subject}"),
+        );
         let root = self.system_metadata_root.clone();
         let (drive, metadata, file_count, app_used_bytes) =
             tauri::async_runtime::spawn_blocking(move || {
@@ -433,6 +508,11 @@ impl StorageService {
                 write_drive_metadata(&drive, &self.system_metadata_root, updated)
             })
             .await?;
+        log_event(
+            "storage",
+            "PERMANENT-DELETE-COMPLETE",
+            format!("drive_id={drive_subject} file_id={file_subject} path={path_subject}"),
+        );
         Ok(())
     }
 
@@ -460,6 +540,7 @@ impl StorageService {
     }
 
     pub async fn get_storage_data(&self) -> AppResult<StorageData> {
+        log_event("storage", "DRIVES-START", "refreshing drive state");
         let mut saved_drives = self
             .repository
             .list()
@@ -532,7 +613,13 @@ impl StorageService {
                 .map(disconnected_drive),
         );
 
-        Ok(storage_data(drives))
+        let data = storage_data(drives);
+        log_event(
+            "storage",
+            "DRIVES-COMPLETE",
+            format!("connected={} detected={} mounted={}", data.drives.iter().filter(|drive| drive.is_connected).count(), data.drives_detected, data.drives.iter().filter(|drive| drive.is_mounted).count()),
+        );
+        Ok(data)
     }
 
     pub async fn mount_drive(
@@ -550,6 +637,11 @@ impl StorageService {
         device_id: Option<&str>,
         partition_name: &str,
     ) -> AppResult<(StorageData, PathBuf)> {
+        log_event(
+            "storage",
+            "MOUNT-START",
+            format!("device_id={device_id:?} partition={partition_name}"),
+        );
         let device_id = device_id.map(str::trim).filter(|value| !value.is_empty());
         let partition_name = partition_name.trim();
         if device_id.is_none() && partition_name.is_empty() {
@@ -601,10 +693,16 @@ impl StorageService {
             drive_storage_root(&drive, &self.system_metadata_root).join(IMPORTED_FILES_DIRECTORY);
         self.publish_drive_index_create(files_directory.clone(), INDEXING_PROCESS_TYPE)
             .await?;
+        log_event(
+            "storage",
+            "MOUNT-COMPLETE",
+            format!("drive_id={} files_root={}", metadata.drive_id, files_directory.display()),
+        );
         Ok((self.get_storage_data().await?, files_directory))
     }
 
     pub async fn unmount_drive(&self, drive_id: &str) -> AppResult<StorageData> {
+        log_event("storage", "UNMOUNT-START", format!("drive_id={drive_id}"));
         let drive_id = drive_id.trim();
         if drive_id.is_empty() {
             return Err(AppError::validation("A drive ID is required."));
@@ -619,13 +717,16 @@ impl StorageService {
         drive.is_mounted = false;
         // Unmounting is a local database preference, including for offline drives.
         self.repository.update(&drive, |_| Ok(())).await?;
-        self.get_storage_data().await
+        let data = self.get_storage_data().await?;
+        log_event("storage", "UNMOUNT-COMPLETE", format!("drive_id={drive_id}"));
+        Ok(data)
     }
 
     pub async fn update_drive_configuration(
         &self,
         updates: &[DriveConfigurationUpdate],
     ) -> AppResult<StorageData> {
+        log_event("storage", "CONFIG-START", format!("drives={}", updates.len()));
         if updates.is_empty() {
             return Err(AppError::validation(
                 "At least one mounted drive is required.",
@@ -719,10 +820,13 @@ impl StorageService {
                 })
                 .await?;
         }
-        self.get_storage_data().await
+        let data = self.get_storage_data().await?;
+        log_event("storage", "CONFIG-COMPLETE", format!("drives={}", updated_drives.len()));
+        Ok(data)
     }
 
     pub async fn remove_drive(&self, drive_id: &str) -> AppResult<StorageData> {
+        log_event("storage", "REMOVE-START", format!("drive_id={drive_id}"));
         let drive_id = drive_id.trim();
         if drive_id.is_empty() {
             return Err(AppError::validation("A drive ID is required."));
@@ -735,7 +839,9 @@ impl StorageService {
         self.publish_drive_index_cleanup(drive_id, DELETE_INDEX_PROCESS_TYPE)
             .await?;
 
-        self.get_storage_data().await
+        let data = self.get_storage_data().await?;
+        log_event("storage", "REMOVE-COMPLETE", format!("drive_id={drive_id}"));
+        Ok(data)
     }
 
     async fn publish_drive_index_cleanup(

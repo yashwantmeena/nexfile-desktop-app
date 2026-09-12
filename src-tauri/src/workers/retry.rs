@@ -5,6 +5,7 @@ use std::time::Duration;
 use futures::FutureExt;
 
 use crate::error::AppResult;
+use crate::utils::operation_logger::log_event;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum JobOutcome {
@@ -32,10 +33,18 @@ where
             Err(_) => "job handler panicked".to_owned(),
         };
         if attempt == 3 {
-            eprintln!("[{scope}][ACK-FAILED] {subject} | exhausted three retries | {failure}");
+            log_event(
+                scope,
+                "ACK-FAILED",
+                format!("subject={subject} exhausted three retries | {failure}"),
+            );
             return Ok(JobOutcome::Failed(failure));
         } else {
-            eprintln!("[{scope}][RETRY {}/3] {subject} | {failure}", attempt + 1);
+            log_event(
+                scope,
+                &format!("RETRY {}/3", attempt + 1),
+                format!("subject={subject} | {failure}"),
+            );
             tokio::time::sleep(Duration::from_millis(100 * (attempt + 1))).await;
         }
     }

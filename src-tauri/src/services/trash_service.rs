@@ -16,6 +16,7 @@ use crate::services::image_processing_service::classification_output_path;
 use crate::services::storage_service::{drive_storage_root, read_drive_metadata};
 use crate::system::filesystem::get_drives;
 use crate::utils::constants::{DELETE_FILE_PROCESS_TYPE, DELETE_FILE_QUEUE, IMPORTED_FILES_DIRECTORY};
+use crate::utils::operation_logger::log_event;
 
 /// Coordinates the transition from soft-deleted files to durable permanent-delete jobs.
 #[derive(Clone)]
@@ -44,6 +45,7 @@ impl TrashService {
     /// Publish every soft-deleted managed file to the durable deletion queue. The worker rechecks
     /// the deletion state before removing bytes, so a restored item remains safe.
     pub async fn empty_trash(&self) -> AppResult<()> {
+        log_event(DELETE_FILE_QUEUE, "REQUEST", "empty Trash requested");
         let snapshots = self.storage_repository.list().await?;
         let root = self.system_metadata_root.clone();
         let jobs = tauri::async_runtime::spawn_blocking(move || {
@@ -53,7 +55,13 @@ impl TrashService {
         .map_err(AppError::internal)??;
         let total_items = u64::try_from(jobs.len())
             .map_err(|_| AppError::validation("Too many files are in Trash."))?;
+        log_event(
+            DELETE_FILE_QUEUE,
+            "DISCOVERED",
+            format!("trash_items={total_items}"),
+        );
         if total_items == 0 {
+            log_event(DELETE_FILE_QUEUE, "COMPLETE", "Trash is already empty");
             return Ok(());
         }
 
@@ -75,6 +83,11 @@ impl TrashService {
                 .await;
             return Err(error);
         }
+        log_event(
+            DELETE_FILE_QUEUE,
+            "MARKED",
+            format!("process_id={} items={total_items}", process.process_id),
+        );
 
         let process_id = process.process_id.clone();
         let queued_jobs = jobs.clone();
@@ -94,6 +107,11 @@ impl TrashService {
                 .await;
             return Err(AppError::database(error));
         }
+        log_event(
+            DELETE_FILE_QUEUE,
+            "QUEUED",
+            format!("process_id={} items={total_items}", process.process_id),
+        );
         Ok(())
     }
 }
@@ -105,6 +123,9 @@ fn collect_deleted_file_jobs(
 ) -> AppResult<Vec<DeleteFileJob>> {
     let mut jobs = Vec::new();
     for saved in snapshots {
+        if !saved.is_mounted {
+            continue;
+        }
         let Some(drive) = connected
             .iter()
             .find(|drive| {

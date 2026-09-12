@@ -27,6 +27,7 @@ impl IndexingWorker {
         .boxed()
         .shared();
         let task = tauri::async_runtime::spawn(async move {
+            log_event(INDEXING_WORKER, "START", "worker supervisor started");
             loop {
                 let backend =
                     SqliteStorage::<IndexingJob, (), ()>::new_in_queue(&queue_pool, INDEXING_QUEUE);
@@ -63,6 +64,11 @@ impl IndexingWorker {
                                     }
                                 };
                                 repository.finish_item(job.process_id(), failure).await?;
+                                log_event(
+                                    INDEXING_WORKER,
+                                    "PERSISTED",
+                                    format!("process_id={} status={}", job.process_id(), if failure.is_some() { "failed" } else { "complete" }),
+                                );
                                 Ok::<(), crate::error::AppError>(())
                             }
                         });
@@ -74,6 +80,7 @@ impl IndexingWorker {
                     })
                     .await;
                 if shutdown_signal.clone().now_or_never().is_some() {
+                    log_event(INDEXING_WORKER, "STOP", "worker supervisor stopped");
                     return result;
                 }
                 eprintln!("[{}][RESTART] worker exited: {result:?}", INDEXING_WORKER);
@@ -91,6 +98,7 @@ impl IndexingWorker {
     }
 
     pub async fn close(&self) {
+        log_event(INDEXING_WORKER, "STOP", "shutdown requested");
         let _ = self.shutdown.send(()).await;
         if let Some(task) = self.task.lock().await.take() {
             let _ = task.await;

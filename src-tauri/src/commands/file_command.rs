@@ -3,13 +3,20 @@ use tauri::{Manager, State};
 use crate::app::state::AppState;
 use crate::error::AppResult;
 use crate::models::file_model::FileCountSummary;
+use crate::utils::operation_logger::log_event;
 
 #[tauri::command]
 pub async fn suggest_tags(state: State<'_, AppState>, prefix: String) -> AppResult<Vec<String>> {
+    log_event("files", "SUGGEST-TAGS-START", format!("prefix_length={}", prefix.chars().count()));
     let repository = state.search.clone();
-    tauri::async_runtime::spawn_blocking(move || repository.suggest_tags(&prefix))
+    let result = tauri::async_runtime::spawn_blocking(move || repository.suggest_tags(&prefix))
         .await
-        .map_err(crate::error::AppError::internal)?
+        .map_err(crate::error::AppError::internal)?;
+    match &result {
+        Ok(tags) => log_event("files", "SUGGEST-TAGS-COMPLETE", format!("count={}", tags.len())),
+        Err(error) => log_event("files", "SUGGEST-TAGS-FAILED", format!("error={error}")),
+    }
+    result
 }
 
 #[tauri::command]
