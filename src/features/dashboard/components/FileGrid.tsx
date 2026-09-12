@@ -5,9 +5,9 @@ import type { DashboardFile } from "../types/file";
 import { FileCard } from "./FileCard";
 import { previewKey, useMediaPreviews } from "../hooks/useMediaPreviews";
 
-interface FileGridProps { files:DashboardFile[]; onOpen:(index:number)=>void; }
+interface FileGridProps { files:DashboardFile[]; selectable:boolean; selectedIds:Set<string>; onToggleSelection:(id:string)=>void; onOpen:(index:number)=>void; }
 
-export function FileGrid({ files,onOpen }:FileGridProps) {
+export function FileGrid({ files, selectable, selectedIds, onToggleSelection, onOpen }:FileGridProps) {
   const gridRef = useRef<HTMLDivElement>(null);
   const updateRef = useRef<() => void>(() => {});
   const [layout, setLayout] = useState({ columns: 1, height: 210, gap: 16, first: 0, last: 0 });
@@ -77,7 +77,7 @@ export function FileGrid({ files,onOpen }:FileGridProps) {
     {files.slice(start, end).map((file, offset) => {
       const index = start + offset;
       return <div key={file.id} data-file-index={index} style={{ gridRow: Math.floor(index / layout.columns) + 1, gridColumn: index % layout.columns + 1, minWidth: 0 }}>
-        <FileCard file={file} previewUrl={previews.get(previewKey(file))} onOpen={() => onOpen(index)}/>
+        <FileCard file={file} previewUrl={previews.get(previewKey(file))} selectable={selectable} selected={selectedIds.has(String(file.id))} onToggleSelection={() => onToggleSelection(String(file.id))} onOpen={() => onOpen(index)}/>
       </div>;
     })}
   </div>;

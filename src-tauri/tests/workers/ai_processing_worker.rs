@@ -6,7 +6,7 @@ use crate::services::image_processing_service::ImageProcessingService;
 use crate::services::indexing_service::IndexingService;
 use crate::utils::constants::INDEXING_QUEUE;
 use crate::utils::constants::{APALIS_MIGRATION_TABLE, IMAGE_PROCESSING_OUTPUT_VERSION};
-use crate::workers::image_processing_worker::*;
+use crate::workers::ai_processing_worker::*;
 use apalis_sqlite::SqliteStorage;
 
 fn test_service(root: &std::path::Path) -> ImageProcessingService {
@@ -27,7 +27,7 @@ fn test_indexing_service(
 
 #[tokio::test]
 async fn worker_acknowledges_failed_job_and_processes_next_job() {
-    use crate::utils::constants::IMAGE_PROCESSING_QUEUE;
+    use crate::utils::constants::AI_PROCESSING_QUEUE;
     use apalis::prelude::TaskSink;
 
     let root = std::env::temp_dir().join(format!("nexfile-worker-retry-{}", uuid::Uuid::new_v4()));
@@ -41,7 +41,7 @@ async fn worker_acknowledges_failed_job_and_processes_next_job() {
     std::fs::write(&invalid, b"invalid image").unwrap();
     let mut queue = SqliteStorage::<ImageProcessingJob, (), ()>::new_in_queue(
         database.pool(),
-        IMAGE_PROCESSING_QUEUE,
+        AI_PROCESSING_QUEUE,
     );
     queue
         .push(ImageProcessingJob { process_id: process.process_id.clone(), path: invalid })
@@ -54,7 +54,7 @@ async fn worker_acknowledges_failed_job_and_processes_next_job() {
         })
         .await
         .unwrap();
-    let worker = ImageProcessingWorker::start(
+    let worker = AiProcessingWorker::start(
         &database,
         root.join("clip"),
         root.join("florence"),

@@ -8,6 +8,7 @@ use sqlx::SqlitePool;
 
 use crate::error::{AppError, AppResult};
 use crate::models::delete_model::DeleteFileJob;
+use crate::models::file_processing_model::FileProcessingJob;
 use crate::models::storage_model::{DriveInfo, DriveMetadata};
 use crate::repositories::background_processing_repository::SqliteBackgroundProcessingRepository;
 use crate::repositories::database_repository::SqliteDatabase;
@@ -15,7 +16,7 @@ use crate::repositories::storage_repository::SqliteStorageRepository;
 use crate::services::image_processing_service::classification_output_path;
 use crate::services::storage_service::{drive_storage_root, read_drive_metadata};
 use crate::system::filesystem::get_drives;
-use crate::utils::constants::{DELETE_FILE_PROCESS_TYPE, DELETE_FILE_QUEUE, IMPORTED_FILES_DIRECTORY};
+use crate::utils::constants::{DELETE_FILE_PROCESS_TYPE, FILE_PROCESSING_QUEUE, IMPORTED_FILES_DIRECTORY};
 use crate::utils::operation_logger::log_event;
 
 /// Coordinates the transition from soft-deleted files to durable permanent-delete jobs.
@@ -45,7 +46,7 @@ impl TrashService {
     /// Publish every soft-deleted managed file to the durable deletion queue. The worker rechecks
     /// the deletion state before removing bytes, so a restored item remains safe.
     pub async fn empty_trash(&self) -> AppResult<()> {
-        log_event(DELETE_FILE_QUEUE, "REQUEST", "empty Trash requested");
+        log_event(FILE_PROCESSING_QUEUE, "REQUEST", "empty Trash requested");
         let snapshots = self.storage_repository.list().await?;
         let root = self.system_metadata_root.clone();
         let jobs = tauri::async_runtime::spawn_blocking(move || {
@@ -56,12 +57,12 @@ impl TrashService {
         let total_items = u64::try_from(jobs.len())
             .map_err(|_| AppError::validation("Too many files are in Trash."))?;
         log_event(
-            DELETE_FILE_QUEUE,
+            FILE_PROCESSING_QUEUE,
             "DISCOVERED",
             format!("trash_items={total_items}"),
         );
         if total_items == 0 {
-            log_event(DELETE_FILE_QUEUE, "COMPLETE", "Trash is already empty");
+            log_event(FILE_PROCESSING_QUEUE, "COMPLETE", "Trash is already empty");
             return Ok(());
         }
 
@@ -84,7 +85,7 @@ impl TrashService {
             return Err(error);
         }
         log_event(
-            DELETE_FILE_QUEUE,
+            FILE_PROCESSING_QUEUE,
             "MARKED",
             format!("process_id={} items={total_items}", process.process_id),
         );
@@ -93,11 +94,11 @@ impl TrashService {
         let queued_jobs = jobs.clone();
         let mut jobs = stream::iter(jobs.into_iter().map(|mut job| {
             job.process_id = process_id.clone();
-            Task::builder(job).build()
+            Task::builder(FileProcessingJob::Delete(job)).build()
         }));
-        let mut queue = SqliteStorage::<DeleteFileJob, (), ()>::new_in_queue(
+        let mut queue = SqliteStorage::<FileProcessingJob, (), ()>::new_in_queue(
             &self.queue_pool,
-            DELETE_FILE_QUEUE,
+            FILE_PROCESSING_QUEUE,
         );
         if let Err(error) = queue.push_all(&mut jobs).await {
             let _ = restore_queued_job_state(&queued_jobs);
@@ -108,7 +109,7 @@ impl TrashService {
             return Err(AppError::database(error));
         }
         log_event(
-            DELETE_FILE_QUEUE,
+            FILE_PROCESSING_QUEUE,
             "QUEUED",
             format!("process_id={} items={total_items}", process.process_id),
         );

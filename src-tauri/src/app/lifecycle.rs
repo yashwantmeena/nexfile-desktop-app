@@ -13,10 +13,9 @@ use crate::utils::constants::{
     AI_CONFIGS_DIRECTORY, AI_MODELS_DIRECTORY, CLIP_MODEL_DIRECTORY, FLORENCE2_MODEL_DIRECTORY,
 };
 use crate::utils::operation_logger::log_event;
-use crate::workers::image_processing_worker::ImageProcessingWorker;
-use crate::workers::import_worker::ImportWorker;
+use crate::workers::file_processing_worker::FileProcessingWorker;
+use crate::workers::ai_processing_worker::AiProcessingWorker;
 use crate::workers::indexing_worker::IndexingWorker;
-use crate::workers::delete_worker::DeleteWorker;
 
 use super::config::AppConfig;
 use super::state::AppState;
@@ -46,8 +45,24 @@ pub fn initialize<R: tauri::Runtime>(app: &tauri::App<R>) -> AppResult<()> {
     .with_search_index(indexing_repository.clone());
     log_event("app", "SERVICES-READY", "application services initialized");
     let indexing = IndexingService::new(indexing_repository.clone());
-    let import_worker = ImportWorker::start(&database, imports.clone());
-    let image_processing_worker = ImageProcessingWorker::start(
+    let storage = StorageService::new(storage_repository, config.app_data_dir.clone()).with_drive_jobs(
+        SqliteBackgroundProcessingRepository::new(database.clone()),
+        &database,
+        indexing_repository.clone(),
+    );
+    let trash = TrashService::new(
+        SqliteBackgroundProcessingRepository::new(database.clone()),
+        SqliteStorageRepository::new(database.clone()),
+        &database,
+        config.app_data_dir.clone(),
+    );
+    let file_processing_worker = FileProcessingWorker::start(
+        &database,
+        imports.clone(),
+        storage.clone(),
+        indexing_repository.clone(),
+    );
+    let ai_processing_worker = AiProcessingWorker::start(
         &database,
         config
             .resources_dir
@@ -61,26 +76,13 @@ pub fn initialize<R: tauri::Runtime>(app: &tauri::App<R>) -> AppResult<()> {
         indexing.clone(),
     );
     let indexing_worker = IndexingWorker::start(&database, indexing);
-    let storage = StorageService::new(storage_repository, config.app_data_dir.clone()).with_drive_jobs(
-        SqliteBackgroundProcessingRepository::new(database.clone()),
-        &database,
-        indexing_repository.clone(),
-    );
-    let trash = TrashService::new(
-        SqliteBackgroundProcessingRepository::new(database.clone()),
-        SqliteStorageRepository::new(database.clone()),
-        &database,
-        config.app_data_dir.clone(),
-    );
-    let delete_worker = DeleteWorker::start(&database, storage.clone(), indexing_repository.clone());
     log_event("app", "WORKERS-STARTED", "background workers started");
 
     app.manage(AppState {
         search: indexing_repository,
-        image_processing_worker,
-        import_worker,
+        ai_processing_worker,
+        file_processing_worker,
         indexing_worker,
-        delete_worker,
         imports,
         storage,
         trash,

@@ -11,15 +11,15 @@ use crate::repositories::background_processing_repository::SqliteBackgroundProce
 use crate::repositories::database_repository::SqliteDatabase;
 use crate::services::image_processing_service::ImageProcessingService;
 use crate::services::indexing_service::IndexingService;
-use crate::utils::constants::{IMAGE_PROCESSING_QUEUE, IMAGE_PROCESSING_WORKER};
+use crate::utils::constants::{AI_PROCESSING_QUEUE, AI_PROCESSING_WORKER};
 use crate::utils::operation_logger::log_event;
 
-pub struct ImageProcessingWorker {
+pub struct AiProcessingWorker {
     shutdown: Sender<()>,
     task: Mutex<Option<JoinHandle<Result<(), WorkerError>>>>,
 }
 
-impl ImageProcessingWorker {
+impl AiProcessingWorker {
     pub fn start(
         database: &SqliteDatabase,
         clip_model_directory: PathBuf,
@@ -41,18 +41,18 @@ impl ImageProcessingWorker {
         .boxed()
         .shared();
         let task = tauri::async_runtime::spawn(async move {
-            log_event(IMAGE_PROCESSING_WORKER, "START", "worker supervisor started");
+            log_event(AI_PROCESSING_WORKER, "START", "worker supervisor started");
             loop {
                 let backend = SqliteStorage::<ImageProcessingJob, (), ()>::new_in_queue(
                     &queue_pool,
-                    IMAGE_PROCESSING_QUEUE,
+                    AI_PROCESSING_QUEUE,
                 );
                 let handler_service = service.clone();
                 let handler_repository = repository.clone();
                 let handler_indexing = indexing.clone();
                 let worker = WorkerBuilder::new(format!(
                     "{}-{}",
-                    IMAGE_PROCESSING_WORKER,
+                    AI_PROCESSING_WORKER,
                     uuid::Uuid::new_v4()
                 ))
                 .backend(backend)
@@ -64,17 +64,17 @@ impl ImageProcessingWorker {
                     async move {
                         let subject = job.path.display().to_string();
                         log_event(
-                            IMAGE_PROCESSING_WORKER,
+                            AI_PROCESSING_WORKER,
                             "RECEIVED",
                             format!("process_id={} path={subject}", job.process_id),
                         );
                         repository.mark_running(&job.process_id).await?;
                         log_event(
-                            IMAGE_PROCESSING_WORKER,
+                            AI_PROCESSING_WORKER,
                             "RUNNING",
                             format!("process_id={} path={subject}", job.process_id),
                         );
-                        let outcome = super::retry::retry_and_ack(IMAGE_PROCESSING_QUEUE, &subject, || {
+                        let outcome = super::retry::retry_and_ack(AI_PROCESSING_QUEUE, &subject, || {
                             consume_image_processing_job(
                                 job.clone(),
                                 service.clone(),
@@ -88,7 +88,7 @@ impl ImageProcessingWorker {
                         };
                         repository.finish_item(&job.process_id, failure).await?;
                         log_event(
-                            IMAGE_PROCESSING_WORKER,
+                            AI_PROCESSING_WORKER,
                             if failure.is_some() { "FAILED" } else { "COMPLETE" },
                             format!("process_id={} path={subject}", job.process_id),
                         );
@@ -103,12 +103,12 @@ impl ImageProcessingWorker {
                     })
                     .await;
                 if shutdown_signal.clone().now_or_never().is_some() {
-                    log_event(IMAGE_PROCESSING_WORKER, "STOP", "worker supervisor stopped");
+                    log_event(AI_PROCESSING_WORKER, "STOP", "worker supervisor stopped");
                     return result;
                 }
                 eprintln!(
                     "[{}][RESTART] worker exited: {result:?}",
-                    IMAGE_PROCESSING_WORKER
+                    AI_PROCESSING_WORKER
                 );
                 tokio::select! {
                     _ = shutdown_signal.clone() => return Ok(()),
@@ -124,7 +124,7 @@ impl ImageProcessingWorker {
     }
 
     pub async fn close(&self) {
-        log_event(IMAGE_PROCESSING_WORKER, "STOP", "shutdown requested");
+        log_event(AI_PROCESSING_WORKER, "STOP", "shutdown requested");
         let _ = self.shutdown.send(()).await;
         if let Some(task) = self.task.lock().await.take() {
             let _ = task.await;
@@ -140,7 +140,7 @@ pub(crate) async fn consume_image_processing_job(
     let path = job.path.clone();
     if !path.is_file() {
         eprintln!(
-            "[image-processing-queue][ACK] {} | stale source no longer exists",
+            "[ai-processing-queue][ACK] {} | stale source no longer exists",
             path.display()
         );
         return Ok(());
@@ -150,7 +150,7 @@ pub(crate) async fn consume_image_processing_job(
         Ok(output_path) => {
             indexing.process_path(output_path.clone()).await?;
             eprintln!(
-                "[image-processing-queue][ACK] {} | output={}",
+                "[ai-processing-queue][ACK] {} | output={}",
                 path.display(),
                 output_path.display()
             );
@@ -158,14 +158,14 @@ pub(crate) async fn consume_image_processing_job(
         }
         Err(_) if !path.is_file() => {
             eprintln!(
-                "[image-processing-queue][ACK] {} | source disappeared during processing",
+                "[ai-processing-queue][ACK] {} | source disappeared during processing",
                 path.display()
             );
             Ok(())
         }
         Err(error) => {
             eprintln!(
-                "[image-processing-queue][RETRY] {} | {error:?}",
+                "[ai-processing-queue][RETRY] {} | {error:?}",
                 path.display()
             );
             Err(error)

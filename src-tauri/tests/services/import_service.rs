@@ -2,7 +2,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use nexfile_desktop_app_lib::{
-    BackgroundProcessStatus, ImageProcessingJob, ImportFileJob, ImportService,
+    BackgroundProcessStatus, FileProcessingJob, ImageProcessingJob, ImportFileJob, ImportService,
     SqliteBackgroundProcessingRepository, SqliteDatabase, SqliteStorageRepository, StorageService,
 };
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
@@ -92,13 +92,16 @@ async fn persists_each_file_job_across_database_reopen() {
          WHERE job_type = ?1 AND status = 'Pending'
          ORDER BY rowid",
     )
-    .bind("import_file")
+    .bind("file_processing")
     .fetch_all(&verification_pool)
     .await
     .expect("queued import jobs should survive reopening");
     let queued_jobs = queued_jobs
         .into_iter()
-        .map(|(job,)| serde_json::from_slice::<ImportFileJob>(&job).expect("job should decode"))
+        .map(|(job,)| match serde_json::from_slice::<FileProcessingJob>(&job).expect("job should decode") {
+            FileProcessingJob::Import(job) => job,
+            other => panic!("unexpected file-processing operation: {}", other.operation()),
+        })
         .collect::<Vec<_>>();
     assert_eq!(queued_jobs.len(), 2);
     assert_eq!(queued_jobs[0].process_id, process.process_id);
@@ -162,16 +165,17 @@ async fn expands_a_folder_into_individual_file_jobs() {
          FROM Jobs
          WHERE job_type = ?1 AND status = 'Pending'",
     )
-    .bind("import_file")
+    .bind("file_processing")
     .fetch_all(&verification_pool)
     .await
     .expect("folder import jobs should be readable");
     let mut queued_paths = queued_jobs
         .into_iter()
         .map(|(job,)| {
-            serde_json::from_slice::<ImportFileJob>(&job)
-                .expect("job should decode")
-                .path
+            match serde_json::from_slice::<FileProcessingJob>(&job).expect("job should decode") {
+                FileProcessingJob::Import(job) => job.path,
+                other => panic!("unexpected file-processing operation: {}", other.operation()),
+            }
         })
         .collect::<Vec<_>>();
     queued_paths.sort();
@@ -220,7 +224,7 @@ async fn rejects_a_path_that_is_not_a_file() {
     let queued_count = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM Jobs WHERE job_type = ?1 AND status = 'Pending'",
     )
-    .bind("import_file")
+    .bind("file_processing")
     .fetch_one(&verification_pool)
     .await
     .expect("queue should be readable");
@@ -329,7 +333,7 @@ async fn consumes_an_image_into_the_mounted_system_drive_and_queues_processing()
          FROM Jobs
          WHERE job_type = ?1 AND status = 'Pending'",
     )
-    .bind("image-processing")
+    .bind("ai_processing")
     .fetch_one(&verification_pool)
     .await
     .expect("image-processing job should be queued");

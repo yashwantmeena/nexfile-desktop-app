@@ -12,6 +12,7 @@ use crate::error::{AppError, AppResult, CounterOverflow};
 
 use crate::models::background_process_model::BackgroundProcess;
 use crate::models::file_model::ManagedFileMetadata;
+use crate::models::file_processing_model::FileProcessingJob;
 use crate::models::image_processing_model::ImageProcessingJob;
 use crate::models::import_model::{ImportFileJob, ImportPreview};
 use crate::models::storage_model::{DriveInfo, DriveMetadata};
@@ -24,9 +25,9 @@ use crate::services::storage_service::{
 };
 use crate::system::filesystem::get_drives;
 use crate::utils::constants::{
-    APALIS_MIGRATION_TABLE, IMAGE_PROCESSING_PROCESS_TYPE, IMAGE_PROCESSING_QUEUE,
+    APALIS_MIGRATION_TABLE, IMAGE_PROCESSING_PROCESS_TYPE, AI_PROCESSING_QUEUE,
     IMPORTED_FILES_DIRECTORY, IMPORT_FILE_ID_ALPHABET, IMPORT_FILE_ID_LENGTH,
-    IMPORT_FILE_PROCESS_TYPE, IMPORT_FILE_QUEUE, IMPORT_FOLDER_PROCESS_TYPE,
+    IMPORT_FILE_PROCESS_TYPE, FILE_PROCESSING_QUEUE, IMPORT_FOLDER_PROCESS_TYPE,
 };
 use crate::utils::image_decoder::is_supported_image;
 use crate::utils::operation_logger::log_event;
@@ -53,7 +54,7 @@ impl ImportService {
 
     pub async fn preview(&self, paths: Vec<String>, folder: bool) -> AppResult<ImportPreview> {
         log_event(
-            IMPORT_FILE_QUEUE,
+            FILE_PROCESSING_QUEUE,
             "PREVIEW",
             format!("requested_paths={} folder={folder}", paths.len()),
         );
@@ -129,7 +130,7 @@ impl ImportService {
             can_import_all,
         };
         log_event(
-            IMPORT_FILE_QUEUE,
+            FILE_PROCESSING_QUEUE,
             "PREVIEW-COMPLETE",
             format!(
                 "files={} bytes={} mounted_drives={} available_bytes={} can_import_all={}",
@@ -150,7 +151,7 @@ impl ImportService {
         ids: Vec<String>,
     ) -> AppResult<BackgroundProcess> {
         log_event(
-            IMPORT_FILE_QUEUE,
+            FILE_PROCESSING_QUEUE,
             "REQUEST",
             format!("requested_paths={} folder={} collections={}", paths.len(), folder, ids.len()),
         );
@@ -179,7 +180,7 @@ impl ImportService {
         )
         .await?;
         log_event(
-            IMPORT_FILE_QUEUE,
+            FILE_PROCESSING_QUEUE,
             "REQUEST-COMPLETE",
             format!("process_id={} total_items={}", process.process_id, process.total_items),
         );
@@ -265,7 +266,7 @@ impl ImportService {
             let collection_ids = sidecar.collection_ids;
             let favorite = sidecar.favorite;
             log_event(
-                IMPORT_FILE_QUEUE,
+                FILE_PROCESSING_QUEUE,
                 "INDEX-START",
                 format!("drive_id={drive} file_id={file}"),
             );
@@ -274,7 +275,7 @@ impl ImportService {
             })
             .await
             .map_err(AppError::internal)??;
-            log_event(IMPORT_FILE_QUEUE, "INDEXED", "file metadata indexed");
+            log_event(FILE_PROCESSING_QUEUE, "INDEXED", "file metadata indexed");
         }
         Ok(())
     }
@@ -347,21 +348,21 @@ impl ImportService {
             .await?;
         let process_id = process.process_id.clone();
         log_event(
-            IMPORT_FILE_QUEUE,
+            FILE_PROCESSING_QUEUE,
             "QUEUING",
             format!("process_id={process_id} process_type={process_type} items={total_items}"),
         );
         let mut jobs = stream::iter(paths.into_iter().map(|path| {
-            Task::builder(ImportFileJob {
+            Task::builder(FileProcessingJob::Import(ImportFileJob {
                 process_id: process_id.clone(),
                 file_id: nanoid::nanoid!(IMPORT_FILE_ID_LENGTH, &IMPORT_FILE_ID_ALPHABET),
                 path,
-            })
+            }))
             .build()
         }));
-        let mut queue = SqliteStorage::<ImportFileJob, (), ()>::new_in_queue(
+        let mut queue = SqliteStorage::<FileProcessingJob, (), ()>::new_in_queue(
             &self.queue_pool,
-            IMPORT_FILE_QUEUE,
+            FILE_PROCESSING_QUEUE,
         );
         if let Err(error) = queue.push_all(&mut jobs).await {
             let _ = self
@@ -371,7 +372,7 @@ impl ImportService {
             return Err(AppError::database(error));
         }
         log_event(
-            IMPORT_FILE_QUEUE,
+            FILE_PROCESSING_QUEUE,
             "QUEUED",
             format!("process_id={} process_type={process_type} items={total_items}", process.process_id),
         );
@@ -379,7 +380,7 @@ impl ImportService {
     }
     pub async fn consume(&self, job: ImportFileJob) -> AppResult<()> {
         log_event(
-            IMPORT_FILE_QUEUE,
+            FILE_PROCESSING_QUEUE,
             "CONSUME",
             format!("process_id={} file_id={} source={}", job.process_id, job.file_id, job.path.display()),
         );
@@ -417,14 +418,14 @@ impl ImportService {
             .collect::<Vec<_>>();
         candidates.sort_by_key(|(_, metadata)| metadata.priority);
         log_event(
-            IMPORT_FILE_QUEUE,
+            FILE_PROCESSING_QUEUE,
             "CANDIDATES",
             format!("process_id={} file_id={} candidates={} size_bytes={file_size}", job.process_id, job.file_id, candidates.len()),
         );
 
         for (drive, mut saved) in candidates {
             log_event(
-                IMPORT_FILE_QUEUE,
+                FILE_PROCESSING_QUEUE,
                 "TRY-DRIVE",
                 format!("process_id={} file_id={} drive_id={} priority={}", job.process_id, job.file_id, saved.drive_id, saved.priority),
             );
@@ -434,7 +435,7 @@ impl ImportService {
 
             if destination.try_exists()? {
                 log_event(
-                    IMPORT_FILE_QUEUE,
+                    FILE_PROCESSING_QUEUE,
                     "DESTINATION-EXISTS",
                     format!("process_id={} file_id={} drive_id={} path={}", job.process_id, job.file_id, saved.drive_id, destination.display()),
                 );
@@ -467,7 +468,7 @@ impl ImportService {
                     .await?;
                 self.publish_for_image_processing(&destination).await?;
                 log_event(
-                    IMPORT_FILE_QUEUE,
+                    FILE_PROCESSING_QUEUE,
                     "COMPLETE",
                     format!("process_id={} file_id={} drive_id={} reused_destination=true", job.process_id, job.file_id, saved.drive_id),
                 );
@@ -476,7 +477,7 @@ impl ImportService {
 
             if !can_fit(&drive, &saved, file_size) {
                 log_event(
-                    IMPORT_FILE_QUEUE,
+                    FILE_PROCESSING_QUEUE,
                     "SKIP-DRIVE",
                     format!("process_id={} file_id={} drive_id={} reason=insufficient_capacity", job.process_id, job.file_id, saved.drive_id),
                 );
@@ -490,7 +491,7 @@ impl ImportService {
             let staging_path = temporary.clone();
             let expected_size = source_metadata.len();
             log_event(
-                IMPORT_FILE_QUEUE,
+                FILE_PROCESSING_QUEUE,
                 "COPY-START",
                 format!("process_id={} file_id={} drive_id={} staging={}", job.process_id, job.file_id, saved.drive_id, temporary.display()),
             );
@@ -508,7 +509,7 @@ impl ImportService {
                 Err(error) => return Err(error.into()),
             }
             log_event(
-                IMPORT_FILE_QUEUE,
+                FILE_PROCESSING_QUEUE,
                 "COPY-COMPLETE",
                 format!("process_id={} file_id={} drive_id={} bytes={file_size}", job.process_id, job.file_id, saved.drive_id),
             );
@@ -544,7 +545,7 @@ impl ImportService {
                 .await?;
             self.publish_for_image_processing(&destination).await?;
             log_event(
-                IMPORT_FILE_QUEUE,
+                FILE_PROCESSING_QUEUE,
                 "COMPLETE",
                 format!("process_id={} file_id={} drive_id={} reused_destination=false", job.process_id, job.file_id, saved.drive_id),
             );
@@ -559,7 +560,7 @@ impl ImportService {
     async fn publish_for_image_processing(&self, path: &Path) -> AppResult<()> {
         if !is_supported_image(path) {
             log_event(
-                IMAGE_PROCESSING_QUEUE,
+                AI_PROCESSING_QUEUE,
                 "SKIP",
                 format!("path={} reason=unsupported_image", path.display()),
             );
@@ -567,7 +568,7 @@ impl ImportService {
         }
         let mut queue = SqliteStorage::<ImageProcessingJob, (), ()>::new_in_queue(
             &self.queue_pool,
-            IMAGE_PROCESSING_QUEUE,
+            AI_PROCESSING_QUEUE,
         );
         let process = self
             .repository
@@ -584,7 +585,7 @@ impl ImportService {
             return Err(AppError::database(error));
         }
         log_event(
-            IMAGE_PROCESSING_QUEUE,
+            AI_PROCESSING_QUEUE,
             "QUEUED",
             format!("process_id={} path={}", process.process_id, path.display()),
         );

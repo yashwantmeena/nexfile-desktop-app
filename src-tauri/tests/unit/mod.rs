@@ -1,5 +1,5 @@
-#[path = "../workers/image_processing_worker.rs"]
-mod image_processing_worker;
+#[path = "../workers/ai_processing_worker.rs"]
+mod ai_processing_worker;
 
 #[path = "../utils/image_hash.rs"]
 mod image_hash;

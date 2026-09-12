@@ -27,6 +27,7 @@ pub use mappers::search_mapper::search_tags;
 pub use models::background_process_model::BackgroundProcess;
 pub use models::delete_model::DeleteFileJob;
 pub use models::file_model::FileTypeCount;
+pub use models::file_processing_model::{ExportFileJob, FileProcessingJob};
 pub use models::image_processing_model::{
     ClassificationPrediction, ImageBoundingBox, ImageClassificationOutput, ImageLocation,
     ImageMetadata, ImageObjectDetection, ImageObjectDetectionOutput, ImageOcrOutput,
@@ -92,10 +93,9 @@ pub fn run() {
         if matches!(event, tauri::RunEvent::Exit) {
             log_event("app", "STOP", "application shutdown started");
             let state = app_handle.state::<app::state::AppState>();
-            tauri::async_runtime::block_on(state.import_worker.close());
-            tauri::async_runtime::block_on(state.image_processing_worker.close());
+            tauri::async_runtime::block_on(state.file_processing_worker.close());
+            tauri::async_runtime::block_on(state.ai_processing_worker.close());
             tauri::async_runtime::block_on(state.indexing_worker.close());
-            tauri::async_runtime::block_on(state.delete_worker.close());
             tauri::async_runtime::block_on(state.imports.close());
             tauri::async_runtime::block_on(state.storage.close());
             log_event("app", "COMPLETE", "application shutdown completed");

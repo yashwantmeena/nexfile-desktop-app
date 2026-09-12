@@ -60,7 +60,7 @@ impl ImageProcessingService {
     }
 
     fn process_blocking(&self, job: ImageProcessingJob) -> AppResult<PathBuf> {
-        let logger = OperationLogger::start("image-processing", job.path.display());
+        let logger = OperationLogger::start("ai-processing", job.path.display());
         let result = self.process_blocking_logged(&job, &logger);
         if let Err(error) = &result {
             logger.failed(error);
